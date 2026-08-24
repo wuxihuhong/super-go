@@ -183,6 +183,7 @@ export default function App() {
             <>
               <div className="h-full shrink-0 py-1">
                 <WinBar
+                  t={t}
                   redCp={liveEval?.redCp ?? snapshot?.redCp}
                   redMate={snapshot?.thinking ? liveEval?.redMate : snapshot?.redMate}
                 />
