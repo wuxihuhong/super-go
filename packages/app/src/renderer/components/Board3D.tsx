@@ -41,16 +41,17 @@ const RZ = (r: number): number => r - 4.5;
 
 /** 车削棋子轮廓（半径, 高度）：小足 → 鼓腰 → 收肩，顶面另盖刻字盘 */
 const PIECE_PROFILE: [number, number][] = [
-  [0.38, 0.0],
-  [0.43, 0.02],
-  [0.452, 0.065],
-  [0.46, 0.12],
-  [0.448, 0.168],
-  [0.42, 0.203],
-  [0.372, 0.226],
-  [0.3, 0.235],
+  [0.4, 0.0],
+  [0.445, 0.02],
+  [0.468, 0.065],
+  [0.48, 0.12],
+  [0.468, 0.168],
+  [0.44, 0.203],
+  [0.4, 0.228],
+  [0.36, 0.235],
 ];
-const FACE_R = 0.3;
+const FACE_R = 0.36;
+const TOP_Y = PIECE_PROFILE.at(-1)?.[1] ?? 0.235; // 顶面刻字盘所在高度
 
 export default function Board3D(props: Board3DProps) {
   const { ref, width, height } = useElementSize<HTMLDivElement>();
@@ -82,8 +83,9 @@ export default function Board3D(props: Board3DProps) {
       return;
     }
     renderer.setPixelRatio(window.devicePixelRatio || 1);
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.06;
+    // Neutral：保色映射（ACES 会把 token 木色洗灰发白）
+    renderer.toneMapping = THREE.NeutralToneMapping;
+    renderer.toneMappingExposure = 0.94;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(renderer.domElement);
@@ -92,16 +94,18 @@ export default function Board3D(props: Board3DProps) {
     renderer.domElement.style.display = 'block';
 
     const scene = new THREE.Scene();
+    // 相机（57° 俯角，对齐 mac Chess 的俯视感）：更俯视 → 远端棋子顶面正对
+    // 视线、刻字更清晰；四角投影 |xN|≤0.87（13% 余量，盘宽占容器 87%）
     const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
-    camera.position.set(0, 11.4, 12.4);
+    camera.position.set(0, 20, 13);
 
-    // 环境反射（清漆质感的前提）+ 三点光
+    // 环境反射只服务清漆高光：强度压低（过高会把整盘冲成白雾）+ 低强度三点光
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = envTex;
     pmrem.dispose();
-    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-    const sun = new THREE.DirectionalLight(0xffffff, 2.0);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.15);
     sun.position.set(6, 13, 7);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -111,9 +115,10 @@ export default function Board3D(props: Board3DProps) {
     sun.shadow.camera.right = 10;
     sun.shadow.camera.top = 10;
     sun.shadow.camera.bottom = -10;
-    sun.shadow.bias = -0.0004;
+    sun.shadow.bias = -0.0002;
+    sun.shadow.normalBias = 0.02;
     scene.add(sun);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.3);
     fill.position.set(-6, 8, -8);
     scene.add(fill);
 
@@ -130,21 +135,21 @@ export default function Board3D(props: Board3DProps) {
     }
     const boardTex = new THREE.CanvasTexture(texCanvas);
     boardTex.colorSpace = THREE.SRGBColorSpace;
-    boardTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    boardTex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
 
     const boardMat = new THREE.MeshPhysicalMaterial({
       map: boardTex,
       roughness: 0.5,
       clearcoat: 0.55,
-      clearcoatRoughness: 0.3,
-      envMapIntensity: 0.55,
+      clearcoatRoughness: 0.35,
+      envMapIntensity: 0.12,
     });
     const sideMat = new THREE.MeshPhysicalMaterial({
       color: cssColor('--board-frame'),
       roughness: 0.45,
       clearcoat: 0.7,
       clearcoatRoughness: 0.22,
-      envMapIntensity: 0.7,
+      envMapIntensity: 0.15,
     });
     const board = new THREE.Mesh(new THREE.BoxGeometry(BOARD_W, BOARD_H, BOARD_D), [
       sideMat,
@@ -162,7 +167,7 @@ export default function Board3D(props: Board3DProps) {
     // 接地投影面（盘影落在虚拟桌面上）
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(60, 60),
-      new THREE.ShadowMaterial({ opacity: 0.25 }),
+      new THREE.ShadowMaterial({ opacity: 0.18 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -BOARD_H - 0.02;
@@ -175,8 +180,8 @@ export default function Board3D(props: Board3DProps) {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.enablePan = false;
-    controls.minDistance = 10;
-    controls.maxDistance = 24;
+    controls.minDistance = 18; // 再近则近端盘角溢出视野（45° 俯角最坏情形）
+    controls.maxDistance = 28;
     controls.minPolarAngle = 0.2;
     controls.maxPolarAngle = 1.25;
     controls.rotateSpeed = 0.55;
@@ -241,8 +246,8 @@ export default function Board3D(props: Board3DProps) {
       const s = sceneRef.current;
       if (s !== null) {
         for (const m of s.matCache.values()) {
-          m.map?.dispose();
-          m.bumpMap?.dispose();
+          const texs = new Set([m.map, m.bumpMap, m.roughnessMap, m.clearcoatMap]);
+          for (const t of texs) t?.dispose();
           m.dispose();
         }
       }
@@ -278,8 +283,8 @@ export default function Board3D(props: Board3DProps) {
   useEffect(() => {
     const gl = sceneRef.current;
     if (gl === null) return;
-    gl.camera.position.set(0, 11.4, props.flip ? -12.4 : 12.4);
-    gl.controls.target.set(0, 0, props.flip ? -0.4 : 0.4);
+    gl.camera.position.set(0, 20, props.flip ? -13 : 13);
+    gl.controls.target.set(0, 0, props.flip ? -0.35 : 0.35);
     gl.controls.update();
   }, [props.flip]);
 
@@ -307,6 +312,7 @@ export default function Board3D(props: Board3DProps) {
         const g = new THREE.Group();
         const body = new THREE.Mesh(bodyGeometry(), sideMat);
         const cap = new THREE.Mesh(topGeometry(), cachedFaceMaterial(matCache, piece, dark));
+        cap.position.y = TOP_Y + 0.002; // 抬离轮廓顶环（共面会 z-fighting，刻字盘被侧面材质盖住）
         body.castShadow = true;
         cap.castShadow = true;
         g.add(body, cap);
@@ -362,14 +368,15 @@ function cachedPieceSideMaterial(
   const ctx = canvas.getContext('2d')!;
   const hi = cssColor('--piece-face-hi');
   const lo = cssColor('--piece-face-lo');
-  const grain = cssColor('--piece-emboss');
+  // 纹色用不透明深色（--piece-emboss 自带 0.35 alpha，叠加后过淡看不见）
+  const grain = cssColor('--piece-black');
   ctx.fillStyle = lo;
   ctx.fillRect(0, 0, 256, 256);
   // 横向车削环纹（v 沿轮廓高度 → 恒 v 条带 = 围绕盘身的环）
   ctx.strokeStyle = grain;
   for (let i = 0; i < 26; i++) {
     const y0 = (i / 26) * 256 + rnd(i) * 4;
-    ctx.globalAlpha = 0.05 + rnd(i + 40) * 0.08;
+    ctx.globalAlpha = 0.05 + rnd(i + 40) * 0.07;
     ctx.lineWidth = 0.8 + rnd(i + 80) * 1.6;
     ctx.beginPath();
     for (let x = 0; x <= 256; x += 16) {
@@ -383,7 +390,7 @@ function cachedPieceSideMaterial(
   const grad = ctx.createLinearGradient(0, 0, 0, 256);
   grad.addColorStop(0, 'rgba(0,0,0,0)');
   grad.addColorStop(1, hi);
-  ctx.globalAlpha = 0.25;
+  ctx.globalAlpha = 0.2;
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 256, 256);
   ctx.globalAlpha = 1;
@@ -395,8 +402,8 @@ function cachedPieceSideMaterial(
     map: tex,
     roughness: 0.42,
     clearcoat: 1.0,
-    clearcoatRoughness: 0.14,
-    envMapIntensity: 0.85,
+    clearcoatRoughness: 0.2,
+    envMapIntensity: 0.18,
   });
   cache.set(key, mat);
   return mat;
@@ -412,14 +419,14 @@ function cachedFaceMaterial(
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
 
-  const S = 256;
+  // 384px：顶面在屏幕上仅 ~15px，纹理必须高分辨率 + anisotropy 抗斜视 mip 混色
+  const S = 384;
   const c = {
     faceHi: cssColor('--piece-face-hi'),
     faceLo: cssColor('--piece-face-lo'),
     rim: cssColor('--piece-rim'),
     red: cssColor('--piece-red'),
     black: cssColor('--piece-black'),
-    emboss: cssColor('--piece-emboss'),
   };
   // ---- 颜色贴图 ----
   const canvas = document.createElement('canvas');
@@ -431,12 +438,12 @@ function cachedFaceMaterial(
   grad.addColorStop(1, c.faceLo);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, S, S);
-  // 车削同心环（细密弧纹）
-  for (let i = 0; i < 30; i++) {
-    const r = 22 + i * 3.6;
-    ctx.globalAlpha = 0.03 + rnd(i) * 0.035;
-    ctx.strokeStyle = i % 2 === 0 ? c.emboss : c.faceHi;
-    ctx.lineWidth = 0.8;
+  // 车削同心环（细密弧纹；交替色用不透明深色/浅色）
+  for (let i = 0; i < 42; i++) {
+    const r = 30 + i * 4.2;
+    ctx.globalAlpha = 0.04 + rnd(i) * 0.05;
+    ctx.strokeStyle = i % 2 === 0 ? c.black : c.faceHi;
+    ctx.lineWidth = 1.1;
     ctx.beginPath();
     ctx.arc(S / 2, S / 2, r, 0, Math.PI * 2);
     ctx.stroke();
@@ -444,8 +451,8 @@ function cachedFaceMaterial(
   ctx.globalAlpha = 1;
   // 外缘双刻环（深槽 + 受光边）
   for (const [r, w] of [
-    [S * 0.455, 4],
-    [S * 0.415, 2],
+    [S * 0.455, 6],
+    [S * 0.415, 3],
   ] as const) {
     ctx.strokeStyle = c.rim;
     ctx.lineWidth = w;
@@ -483,9 +490,18 @@ function cachedFaceMaterial(
     btx.arc(S / 2, S / 2, r, 0, Math.PI * 2);
     btx.stroke();
   }
-  // ---- 阴刻字：受光下缘高光 → 主色字 → 上缘暗影 ----
+  // ---- 漆面遮罩：R=clearcoat 强度（字笔画处无漆），G=roughness（字处更哑） ----
+  // 真实工艺是阴刻填色处不打漆；无此遮罩时清漆镜面反射白环境会把红/黑字冲成粉色
+  const mask = document.createElement('canvas');
+  mask.width = S;
+  mask.height = S;
+  const mtx = mask.getContext('2d')!;
+  mtx.fillStyle = 'rgb(230,107,0)'; // R≈0.9 漆面，G=107/255≈0.42 粗糙度
+  mtx.fillRect(0, 0, S, S);
+  // ---- 阴刻字：深色描边拓宽笔画（顶面屏显仅 ~15px，GPU mip 会把字与浅底混色，
+  // 描边让字的等效宽度翻倍、混色后仍保持深色可读）→ 暗影加厚 → 受光下缘 → 主色 ----
   const char = pieceChar(piece);
-  const font = `600 ${S * 0.5}px 'Kaiti SC', 'STKaiti', 'KaiTi', serif`;
+  const font = `700 ${S * 0.6}px 'Kaiti SC', 'STKaiti', 'KaiTi', serif`;
   const drawChar = (
     tctx: CanvasRenderingContext2D,
     color: string,
@@ -502,22 +518,42 @@ function cachedFaceMaterial(
     tctx.fillText(char, S / 2 + dx, S / 2 + dy);
     tctx.restore();
   };
-  drawChar(ctx, c.faceHi, 2.2, 2.6, 0.5); // 凹槽受光下缘
+  const strokeChar = (tctx: CanvasRenderingContext2D, color: string): void => {
+    tctx.save();
+    tctx.strokeStyle = color;
+    tctx.lineWidth = S * 0.022;
+    tctx.lineJoin = 'round';
+    tctx.font = font;
+    tctx.textAlign = 'center';
+    tctx.textBaseline = 'middle';
+    tctx.strokeText(char, S / 2, S / 2);
+    tctx.restore();
+  };
+  strokeChar(ctx, c.black);
+  drawChar(ctx, c.black, 0, 0, 0.6); // 笔画加厚底层（混色后仍保持暗红可读）
+  drawChar(ctx, c.faceHi, 2.6, 3, 0.28); // 凹槽受光下缘
   drawChar(ctx, pieceSide(piece) === 'first' ? c.red : c.black, 0, 0);
   drawChar(btx, '#181818', 0, 0); // 凹陷
+  drawChar(mtx, 'rgb(0,191,0)', 0, 0); // 字区域：无清漆 + 哑光
+  strokeChar(mtx, 'rgb(0,191,0)');
 
   const map = new THREE.CanvasTexture(canvas);
   map.colorSpace = THREE.SRGBColorSpace;
-  map.anisotropy = 4;
+  map.anisotropy = 16;
   const bumpTex = new THREE.CanvasTexture(bump);
+  bumpTex.anisotropy = 16;
+  const maskTex = new THREE.CanvasTexture(mask);
+  maskTex.anisotropy = 16;
   const mat = new THREE.MeshPhysicalMaterial({
     map,
     bumpMap: bumpTex,
-    bumpScale: 0.5,
-    roughness: 0.38,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.1,
-    envMapIntensity: 0.9,
+    bumpScale: 0.6,
+    roughness: 1.0, // 实际粗糙度 = G/255（107→0.42，字区 191→0.75）
+    roughnessMap: maskTex,
+    clearcoat: 0.9, // 实际漆强 = R/255（230→0.9，字区 0）
+    clearcoatMap: maskTex,
+    clearcoatRoughness: 0.28,
+    envMapIntensity: 0.15,
   });
   cache.set(key, mat);
   return mat;
@@ -530,7 +566,6 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
   const c = {
     hi: cssColor('--board-hi'),
     lo: cssColor('--board-lo'),
-    grain: cssColor('--board-grain'),
     line: cssColor('--board-line'),
     river: cssColor('--board-river-text'),
     label: cssColor('--board-label'),
@@ -545,10 +580,12 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
   ctx.save();
-  ctx.strokeStyle = c.grain;
+  // 纹色用不透明的 --board-line（--board-grain 自带 0.06 alpha，再乘 globalAlpha
+  // 有效透明度只剩千分之几 → 纹理等于没画），浓度统一由 globalAlpha 控制
+  ctx.strokeStyle = c.line;
   for (let i = 0; i < 12; i++) {
     const bx = ((i + rnd(i) * 0.6) / 12) * W;
-    ctx.globalAlpha = 0.03 + rnd(i + 20) * 0.04;
+    ctx.globalAlpha = 0.08 + rnd(i + 20) * 0.06;
     ctx.lineWidth = 50 + rnd(i + 60) * 90;
     ctx.beginPath();
     ctx.moveTo(bx + Math.sin(i * 1.7) * 3, 0);
@@ -557,7 +594,7 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
   }
   for (let i = 0; i < 64; i++) {
     const bx = rnd(i) * W;
-    ctx.globalAlpha = 0.04 + rnd(i + 30) * 0.07;
+    ctx.globalAlpha = 0.1 + rnd(i + 30) * 0.08;
     ctx.lineWidth = 0.8 + rnd(i + 70) * 1.8;
     ctx.beginPath();
     ctx.moveTo(bx + Math.sin(i) * 2, 0);
@@ -566,7 +603,7 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
   }
   for (let i = 0; i < 7; i++) {
     const bx = rnd(i + 200) * W;
-    ctx.globalAlpha = 0.1 + rnd(i + 210) * 0.06;
+    ctx.globalAlpha = 0.14 + rnd(i + 210) * 0.07;
     ctx.lineWidth = 2.5 + rnd(i + 220) * 2.5;
     ctx.beginPath();
     ctx.moveTo(bx, 0);
@@ -574,10 +611,10 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
     ctx.stroke();
   }
   ctx.restore();
-  // 光泽（左上受光 + 右下暗角）
+  // 光泽（左上受光 + 右下暗角；sheen 克制，过量会形成白雾感）
   ctx.save();
   const sheen = ctx.createRadialGradient(W * 0.3, H * 0.2, 0, W * 0.3, H * 0.2, W * 0.9);
-  sheen.addColorStop(0, 'rgba(255,255,255,0.07)');
+  sheen.addColorStop(0, 'rgba(255,255,255,0.04)');
   sheen.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = sheen;
   ctx.fillRect(0, 0, W, H);
