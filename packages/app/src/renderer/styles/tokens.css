@@ -28,7 +28,9 @@
   --board-lo: #e5c99a; /* 盘面暗部（右下） */
   --board-grain: rgba(122, 92, 50, 0.06); /* 木纹 */
   --board-line: #7c6437; /* 格线 */
-  --board-river-text: #8d7548; /* 楚河汉界 */
+  --board-label: #f7ecd2; /* 边沿坐标编号（框上刻字，高对比奶白） */
+  --board-river-text: #8d7548;
+  --board-label: #f7ecd2; /* 楚河汉界 */
   --piece-face-hi: #fdf6e4; /* 棋子受光面 */
   --piece-face-lo: #e9dab6; /* 棋子暗面 */
   --piece-rim: #b3a077; /* 棋子边圈 */
@@ -56,6 +58,8 @@
     --board-grain: rgba(240, 222, 180, 0.05);
     --board-line: #8b7a55;
     --board-river-text: #7a6b49;
+    --board-label: #d8c496;
+    --board-label: #d8c496; /* 暗框上的暖亮刻字 */
     --piece-face-hi: #565040;
     --piece-face-lo: #3e392d;
     --piece-rim: #6b6350;
@@ -83,6 +87,7 @@ html.theme-dark {
   --board-grain: rgba(240, 222, 180, 0.05);
   --board-line: #8b7a55;
   --board-river-text: #7a6b49;
+  --board-label: #d8c496;
   --piece-face-hi: #565040;
   --piece-face-lo: #3e392d;
   --piece-rim: #6b6350;
@@ -108,6 +113,7 @@ html.theme-light {
   --board-grain: rgba(122, 92, 50, 0.06);
   --board-line: #7c6437;
   --board-river-text: #8d7548;
+  --board-label: #f7ecd2;
   --piece-face-hi: #fdf6e4;
   --piece-face-lo: #e9dab6;
   --piece-rim: #b3a077;

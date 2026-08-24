@@ -166,8 +166,9 @@ export default function Board(props: BoardProps) {
 
     // ---- 边沿坐标编号（传统盘面：黑方阿拉伯数字、红方汉字，随翻转跟随各自一侧）----
     const CN_NUMS = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
-    ctx.fillStyle = c.river;
-    ctx.font = `${cell * 0.24}px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif`;
+    // 框上刻字用高对比 --board-label（河界文字色在木框上不可读，尤其中文笔画）
+    ctx.fillStyle = cssColor('--board-label');
+    ctx.font = `${cell * 0.28}px 'Kaiti SC', 'STKaiti', 'PingFang SC', 'Microsoft YaHei', serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const labelY1 = frameW / 2 + 1;
