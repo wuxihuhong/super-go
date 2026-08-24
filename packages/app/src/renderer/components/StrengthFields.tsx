@@ -16,7 +16,10 @@ export default function StrengthFields(props: StrengthFieldsProps) {
   const { strength } = props;
   return (
     <>
-      <Row label={props.t('settings.strength')}>
+      <Row
+        label={props.t('settings.strength')}
+        hint={props.t('settings.strength.hint' as Parameters<TFunction>[0])}
+      >
         <select
           aria-label={props.t('settings.strength')}
           value={strength.mode}
@@ -31,7 +34,10 @@ export default function StrengthFields(props: StrengthFieldsProps) {
         </select>
       </Row>
       {strength.mode === 'elo' && (
-        <Row label={props.t('settings.strength.elo')}>
+        <Row
+          label={props.t('settings.strength.elo')}
+          hint={props.t('settings.strength.elo.hint' as Parameters<TFunction>[0])}
+        >
           <NumberField
             ariaLabel={props.t('settings.strength.elo')}
             value={strength.elo}
@@ -43,7 +49,10 @@ export default function StrengthFields(props: StrengthFieldsProps) {
         </Row>
       )}
       {strength.mode === 'depth' && (
-        <Row label={props.t('settings.strength.depth')}>
+        <Row
+          label={props.t('settings.strength.depth')}
+          hint={props.t('settings.strength.depth.hint' as Parameters<TFunction>[0])}
+        >
           <NumberField
             ariaLabel={props.t('settings.strength.depth')}
             value={strength.depth}
@@ -55,7 +64,10 @@ export default function StrengthFields(props: StrengthFieldsProps) {
         </Row>
       )}
       {strength.mode === 'nodes' && (
-        <Row label={props.t('settings.strength.nodes')}>
+        <Row
+          label={props.t('settings.strength.nodes')}
+          hint={props.t('settings.strength.nodes.hint' as Parameters<TFunction>[0])}
+        >
           <NumberField
             ariaLabel={props.t('settings.strength.nodes')}
             value={strength.nodes}
@@ -68,7 +80,10 @@ export default function StrengthFields(props: StrengthFieldsProps) {
       )}
       {/* 思考时长：time 模式即棋力本体；其余模式为出招节奏上限。单位秒 */}
       {strength.mode !== 'depth' && strength.mode !== 'nodes' && (
-        <Row label={props.t('settings.thinkTime')}>
+        <Row
+          label={props.t('settings.thinkTime')}
+          hint={props.t('settings.thinkTime.hint' as Parameters<TFunction>[0])}
+        >
           <NumberField
             ariaLabel={props.t('settings.thinkTime')}
             value={strength.movetime / 1000}
@@ -84,11 +99,22 @@ export default function StrengthFields(props: StrengthFieldsProps) {
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
+function Row(props: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-4 px-3 py-2.5">
-      <span className="shrink-0 text-xs">{label}</span>
-      {children}
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-xs">{props.label}</span>
+        {props.hint !== undefined && (
+          <span className="max-w-44 text-[11px] leading-snug text-muted-foreground">
+            {props.hint}
+          </span>
+        )}
+      </span>
+      {props.children}
     </div>
   );
 }

@@ -55,7 +55,10 @@ export default function GamePanel(props: GamePanelProps) {
     <div className="w-80 rounded-xl border border-border bg-surface p-3 shadow-xl">
       <div className="divide-y divide-border rounded-lg border border-border bg-background">
         <div className="px-3 py-2.5">
-          <div className="mb-1.5 text-xs text-muted-foreground">{props.t('setup.side')}</div>
+          <div className="mb-0.5 text-xs text-muted-foreground">{props.t('setup.side')}</div>
+          <div className="mb-1.5 text-[11px] leading-snug text-muted-foreground">
+            {props.t('setup.side.hint')}
+          </div>
           <div className="flex gap-1 rounded-lg bg-surface p-0.5">
             {sideOptions.map((option) => (
               <button

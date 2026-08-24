@@ -66,6 +66,15 @@ export default {
   'settings.strength.nodes': '思考节点',
   'settings.strength.unlimited': '不设限',
   'settings.strength.custom': '自定义',
+  'settings.strength.hint':
+    '等级分是拟人棋力；深度/时长/节点是满强度下的搜索资源限制；不设限即最强',
+  'settings.strength.elo.hint': '1280–3133，引擎天梯校准的拟人对手（1280 为引擎机制下限）',
+  'settings.thinkTime.hint': '时长模式下即棋力本体；其他模式下是每步出招的节奏上限。0.1–60 秒',
+  'settings.strength.depth.hint': '每步最多搜索的层数（1–30），越深越强也越慢',
+  'settings.strength.nodes.hint': '每步最多搜索的节点数（1k–100M）',
+  'setup.side.hint': '随时可切换：选某方=人下这一侧；互搏=引擎对下、人观战',
+  'settings.enginePath.rowHint':
+    '本地 Pikafish 可执行文件；留空自动探测 engines/chess，修改后下一局生效',
   'settings.ponder': '闲时思考',
   'settings.ponder.p2': '即将支持（P2 接通引擎）',
   'toolbar.pause': '暂停',

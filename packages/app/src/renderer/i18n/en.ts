@@ -63,6 +63,17 @@ export default {
   'settings.strength.nodes': 'Nodes',
   'settings.strength.unlimited': 'Unlimited',
   'settings.strength.custom': 'Custom',
+  'settings.strength.hint':
+    'Elo is human-like strength; depth/time/nodes cap the search at full strength; unlimited = strongest',
+  'settings.strength.elo.hint':
+    '1280–3133, engine-calibrated human-like opponent (1280 is the engine floor)',
+  'settings.thinkTime.hint':
+    'Decides strength in time mode; otherwise caps per-move pace. 0.1–60 s',
+  'settings.strength.depth.hint': 'Max search plies per move (1–30); deeper = stronger but slower',
+  'settings.strength.nodes.hint': 'Max search nodes per move (1k–100M)',
+  'setup.side.hint': 'Switch anytime: a side = you play it; engine-vs-engine = watch',
+  'settings.enginePath.rowHint':
+    'Local Pikafish executable; empty = auto-detect engines/chess; applies next game',
   'settings.ponder': 'Pondering',
   'settings.ponder.p2': 'Coming in P2',
   'toolbar.pause': 'Pause',

@@ -104,7 +104,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
 
       {/* 象棋（棋种独立配置） */}
       <Section title={props.t('settings.xiangqi')}>
-        <Row label={props.t('settings.enginePath')}>
+        <Row label={props.t('settings.enginePath')} hint={props.t('settings.enginePath.rowHint')}>
           <span className="flex items-center gap-1">
             <input
               type="text"
@@ -162,11 +162,22 @@ function Section({
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
+function Row(props: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-4 px-3 py-2.5">
-      <span className="shrink-0 text-xs">{label}</span>
-      {children}
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-xs">{props.label}</span>
+        {props.hint !== undefined && (
+          <span className="max-w-44 text-[11px] leading-snug text-muted-foreground">
+            {props.hint}
+          </span>
+        )}
+      </span>
+      {props.children}
     </div>
   );
 }
