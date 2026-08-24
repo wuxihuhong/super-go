@@ -127,6 +127,8 @@ function MoveList({
   ): React.JSX.Element | null => {
     if (item === undefined) return <span />;
     const active = snapshot?.cursorNodeId === item.nodeId;
+    // 着法按行棋方着色（红左黑右的列约定之外再加色彩语义，一眼可辨归属）
+    const sideColor = ply === 0 ? 'text-piece-red' : 'text-piece-black';
     return (
       <button
         type="button"
@@ -134,8 +136,8 @@ function MoveList({
         onClick={() => onGoto(item.nodeId)}
         title={item.iccs}
         className={`min-w-0 flex-1 truncate rounded px-1.5 py-0.5 text-left tabular-nums transition-colors ${
-          active ? 'bg-accent/15 text-accent' : 'hover:bg-background'
-        } ${ply === 1 ? 'text-muted-foreground' : ''} ${browsing ? 'cursor-pointer' : 'cursor-default'}`}
+          active ? 'bg-accent/15' : 'hover:bg-background'
+        } ${sideColor} ${browsing ? 'cursor-pointer' : 'cursor-default'}`}
       >
         {item.notation}
       </button>
@@ -147,17 +149,25 @@ function MoveList({
       {rows.length === 0 ? (
         <p className="px-2 pt-2 text-xs text-muted-foreground">{t('panel.empty')}</p>
       ) : (
-        <ol className="space-y-0.5">
-          {rows.map((row) => (
-            <li key={row.num} className="flex items-center gap-1 text-xs">
-              <span className="w-6 shrink-0 text-right text-muted-foreground tabular-nums">
-                {row.num}.
-              </span>
-              {moveSpan(row.red, 0)}
-              {moveSpan(row.black, 1)}
-            </li>
-          ))}
-        </ol>
+        <>
+          {/* 列头：左列红方、右列黑方 */}
+          <div className="flex items-center gap-1 px-1 pb-1 text-[10px] text-muted-foreground select-none">
+            <span className="w-6 shrink-0" />
+            <span className="min-w-0 flex-1 px-1.5 text-piece-red">{t('side.red')}</span>
+            <span className="min-w-0 flex-1 px-1.5 text-piece-black">{t('side.black')}</span>
+          </div>
+          <ol className="space-y-0.5">
+            {rows.map((row) => (
+              <li key={row.num} className="flex items-center gap-1 text-xs">
+                <span className="w-6 shrink-0 text-right text-muted-foreground tabular-nums">
+                  {row.num}.
+                </span>
+                {moveSpan(row.red, 0)}
+                {moveSpan(row.black, 1)}
+              </li>
+            ))}
+          </ol>
+        </>
       )}
     </div>
   );
