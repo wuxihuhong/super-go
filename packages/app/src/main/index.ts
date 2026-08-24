@@ -1,5 +1,5 @@
 import { app, BrowserWindow, nativeTheme } from 'electron';
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
 import { enginesRootCandidates, findPikafishBinary } from './engine/discover';
@@ -29,6 +29,22 @@ function createWindow(): BrowserWindow {
   });
 
   win.on('ready-to-show', () => win.show());
+  // UI 自检模式：SUPER_GO_SHOT=<path> 时转发 renderer 控制台并在启动 3s 后截图
+  const shotPath = process.env['SUPER_GO_SHOT'];
+  if (shotPath !== undefined) {
+    win.webContents.on('console-message', (_e, _level, message) => {
+      console.log(`[renderer] ${message}`);
+    });
+    setTimeout(() => {
+      win.webContents
+        .capturePage()
+        .then((img) => {
+          writeFileSync(shotPath, img.toPNG());
+          console.log(`[shot] saved ${shotPath}`);
+        })
+        .catch((err: unknown) => console.error('[shot] failed', err));
+    }, 3000);
+  }
   win.on('closed', () => {
     mainWindow = null;
   });

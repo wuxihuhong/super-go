@@ -188,7 +188,7 @@ export default function App() {
                 />
               </div>
               <div
-                className="flex max-w-full flex-col"
+                className="flex h-full max-w-full flex-col"
                 style={{ width: boardColumnWidth, gap: GAP }}
               >
                 <PlayerBanner
