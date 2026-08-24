@@ -28,6 +28,7 @@ export const IPC_CHANNELS = {
   gameResign: 'game:resign',
   gameSetEngineSide: 'game:setEngineSide',
   gamePauseToggle: 'game:pauseToggle',
+  gameRematch: 'game:rematch',
   gameGoto: 'game:goto',
   gameSnapshotGet: 'game:snapshotGet',
   gameSnapshot: 'game:snapshot',
@@ -91,6 +92,8 @@ export interface SuperGoApi {
   setEngineSide(engineSide: EngineSideT): Promise<IntentResult>;
   /** 暂停/继续（引擎不出招；互搏观战的主要控制） */
   togglePause(): Promise<IntentResult>;
+  /** 再来一局：沿用上局执方与棋力从头开始 */
+  rematch(): Promise<IntentResult>;
   /** 引擎路径浏览（Electron 文件对话框；浏览器 mock 返回 null） */
   pickEnginePath(): Promise<string | null>;
   gotoNode(nodeId: number): Promise<IntentResult>;

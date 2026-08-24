@@ -123,11 +123,21 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     const endedAgain = await waitFor((s) => s.phase === 'ended');
     expect(endedAgain.moves.length).toBe(4);
 
-    // 复盘：对局结束后跳回第 1 着
-    const jumped = match.goto(endedAgain.moves[0]!.nodeId);
+    // 再来一局：沿用执方从头开始（终局浮层快捷入口）
+    const rematched = await match.rematch();
+    expect(rematched.ok).toBe(true);
+    const fresh = await waitFor((s) => s.phase === 'playing' && s.moves.length === 0);
+    expect(fresh.engineSide).toBe('second');
+
+    // 复盘段落：走一对、认输、跳回第 1 着
+    match.playMove({ from: { x: 7, y: 7 }, to: { x: 4, y: 7 } });
+    const twoMoves = await waitFor((s) => s.moves.length === 2);
+    await match.resign();
+    const endedFinal = await waitFor((s) => s.phase === 'ended');
+    const jumped = match.goto(endedFinal.moves[0]!.nodeId);
     expect(jumped.ok).toBe(true);
     expect(latest().moves.length).toBe(1);
-    expect(latest().fen).not.toBe(endedAgain.fen);
+    expect(latest().fen).not.toBe(twoMoves.fen);
 
     // 从当前节点续弈：引擎执黑接手当前局面（快照式同步覆盖非初始局面）
     const continued = await match.newGame({ engineSide: 'second', fromCursor: true });

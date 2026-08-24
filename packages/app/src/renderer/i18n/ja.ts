@@ -80,6 +80,8 @@ export default {
   'settings.sound.on': 'オン',
   'settings.sound.off': 'オフ',
   'settings.browse': '参照…',
+  'game.rematch': '再戦',
+  'game.review': '検譜',
   'toolbar.newGame.hint': '手持ちを選んで新しい対局を開始',
   'toolbar.undo.hint': '自分の一手指しと応手を待った',
   'toolbar.resign.hint': '投了して現在の対局を終了',

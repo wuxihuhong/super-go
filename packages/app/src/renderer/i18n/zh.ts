@@ -84,6 +84,8 @@ export default {
   'settings.sound.on': '开',
   'settings.sound.off': '关',
   'settings.browse': '浏览…',
+  'game.rematch': '再来一局',
+  'game.review': '复盘',
   'toolbar.newGame.hint': '选择执方，开始一盘新对弈',
   'toolbar.undo.hint': '撤回你最近一步与引擎的应招',
   'toolbar.resign.hint': '认输，结束当前对局',

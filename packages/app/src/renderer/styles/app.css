@@ -52,3 +52,16 @@ input:focus-visible {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* 终局结果浮层渐入（克制动效：仅透明度） */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 0.25s ease-out;
+}

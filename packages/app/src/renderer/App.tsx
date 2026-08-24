@@ -35,6 +35,7 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [themeTick, setThemeTick] = useState(0);
   const [popover, setPopover] = useState<Popover>('none');
+  const [resultDismissed, setResultDismissed] = useState(false);
   // 中央区实测高度 → 精确推算棋盘列宽（banner/间距为常量，比例不靠 CSS 拼凑）
   const { ref: mainRef, height: mainHeight } = useElementSize<HTMLElement>();
   const BANNER_H = 36;
@@ -77,6 +78,11 @@ export default function App() {
     const timer = setTimeout(() => setNotice(null), 5000);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  // 新对局开始时重置终局浮层
+  useEffect(() => {
+    if (snapshot?.phase === 'playing') setResultDismissed(false);
+  }, [snapshot?.phase]);
 
   const game = useMemo(() => new XiangqiGame(), []);
   const position: XiangqiPosition = useMemo(
@@ -279,7 +285,7 @@ export default function App() {
                   thinking={engineThinking && snapshot?.turn === topBannerSide}
                   caption={topCaption}
                 />
-                <div className="min-h-0 flex-1 overflow-hidden rounded-xl shadow-md">
+                <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl shadow-md">
                   <Board
                     position={position}
                     selected={selected}
@@ -290,6 +296,53 @@ export default function App() {
                     themeTick={themeTick}
                     onSquareClick={handleSquareClick}
                   />
+                  {/* 终局结果浮层：胜方大字 + 原因 + 快捷操作（渐入，克制动效） */}
+                  {snapshot?.phase === 'ended' && snapshot.result !== null && !resultDismissed && (
+                    <div className="fade-in absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
+                      <div className="w-64 rounded-xl border border-border bg-surface p-5 text-center shadow-xl">
+                        <div
+                          className={`text-2xl font-semibold ${
+                            snapshot.result.winner === 'first'
+                              ? 'text-piece-red'
+                              : snapshot.result.winner === 'second'
+                                ? 'text-piece-black'
+                                : 'text-foreground'
+                          }`}
+                        >
+                          {snapshot.result.winner === 'first'
+                            ? t('status.result.redWin')
+                            : snapshot.result.winner === 'second'
+                              ? t('status.result.blackWin')
+                              : t('status.result.draw')}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {snapshot.result.reason === 'mate'
+                            ? t('status.reason.mate')
+                            : snapshot.result.reason === 'stalemate'
+                              ? t('status.reason.stalemate')
+                              : snapshot.result.reason === 'resign'
+                                ? t('status.reason.resign')
+                                : ''}
+                        </div>
+                        <div className="mt-4 flex justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => runIntent(() => window.superGo.rematch())}
+                            className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-accent-foreground"
+                          >
+                            {t('game.rematch')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setResultDismissed(true)}
+                            className="rounded-lg border border-border px-3.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+                          >
+                            {t('game.review')}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <PlayerBanner
                   t={t}

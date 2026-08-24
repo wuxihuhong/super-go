@@ -334,6 +334,20 @@ function createMockApi(): SuperGoApi {
       pushSnapshot();
       return Promise.resolve({ ok: true });
     },
+    rematch: () => {
+      // 沿用上局执方从头开始（对齐 MatchService.rematch）
+      generation++;
+      thinking = false;
+      paused = false;
+      if (state.phase === 'playing') state.abort();
+      tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
+      const profile = chessStrengthFromConfig(normalizeXiangqiStrength(settings.xiangqi?.strength));
+      state.start({ engineSide: lastEngineSide, strength: profile });
+      pushStatus('ready');
+      pushSnapshot();
+      if (engineToMoveNow()) fakeEngineTurn();
+      return Promise.resolve({ ok: true });
+    },
     pickEnginePath: () => Promise.resolve(null), // 浏览器沙箱无文件对话框，入口由文本框承担
     gotoNode: (nodeId: number) => {
       if (state.phase === 'playing') return Promise.resolve({ ok: false, error: '对局中不可跳转' });

@@ -63,6 +63,7 @@ export function registerIpc(
     (_e, side: Parameters<MatchService['setEngineSide']>[0]) => match.setEngineSide(side),
   );
   ipcMain.handle(IPC_CHANNELS.gamePauseToggle, () => match.togglePause());
+  ipcMain.handle(IPC_CHANNELS.gameRematch, () => match.rematch());
   ipcMain.handle(IPC_CHANNELS.gameGoto, (_e, nodeId: number) => match.goto(nodeId));
   ipcMain.handle(IPC_CHANNELS.gameSnapshotGet, () => match.snapshot());
 }

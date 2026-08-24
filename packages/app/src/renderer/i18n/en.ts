@@ -83,6 +83,8 @@ export default {
   'settings.sound.on': 'On',
   'settings.sound.off': 'Off',
   'settings.browse': 'Browse…',
+  'game.rematch': 'Rematch',
+  'game.review': 'Review',
   'toolbar.newGame.hint': 'Pick a side and start a new game',
   'toolbar.undo.hint': 'Take back your last move and the reply',
   'toolbar.resign.hint': 'Resign and end the current game',
