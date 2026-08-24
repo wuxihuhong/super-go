@@ -81,16 +81,16 @@ export default function Board(props: BoardProps) {
       danger: cssColor('--danger'),
     };
 
-    // ---- 外框（深木，受光渐变）----
-    const frameGrad = ctx.createLinearGradient(0, 0, width, height);
+    // ---- 外框（木色，纵向受光微渐变）----
+    const frameGrad = ctx.createLinearGradient(0, 0, 0, height);
     frameGrad.addColorStop(0, c.frameHi);
     frameGrad.addColorStop(1, c.frame);
     ctx.fillStyle = frameGrad;
     roundRect(ctx, 0, 0, width, height, 14);
     ctx.fill();
-    // 框内侧阴影线（凹槽感）
-    const frameW = Math.min(padX, padY) * 0.55;
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    const frameW = Math.min(padX, padY) * 0.45;
+    // 框内沿：上亮下暗（机加工倒角感）
+    ctx.strokeStyle = 'rgba(0,0,0,0.16)';
     ctx.lineWidth = 1;
     roundRect(ctx, frameW, frameW, width - frameW * 2, height - frameW * 2, 8);
     ctx.stroke();
@@ -108,6 +108,18 @@ export default function Board(props: BoardProps) {
     ctx.clip();
     drawWoodGrain(ctx, frameW, frameW, width - frameW * 2, height - frameW * 2, c.grain);
     ctx.restore();
+    // 盘面内沿高光（清晰边界，消除"下沉"感）
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.lineWidth = 1;
+    roundRect(
+      ctx,
+      frameW + 1.5,
+      frameW + 1.5,
+      width - (frameW + 1.5) * 2,
+      height - (frameW + 1.5) * 2,
+      7,
+    );
+    ctx.stroke();
 
     // ---- 格线 ----
     ctx.lineWidth = 1;
@@ -142,14 +154,14 @@ export default function Board(props: BoardProps) {
 
     // ---- 楚河汉界 ----
     ctx.fillStyle = c.river;
-    ctx.font = `${cell * 0.46}px 'Kaiti SC', 'STKaiti', 'KaiTi', serif`;
+    ctx.font = `${cell * 0.38}px 'Kaiti SC', 'STKaiti', 'KaiTi', serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const riverY = (py(4) + py(5)) / 2;
     ctx.save();
     ctx.globalAlpha = 0.9;
-    ctx.fillText('楚  河', (px(1) + px(2)) / 2, riverY);
-    ctx.fillText('汉  界', (px(6) + px(7)) / 2, riverY);
+    ctx.fillText('楚 河', (px(0) + px(2)) / 2, riverY);
+    ctx.fillText('漢 界', (px(6) + px(8)) / 2, riverY);
     ctx.restore();
 
     // ---- 最后一着（落点柔和高亮 + 角标）----
@@ -205,21 +217,21 @@ export default function Board(props: BoardProps) {
         if (piece === null) continue;
         const p = toScreen(x, y);
 
-        // 软投影
+        // 软投影（近正圆、轻偏移——避免"扁椭圆"观感，且不出画布边缘）
         const shadowGrad = ctx.createRadialGradient(
-          p.sx + radius * 0.08,
-          p.sy + radius * 0.14,
-          radius * 0.2,
-          p.sx + radius * 0.08,
-          p.sy + radius * 0.14,
-          radius * 1.08,
+          p.sx + radius * 0.05,
+          p.sy + radius * 0.08,
+          radius * 0.3,
+          p.sx + radius * 0.05,
+          p.sy + radius * 0.08,
+          radius,
         );
         shadowGrad.addColorStop(0, c.shadow);
-        shadowGrad.addColorStop(0.75, c.shadow);
+        shadowGrad.addColorStop(0.8, c.shadow);
         shadowGrad.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = shadowGrad;
         ctx.beginPath();
-        ctx.arc(p.sx + radius * 0.08, p.sy + radius * 0.14, radius * 1.08, 0, Math.PI * 2);
+        ctx.arc(p.sx + radius * 0.05, p.sy + radius * 0.08, radius, 0, Math.PI * 2);
         ctx.fill();
 
         // 立体盘面（受光渐变）
@@ -250,12 +262,12 @@ export default function Board(props: BoardProps) {
         ctx.stroke();
         ctx.restore();
 
-        // 刻字（浮雕：暗色偏移 + 主色）
+        // 刻字（浮雕：暗色微偏移 + 主色）
         ctx.font = pieceFont(cell * 0.48);
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = c.emboss;
-        ctx.fillText(pieceChar(piece), p.sx + 0.8, p.sy + radius * 0.03 + 0.9);
+        ctx.fillText(pieceChar(piece), p.sx + 0.6, p.sy + radius * 0.03 + 0.7);
         ctx.fillStyle = pieceSide(piece) === 'first' ? c.red : c.black;
         ctx.fillText(pieceChar(piece), p.sx, p.sy + radius * 0.03);
       }
@@ -294,7 +306,7 @@ export default function Board(props: BoardProps) {
   );
 }
 
-/** 木纹：低透明度正弦波竖纹 */
+/** 木纹：极低透明度正弦波竖纹（克制的材质提示，不做显性纹理） */
 function drawWoodGrain(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -305,11 +317,11 @@ function drawWoodGrain(
 ): void {
   ctx.save();
   ctx.strokeStyle = color;
-  const count = 16;
+  const count = 10;
   for (let i = 0; i < count; i++) {
     const bx = x + ((i + 0.5) / count) * w;
-    const wobble = 4 + (i % 3) * 3;
-    ctx.lineWidth = 1 + (i % 4 === 0 ? 1 : 0);
+    const wobble = 3 + (i % 3) * 2;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(bx + Math.sin(i * 1.7) * 2, y);
     ctx.bezierCurveTo(

@@ -17,11 +17,11 @@
   --accent-foreground: #ffffff;
   --danger: #dc2626;
   /* 棋盘（Canvas 与 DOM 同源） */
-  --board-frame: #86602f; /* 深木外框 */
-  --board-frame-hi: #9a7440; /* 外框受光面 */
-  --board-hi: #f2e0b6; /* 盘面亮部（左上） */
-  --board-lo: #e0c288; /* 盘面暗部（右下） */
-  --board-grain: rgba(122, 92, 50, 0.1); /* 木纹 */
+  --board-frame: #97713b; /* 深木外框 */
+  --board-frame-hi: #a67f48; /* 外框受光面 */
+  --board-hi: #f1dfb8; /* 盘面亮部（左上） */
+  --board-lo: #e5c99a; /* 盘面暗部（右下） */
+  --board-grain: rgba(122, 92, 50, 0.06); /* 木纹 */
   --board-line: #7c6437; /* 格线 */
   --board-river-text: #8d7548; /* 楚河汉界 */
   --piece-face-hi: #fdf6e4; /* 棋子受光面 */
