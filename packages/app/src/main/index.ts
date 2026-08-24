@@ -17,6 +17,11 @@ function createWindow(): BrowserWindow {
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
+    // mac 融合原生观感（参考 Chess.app）：藏标题栏、红绿灯内嵌进工具栏；
+    // Windows/Linux 保留系统窗框
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 18 } }
+      : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,

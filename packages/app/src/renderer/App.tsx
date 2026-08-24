@@ -11,6 +11,7 @@ import {
 import type { AppSettings, EngineStatusPayload, LanguageCode, LiveEval } from '@shared/ipc';
 import type { GameSnapshot } from '@shared/game';
 import Board from './components/Board';
+import PlayerBanner from './components/PlayerBanner';
 import SidePanel from './components/SidePanel';
 import Toolbar from './components/Toolbar';
 import WinBar from './components/WinBar';
@@ -128,6 +129,18 @@ export default function App() {
   const t = createT(lang);
 
   const playing = snapshot?.phase === 'playing';
+  const engineSide = snapshot?.engineSide ?? null;
+  // 棋盘方位：上方恒为对手（引擎），下方恒为用户（翻转时引擎执红也在上）
+  const engineBannerSide: Player = engineSide ?? 'second';
+  const userBannerSide: Player = engineSide === 'first' ? 'second' : 'first';
+  const engineName = engineStatus?.name ?? t('panel.engine');
+  const engineThinking = playing === true && snapshot?.thinking === true;
+  const engineCaption =
+    engineSide === null ? '' : (snapshot?.strengthLabel ?? t('panel.engine.unlimited'));
+  const userCaption =
+    playing === true && snapshot?.inCheck === true && snapshot?.turn === userSide
+      ? t('status.check')
+      : '';
 
   return (
     <div className="relative flex h-full flex-col bg-background">
@@ -137,8 +150,8 @@ export default function App() {
         canUndo={playing && (snapshot?.moves.length ?? 0) > 0}
         panelOpen={panelOpen}
         engineStatus={engineStatus}
-        onNewGame={(engineSide, elo) =>
-          runIntent(() => window.superGo.newGame({ engineSide, elo, fromCursor: false }))
+        onNewGame={(side, elo) =>
+          runIntent(() => window.superGo.newGame({ engineSide: side, elo, fromCursor: false }))
         }
         onUndo={() => runIntent(() => window.superGo.undoMove())}
         onResign={() => runIntent(() => window.superGo.resign())}
@@ -158,26 +171,46 @@ export default function App() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <main className="flex min-w-0 flex-1 items-center justify-center gap-5 p-6">
-          <div className="h-full py-10">
-            <WinBar
-              redCp={liveEval?.redCp ?? snapshot?.redCp}
-              redMate={snapshot?.thinking ? liveEval?.redMate : snapshot?.redMate}
+        <main className="flex min-w-0 flex-1 items-center justify-center p-6">
+          <div className="flex h-full w-fit flex-col gap-2.5">
+            <PlayerBanner
+              t={t}
+              side={engineBannerSide}
+              name={engineSide === null ? t('side.black') : engineName}
+              active={playing === true && snapshot?.turn === engineBannerSide}
+              thinking={engineThinking}
+              caption={engineCaption}
             />
-          </div>
-          <div
-            className="h-full max-w-full rounded-xl border border-border bg-surface p-2 shadow-sm"
-            style={{ aspectRatio: '0.90', width: 'auto', flex: '0 1 auto' }}
-          >
-            <Board
-              position={position}
-              selected={selected}
-              targets={legalTargets}
-              lastMove={snapshot?.lastMove ?? null}
-              checkedKing={checkedKing}
-              flip={snapshot?.engineSide === 'first'}
-              themeTick={themeTick}
-              onSquareClick={handleSquareClick}
+            <div className="flex min-h-0 flex-1 gap-4">
+              <div className="h-full py-3">
+                <WinBar
+                  redCp={liveEval?.redCp ?? snapshot?.redCp}
+                  redMate={snapshot?.thinking ? liveEval?.redMate : snapshot?.redMate}
+                />
+              </div>
+              <div
+                className="h-full max-w-full overflow-hidden rounded-xl shadow-md"
+                style={{ aspectRatio: '0.90', width: 'auto', flex: '0 1 auto' }}
+              >
+                <Board
+                  position={position}
+                  selected={selected}
+                  targets={legalTargets}
+                  lastMove={snapshot?.lastMove ?? null}
+                  checkedKing={checkedKing}
+                  flip={snapshot?.engineSide === 'first'}
+                  themeTick={themeTick}
+                  onSquareClick={handleSquareClick}
+                />
+              </div>
+            </div>
+            <PlayerBanner
+              t={t}
+              side={userBannerSide}
+              name={t('player.you')}
+              active={playing === true && snapshot?.turn === userBannerSide}
+              thinking={false}
+              caption={userCaption}
             />
           </div>
         </main>

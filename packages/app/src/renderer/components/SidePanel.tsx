@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import type { Player } from '@super-go/core';
 import type { GameSnapshot } from '@shared/game';
 import type { EngineStatusPayload, LiveEval } from '@shared/ipc';
 import type { MessageKey, TFunction } from '../i18n';
@@ -13,7 +12,7 @@ export interface SidePanelProps {
   onContinue: () => void;
 }
 
-/** 右侧可折叠面板：双方行棋卡 + 状态 + 着法列表 + 引擎信息（§7.3） */
+/** 右侧可折叠面板：状态 + 着法列表 + 引擎信息（双方信息条在棋盘上下沿，§7.3） */
 export default function SidePanel(props: SidePanelProps) {
   const { snapshot, engineStatus } = props;
   const browsing = snapshot !== null && snapshot.phase !== 'playing';
@@ -21,41 +20,10 @@ export default function SidePanel(props: SidePanelProps) {
   const evalText = evalTextOf(props);
   const canContinue = snapshot !== null && browsing && snapshot.moves.length > 0;
 
-  const redName =
-    snapshot?.engineSide === 'second'
-      ? (engineStatus?.name ?? props.t('side.red'))
-      : snapshot?.engineSide === 'first'
-        ? props.t('player.you')
-        : props.t('side.red');
-  const blackName =
-    snapshot?.engineSide === 'second'
-      ? props.t('player.you')
-      : snapshot?.engineSide === 'first'
-        ? (engineStatus?.name ?? props.t('side.black'))
-        : props.t('side.black');
-
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-surface">
-      {/* 双方行棋卡（黑上红下，与棋盘方位一致） */}
-      <div className="space-y-1.5 border-b border-border px-3 py-3">
-        <PlayerRow
-          t={props.t}
-          side="second"
-          name={blackName}
-          active={snapshot?.phase === 'playing' && snapshot.turn === 'second'}
-          thinking={snapshot?.thinking === true && snapshot.engineSide === 'second'}
-        />
-        <PlayerRow
-          t={props.t}
-          side="first"
-          name={redName}
-          active={snapshot?.phase === 'playing' && snapshot.turn === 'first'}
-          thinking={snapshot?.thinking === true && snapshot.engineSide === 'first'}
-        />
-      </div>
-
       {/* 状态行 */}
-      <div className="flex min-h-9 items-center gap-2 px-4 py-1.5">
+      <div className="flex min-h-11 items-center gap-2 border-b border-border px-4">
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${
             status.tone === 'danger'
@@ -74,7 +42,7 @@ export default function SidePanel(props: SidePanelProps) {
       </div>
 
       {canContinue && (
-        <div className="px-3 pb-2">
+        <div className="px-3 py-2">
           <button
             type="button"
             onClick={props.onContinue}
@@ -116,41 +84,6 @@ export default function SidePanel(props: SidePanelProps) {
         </dl>
       </div>
     </aside>
-  );
-}
-
-function PlayerRow({
-  t,
-  side,
-  name,
-  active,
-  thinking,
-}: {
-  t: TFunction;
-  side: Player;
-  name: string;
-  active: boolean;
-  thinking: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
-        active ? 'border-accent/50 bg-accent/5' : 'border-border'
-      }`}
-    >
-      <span
-        className={`h-3 w-3 shrink-0 rounded-full ${
-          side === 'first' ? 'bg-piece-red' : 'bg-piece-black'
-        }`}
-      />
-      <span className="min-w-0 flex-1 truncate text-xs font-medium">{name}</span>
-      {active && (
-        <span
-          className={`h-2 w-2 shrink-0 rounded-full bg-accent ${thinking ? 'animate-pulse' : ''}`}
-          title={thinking ? t('status.thinking') : undefined}
-        />
-      )}
-    </div>
   );
 }
 

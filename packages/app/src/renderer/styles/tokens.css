@@ -4,45 +4,59 @@
  * nativeTheme.themeSource 驱动同一条媒体查询生效（无需 JS 分支）。
  * Canvas 棋盘（P1）从 getComputedStyle 消费同一批变量。
  *
- * 棋盘色板属数据语义域（棋盘/棋子是内容不是装饰，§7.1）：
- * 红 = 红方、黑 = 黑方、accent = 选中/提示/最后一着。
+ * 棋盘色板（参考 macOS Chess 的质感：木框、木纹、立体棋子、软阴影）：
+ * 棋盘/棋子渲染属内容数据域，UI 骨架仍守 §7.1（灰阶 + 单一强调色、控件无拟物）。
  */
 :root {
-  --background: #f7f7f8;
+  --background: #f5f4f1;
   --surface: #ffffff;
-  --border: #e4e4e7;
-  --foreground: #18181b;
-  --muted-foreground: #71717a;
+  --border: #e3e2de;
+  --foreground: #1d1c1a;
+  --muted-foreground: #75736e;
   --accent: #4f46e5;
   --accent-foreground: #ffffff;
   --danger: #dc2626;
   /* 棋盘（Canvas 与 DOM 同源） */
-  --board-surface: #ece2c8;
-  --board-line: #8b7b5e;
-  --board-river-text: #9a8a6b;
-  --piece-surface: #f7f1e0;
-  --piece-border: #b7a888;
-  --piece-red: #b3372a;
-  --piece-black: #33302a;
+  --board-frame: #86602f; /* 深木外框 */
+  --board-frame-hi: #9a7440; /* 外框受光面 */
+  --board-hi: #f2e0b6; /* 盘面亮部（左上） */
+  --board-lo: #e0c288; /* 盘面暗部（右下） */
+  --board-grain: rgba(122, 92, 50, 0.1); /* 木纹 */
+  --board-line: #7c6437; /* 格线 */
+  --board-river-text: #8d7548; /* 楚河汉界 */
+  --piece-face-hi: #fdf6e4; /* 棋子受光面 */
+  --piece-face-lo: #e9dab6; /* 棋子暗面 */
+  --piece-rim: #b3a077; /* 棋子边圈 */
+  --piece-red: #a63424; /* 红方字 */
+  --piece-black: #383327; /* 黑方字 */
+  --piece-emboss: rgba(90, 66, 30, 0.35); /* 刻字浮雕暗侧 */
+  --piece-shadow: rgba(74, 54, 22, 0.35); /* 棋子投影 */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #17181c;
-    --surface: #1f2025;
-    --border: #303136;
-    --foreground: #f4f4f5;
-    --muted-foreground: #9d9da7;
-    --accent: #818cf8;
-    --accent-foreground: #101014;
-    --danger: #f87171;
+    --background: #191817;
+    --surface: #232220;
+    --border: #34322e;
+    --foreground: #f2f1ed;
+    --muted-foreground: #a09e97;
+    --accent: #8f89f2;
+    --accent-foreground: #141312;
+    --danger: #f07a6e;
     /* 棋盘（暗色一等公民：暗木盘 + 提亮墨色保证可读） */
-    --board-surface: #2c2921;
-    --board-line: #7d6f52;
-    --board-river-text: #6f6248;
-    --piece-surface: #3a362c;
-    --piece-border: #5c523d;
-    --piece-red: #e07a6a;
-    --piece-black: #d8d3c6;
+    --board-frame: #3d3021;
+    --board-frame-hi: #4c3d2a;
+    --board-hi: #3b3325;
+    --board-lo: #2e2819;
+    --board-grain: rgba(240, 222, 180, 0.05);
+    --board-line: #8b7a55;
+    --board-river-text: #7a6b49;
+    --piece-face-hi: #565040;
+    --piece-face-lo: #3e392d;
+    --piece-rim: #6b6350;
+    --piece-red: #e88070;
+    --piece-black: #e6e1d3;
+    --piece-emboss: rgba(0, 0, 0, 0.45);
+    --piece-shadow: rgba(0, 0, 0, 0.55);
   }
 }

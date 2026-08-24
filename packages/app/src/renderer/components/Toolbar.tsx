@@ -21,6 +21,10 @@ export interface ToolbarProps {
 
 type Popover = 'none' | 'setup' | 'settings';
 
+/** hiddenInset 标题栏下，header 整体可拖拽窗口；交互元素逐一豁免 */
+const DRAG = { WebkitAppRegion: 'drag' } as React.CSSProperties;
+const NO_DRAG = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
+
 export default function Toolbar(props: ToolbarProps) {
   const [popover, setPopover] = useState<Popover>('none');
   const toggle = (which: Popover): void => setPopover((cur) => (cur === which ? 'none' : which));
@@ -35,13 +39,14 @@ export default function Toolbar(props: ToolbarProps) {
     <button
       key={key}
       type="button"
+      style={NO_DRAG}
       title={props.t(key)}
       disabled={disabled}
       onClick={onClick}
-      className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors disabled:opacity-40 disabled:hover:bg-transparent ${
+      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-transparent ${
         accent
           ? 'text-accent hover:bg-accent/10 disabled:hover:text-accent'
-          : 'text-muted-foreground hover:bg-background hover:text-foreground disabled:hover:text-muted-foreground'
+          : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground disabled:hover:text-muted-foreground'
       }`}
     >
       {icon}
@@ -63,10 +68,13 @@ export default function Toolbar(props: ToolbarProps) {
   };
 
   return (
-    <header className="relative z-10 flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-3">
+    <header
+      style={DRAG}
+      className="relative z-10 flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-3 pl-20"
+    >
       <span className="mr-2 text-sm font-semibold select-none">{props.t('app.name')}</span>
 
-      <div className="relative">
+      <div className="relative" style={NO_DRAG}>
         {iconButton('toolbar.newGame', <IconPlus />, () => toggle('setup'), false, true)}
         {popover === 'setup' && (
           <>
@@ -91,7 +99,7 @@ export default function Toolbar(props: ToolbarProps) {
       {iconButton('toolbar.togglePanel', <IconPanel />, props.onTogglePanel)}
 
       {/* 右侧：引擎状态 + 设置 */}
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2" style={NO_DRAG}>
         <span className="flex items-center gap-1.5">
           <span className={`h-2 w-2 rounded-full ${dotTone()}`} />
           <span className="hidden max-w-40 truncate text-xs text-muted-foreground lg:inline">

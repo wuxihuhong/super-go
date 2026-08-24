@@ -15,7 +15,7 @@ const THINK_TIME_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [
   { value: 5000, label: '5s' },
 ];
 
-/** 外观设置（§7.5：浅/深/跟随系统，切换即时生效并持久化） */
+/** 外观设置（§7.5：浅/深/跟随系统，切换即时生效并持久化）。macOS 系统设置式分组行 */
 export default function SettingsPanel(props: SettingsPanelProps) {
   const [settings, setSettingsState] = useState<AppSettings | null>(null);
 
@@ -31,18 +31,17 @@ export default function SettingsPanel(props: SettingsPanelProps) {
   };
 
   const segmented = <T extends string>(
-    key: string,
     options: ReadonlyArray<{ value: T; label: string }>,
     value: T | undefined,
     onSelect: (value: T) => void,
   ): React.JSX.Element => (
-    <div key={key} className="flex gap-1 rounded-lg bg-background p-1">
+    <div className="flex rounded-lg bg-background p-0.5">
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
           onClick={() => onSelect(option.value)}
-          className={`flex-1 rounded-md px-2 py-1 text-xs transition-colors ${
+          className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
             value === option.value
               ? 'bg-surface text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
@@ -55,16 +54,10 @@ export default function SettingsPanel(props: SettingsPanelProps) {
   );
 
   return (
-    <div className="w-72 rounded-lg border border-border bg-surface p-4 shadow-lg">
-      <h2 className="mb-3 text-sm font-semibold">{props.t('settings.title')}</h2>
-
-      <div className="space-y-3">
-        <div>
-          <span className="mb-1 block text-xs text-muted-foreground">
-            {props.t('settings.theme')}
-          </span>
+    <div className="w-80 rounded-xl border border-border bg-surface p-3 shadow-xl">
+      <div className="divide-y divide-border rounded-lg border border-border bg-background">
+        <Row label={props.t('settings.theme')}>
           {segmented(
-            'theme',
             [
               { value: 'system' as ThemeSetting, label: props.t('settings.theme.system') },
               { value: 'light' as ThemeSetting, label: props.t('settings.theme.light') },
@@ -73,14 +66,9 @@ export default function SettingsPanel(props: SettingsPanelProps) {
             settings?.theme ?? 'system',
             (theme) => patch({ theme }),
           )}
-        </div>
-
-        <div>
-          <span className="mb-1 block text-xs text-muted-foreground">
-            {props.t('settings.language')}
-          </span>
+        </Row>
+        <Row label={props.t('settings.language')}>
           {segmented(
-            'language',
             [
               { value: 'zh' as LanguageCode, label: '中文' },
               { value: 'en' as LanguageCode, label: 'English' },
@@ -89,17 +77,13 @@ export default function SettingsPanel(props: SettingsPanelProps) {
             settings?.language,
             (language) => patch({ language }),
           )}
-        </div>
-
-        <div>
-          <label htmlFor="think-time" className="mb-1 block text-xs text-muted-foreground">
-            {props.t('settings.thinkTime')}
-          </label>
+        </Row>
+        <Row label={props.t('settings.thinkTime')}>
           <select
-            id="think-time"
+            aria-label={props.t('settings.thinkTime')}
             value={settings?.engine?.thinkMs ?? 1000}
             onChange={(e) => patch({ engine: { thinkMs: Number(e.target.value) } })}
-            className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
+            className="rounded-md border border-border bg-surface px-2 py-1 text-xs"
           >
             {THINK_TIME_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -107,8 +91,17 @@ export default function SettingsPanel(props: SettingsPanelProps) {
               </option>
             ))}
           </select>
-        </div>
+        </Row>
       </div>
+    </div>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="flex items-center justify-between gap-4 px-3 py-2.5">
+      <span className="text-xs">{label}</span>
+      {children}
     </div>
   );
 }
