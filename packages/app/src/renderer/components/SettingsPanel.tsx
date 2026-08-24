@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
   normalizeXiangqiStrength,
+  XIANGQI_ELO_MAX,
+  XIANGQI_ELO_MIN,
   XIANGQI_ELO_PRESETS,
   type XiangqiStrengthConfig,
 } from '@super-go/core';
@@ -13,7 +15,7 @@ export interface SettingsPanelProps {
   onSettingsChanged: (next: AppSettings) => void;
 }
 
-const THINK_TIME_OPTIONS = [500, 1000, 2000, 5000];
+const THINK_TIME_OPTIONS = [500, 1000, 2000, 5000, 10_000, 30_000];
 const DEPTH_OPTIONS = [8, 10, 12, 14, 16, 20];
 const NODES_OPTIONS = [50_000, 100_000, 200_000, 400_000, 800_000];
 
@@ -97,24 +99,47 @@ export default function SettingsPanel(props: SettingsPanelProps) {
             (language) => patch({ language }),
           )}
         </Row>
+        <Row label={props.t('settings.sound')}>
+          {segmented(
+            [
+              { value: 'true', label: props.t('settings.sound.on') },
+              { value: 'false', label: props.t('settings.sound.off') },
+            ],
+            (settings?.sound ?? true) ? 'true' : 'false',
+            (value) => patch({ sound: value === 'true' }),
+          )}
+        </Row>
       </Section>
 
       {/* 象棋（棋种独立配置） */}
       <Section title={props.t('settings.xiangqi')}>
         <Row label={props.t('settings.enginePath')}>
-          <input
-            type="text"
-            aria-label={props.t('settings.enginePath')}
-            placeholder={props.t('settings.enginePath.hint')}
-            defaultValue={settings?.xiangqi?.enginePath ?? ''}
-            onBlur={(e) => {
-              const value = e.target.value.trim();
-              if (value !== (settings?.xiangqi?.enginePath ?? '')) {
-                patchXiangqi({ enginePath: value });
-              }
-            }}
-            className="w-44 rounded-md border border-border bg-background px-2 py-1 text-xs"
-          />
+          <span className="flex items-center gap-1">
+            <input
+              type="text"
+              aria-label={props.t('settings.enginePath')}
+              placeholder={props.t('settings.enginePath.hint')}
+              defaultValue={settings?.xiangqi?.enginePath ?? ''}
+              onBlur={(e) => {
+                const value = e.target.value.trim();
+                if (value !== (settings?.xiangqi?.enginePath ?? '')) {
+                  patchXiangqi({ enginePath: value });
+                }
+              }}
+              className="w-40 rounded-md border border-border bg-background px-2 py-1 text-xs"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                void window.superGo.pickEnginePath().then((path) => {
+                  if (path !== null && path !== '') patchXiangqi({ enginePath: path });
+                });
+              }}
+              className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+            >
+              {props.t('settings.browse')}
+            </button>
+          </span>
         </Row>
         <Row label={props.t('settings.strength')}>
           <select
@@ -134,21 +159,44 @@ export default function SettingsPanel(props: SettingsPanelProps) {
         </Row>
         {strength.mode === 'elo' && (
           <Row label={props.t('settings.strength.elo')}>
-            <select
-              aria-label={props.t('settings.strength.elo')}
-              value={XIANGQI_ELO_PRESETS.includes(strength.elo) ? strength.elo : 'custom'}
-              onChange={(e) => {
-                if (e.target.value !== 'custom') patchStrength({ elo: Number(e.target.value) });
-              }}
-              className="rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums"
-            >
-              {XIANGQI_ELO_PRESETS.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-              <option value="custom">{strength.elo}</option>
-            </select>
+            <span className="flex items-center gap-1">
+              <select
+                aria-label={props.t('settings.strength.elo')}
+                value={XIANGQI_ELO_PRESETS.includes(strength.elo) ? strength.elo : 'custom'}
+                onChange={(e) => {
+                  if (e.target.value !== 'custom') patchStrength({ elo: Number(e.target.value) });
+                }}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums"
+              >
+                {XIANGQI_ELO_PRESETS.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+                {!XIANGQI_ELO_PRESETS.includes(strength.elo) && (
+                  <option value="custom">{strength.elo}</option>
+                )}
+              </select>
+              {XIANGQI_ELO_PRESETS.includes(strength.elo) ? (
+                <button
+                  type="button"
+                  onClick={() => patchStrength({ elo: XIANGQI_ELO_PRESETS[0]! + 1 })}
+                  className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+                >
+                  {props.t('settings.strength.custom')}
+                </button>
+              ) : (
+                <input
+                  type="number"
+                  aria-label={props.t('settings.strength.elo')}
+                  min={XIANGQI_ELO_MIN}
+                  max={XIANGQI_ELO_MAX}
+                  value={strength.elo}
+                  onChange={(e) => patchStrength({ elo: Number(e.target.value) })}
+                  className="w-20 rounded-md border border-border bg-background px-2 py-1 text-right text-xs tabular-nums"
+                />
+              )}
+            </span>
           </Row>
         )}
         {strength.mode === 'depth' && (

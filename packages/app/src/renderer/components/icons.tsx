@@ -48,6 +48,22 @@ export const IconPanel = base(
   </>,
 );
 
+export const IconPause = base(
+  <>
+    <rect x="6" y="4" width="4" height="16" rx="1" />
+    <rect x="14" y="4" width="4" height="16" rx="1" />
+  </>,
+);
+
+export const IconPlay = base(<path d="M7 4.5v15l13-7.5z" />);
+
+export const IconGame = base(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3.5 2" />
+  </>,
+);
+
 export const IconGear = base(
   <>
     <circle cx="12" cy="12" r="3" />

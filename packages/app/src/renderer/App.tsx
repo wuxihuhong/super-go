@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   findKing,
   pieceAt,
   pieceSide,
   XiangqiGame,
+  type EngineSide,
   type Player,
   type Point,
   type XiangqiPosition,
@@ -13,10 +14,11 @@ import type { GameSnapshot } from '@shared/game';
 import Board from './components/Board';
 import PlayerBanner from './components/PlayerBanner';
 import SidePanel from './components/SidePanel';
-import Toolbar from './components/Toolbar';
+import Toolbar, { type Popover } from './components/Toolbar';
 import WinBar from './components/WinBar';
 import { createT, detectLanguage } from './i18n';
 import { useElementSize } from './lib/useElementSize';
+import { playSound, setSoundEnabled } from './lib/sound';
 
 /**
  * 对弈主界面（§7.3 三区布局：顶部工具栏 / 居中棋盘 / 右侧可折叠面板）。
@@ -32,6 +34,7 @@ export default function App() {
   const [notice, setNotice] = useState<{ text: string; bad: boolean } | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [themeTick, setThemeTick] = useState(0);
+  const [popover, setPopover] = useState<Popover>('none');
   // 中央区实测高度 → 精确推算棋盘列宽（banner/间距为常量，比例不靠 CSS 拼凑）
   const { ref: mainRef, height: mainHeight } = useElementSize<HTMLElement>();
   const BANNER_H = 36;
@@ -42,6 +45,7 @@ export default function App() {
   useEffect(() => {
     void window.superGo.getSettings().then((s) => {
       setLang(s.language ?? detectLanguage(navigator.languages));
+      setSoundEnabled(s.sound ?? true);
     });
     void window.superGo.getSnapshot().then(setSnapshot);
     // 主题变化时 CSS 变量已自动切换，这里只为触发 canvas 重绘
@@ -79,6 +83,28 @@ export default function App() {
     [snapshot, game],
   );
 
+  // ---- 音效（§7.4：走子/吃子/将军/终局）----
+  const soundPrev = useRef<{ movesLen: number; pieceCount: number; phase: string }>({
+    movesLen: 0,
+    pieceCount: 32,
+    phase: 'idle',
+  });
+  useEffect(() => {
+    if (snapshot === null) return;
+    const pieceCount = position.board.filter((p) => p !== null).length;
+    const prev = soundPrev.current;
+    const next = { movesLen: snapshot.moves.length, pieceCount, phase: snapshot.phase };
+    if (next.movesLen > prev.movesLen) {
+      if (next.phase === 'ended') playSound('end');
+      else if (snapshot.inCheck) playSound('check');
+      else if (next.pieceCount < prev.pieceCount) playSound('capture');
+      else playSound('move');
+    } else if (next.phase === 'ended' && prev.phase === 'playing') {
+      playSound('end');
+    }
+    soundPrev.current = next;
+  }, [snapshot, position]);
+
   const engineSide = snapshot?.engineSide ?? null;
   const spectating = engineSide === 'both'; // 引擎互搏，人观战
   const userSide: Player | null =
@@ -87,6 +113,7 @@ export default function App() {
     snapshot !== null &&
     snapshot.phase === 'playing' &&
     !snapshot.thinking &&
+    !snapshot.paused &&
     userSide !== null &&
     snapshot.turn === userSide;
 
@@ -134,7 +161,47 @@ export default function App() {
   /** 外观设置即时生效（§7.5）：语言切换需同步本地 lang；主题走 nativeTheme 事件自动联动 */
   const handleSettingsChanged = useCallback((next: AppSettings) => {
     setLang(next.language ?? detectLanguage(navigator.languages));
+    setSoundEnabled(next.sound ?? true);
   }, []);
+
+  const handleSetEngineSide = useCallback(
+    (side: EngineSide) => {
+      runIntent(() => window.superGo.setEngineSide(side));
+    },
+    [runIntent],
+  );
+
+  // ---- 快捷键：⌘/Ctrl+N 新对局 · ⌘Z 悔棋 · ⌘, 设置 · 空格 暂停/继续 · ⌘B 侧栏 ----
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target !== null &&
+        (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')
+      ) {
+        return;
+      }
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        setPopover((cur) => (cur === 'setup' ? 'none' : 'setup'));
+      } else if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        runIntent(() => window.superGo.undoMove());
+      } else if (mod && e.key === ',') {
+        e.preventDefault();
+        setPopover((cur) => (cur === 'settings' ? 'none' : 'settings'));
+      } else if (mod && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setPanelOpen((v) => !v);
+      } else if (e.key === ' ' && !mod) {
+        e.preventDefault();
+        runIntent(() => window.superGo.togglePause());
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [runIntent]);
 
   if (lang === null) return null;
   const t = createT(lang);
@@ -148,30 +215,29 @@ export default function App() {
   const engineThinking = playing === true && snapshot?.thinking === true;
   const strengthCaption = snapshot?.strengthLabel ?? t('panel.engine.unlimited');
   const topCaption = engineSide === null ? '' : strengthCaption;
-  const userCaption =
-    playing === true &&
-    userSide !== null &&
-    snapshot?.inCheck === true &&
-    snapshot?.turn === userSide
-      ? t('status.check')
-      : spectating && playing === true && snapshot?.inCheck === true
-        ? t('status.check')
-        : '';
+  const checkCaption = playing === true && snapshot?.inCheck === true ? t('status.check') : '';
 
   return (
     <div className="relative flex h-full flex-col bg-background">
       <Toolbar
         t={t}
+        title={t('app.name')}
         playing={playing}
-        canUndo={playing && (snapshot?.moves.length ?? 0) > 0}
+        paused={snapshot?.paused === true}
+        canUndo={playing === true && (snapshot?.moves.length ?? 0) > 0}
         canResign={playing === true && !spectating}
         panelOpen={panelOpen}
         engineStatus={engineStatus}
+        snapshot={snapshot}
+        popover={popover}
+        onPopoverChange={setPopover}
         onNewGame={(side) =>
           runIntent(() => window.superGo.newGame({ engineSide: side, fromCursor: false }))
         }
         onUndo={() => runIntent(() => window.superGo.undoMove())}
         onResign={() => runIntent(() => window.superGo.resign())}
+        onPauseToggle={() => runIntent(() => window.superGo.togglePause())}
+        onSetEngineSide={handleSetEngineSide}
         onTogglePanel={() => setPanelOpen((v) => !v)}
         onSettingsChanged={handleSettingsChanged}
       />
@@ -234,7 +300,7 @@ export default function App() {
                   }
                   active={playing === true && snapshot?.turn === bottomBannerSide}
                   thinking={spectating && engineThinking && snapshot?.turn === bottomBannerSide}
-                  caption={userCaption}
+                  caption={checkCaption}
                 />
               </div>
             </>

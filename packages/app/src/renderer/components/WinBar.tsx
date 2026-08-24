@@ -19,7 +19,8 @@ export default function WinBar(props: WinBarProps) {
   const proportion = evalProportion(props.redCp, props.redMate);
   const value = evalValueText(props.t, props.redCp, props.redMate);
   return (
-    <div className="flex h-full flex-col items-center gap-1.5 py-1" title={value.text}>
+    // 定宽：评估文本宽度随思考帧变化，不定宽会把居中的棋盘顶得横向抖动
+    <div className="flex h-full w-12 flex-col items-center gap-1.5 py-1" title={value.text}>
       <span className="text-[11px] leading-none text-piece-black select-none">黑</span>
       <div className="relative w-3 flex-1 overflow-hidden rounded-full bg-piece-black/90 ring-1 ring-inset ring-black/10">
         <div
@@ -30,7 +31,7 @@ export default function WinBar(props: WinBarProps) {
       </div>
       <span className="text-[11px] leading-none text-piece-red select-none">红</span>
       <span
-        className={`text-[11px] leading-none tabular-nums select-none ${
+        className={`max-w-full truncate text-[11px] leading-none tabular-nums select-none ${
           value.side === 'red'
             ? 'text-piece-red'
             : value.side === 'black'

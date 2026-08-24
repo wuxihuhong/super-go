@@ -114,6 +114,18 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     expect(bothMoved.engineSide).toBe('both');
     expect(bothMoved.moves.length).toBeGreaterThanOrEqual(4);
     expect(match.playMove({ from: { x: 8, y: 9 }, to: { x: 8, y: 5 } }).ok).toBe(false); // 观战不可落子
+
+    // 暂停/继续：互搏自动连走停得住、放得开
+    const beforePause = latest().moves.length;
+    const pausedResult = await match.togglePause();
+    expect(pausedResult.ok).toBe(true);
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(latest().paused).toBe(true);
+    expect(latest().moves.length).toBe(beforePause); // 暂停期间引擎不出招
+    const resumed = await match.togglePause();
+    expect(resumed.ok).toBe(true);
+    await waitFor((s) => !s.paused && s.moves.length > beforePause);
+    expect(latest().paused).toBe(false);
     match.dispose();
   });
 });

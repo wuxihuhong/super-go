@@ -57,6 +57,7 @@ function createMockApi(): SuperGoApi {
   let tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
   const state = new GameStateMachine('xiangqi');
   let thinking = false;
+  let paused = false;
   let generation = 0;
 
   const snapshotListeners = new Set<(snap: GameSnapshot) => void>();
@@ -123,6 +124,7 @@ function createMockApi(): SuperGoApi {
       fen: game.serialize(pos),
       moves: items,
       cursorNodeId: tree.cursor.id,
+      paused,
       thinking,
       inCheck: isInCheck(pos, pos.turn),
       lastMove:
@@ -192,7 +194,7 @@ function createMockApi(): SuperGoApi {
         finishIfOver();
         pushStatus('ready');
         pushSnapshot();
-        if (state.phase === 'playing' && engineToMoveNow()) fakeEngineTurn(); // 互搏续走
+        if (!paused && state.phase === 'playing' && engineToMoveNow()) fakeEngineTurn(); // 互搏续走
       },
       600 + Math.random() * 600,
     );
@@ -242,6 +244,7 @@ function createMockApi(): SuperGoApi {
     newGame: (intent: NewGameIntent) => {
       generation++;
       thinking = false;
+      paused = false;
       if (state.phase === 'playing') state.abort();
       if (!intent.fromCursor) tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
       const profile = chessStrengthFromConfig(normalizeXiangqiStrength(settings.xiangqi?.strength));
@@ -264,7 +267,7 @@ function createMockApi(): SuperGoApi {
       tree.play(move);
       finishIfOver();
       pushSnapshot();
-      if (state.phase === 'playing' && engineToMoveNow()) fakeEngineTurn();
+      if (!paused && state.phase === 'playing' && engineToMoveNow()) fakeEngineTurn();
       return Promise.resolve({ ok: true });
     },
     undoMove: () => {
@@ -302,9 +305,23 @@ function createMockApi(): SuperGoApi {
       thinking = false;
       state.setEngineSide(side);
       pushSnapshot();
-      if (engineToMoveNow()) fakeEngineTurn();
+      if (!paused && engineToMoveNow()) fakeEngineTurn();
       return Promise.resolve({ ok: true });
     },
+    togglePause: () => {
+      const guard = guardPlaying();
+      if (guard !== null) return Promise.resolve(guard);
+      paused = !paused;
+      if (paused) {
+        generation++;
+        thinking = false;
+      } else if (engineToMoveNow()) {
+        fakeEngineTurn();
+      }
+      pushSnapshot();
+      return Promise.resolve({ ok: true });
+    },
+    pickEnginePath: () => Promise.resolve(null), // 浏览器沙箱无文件对话框，入口由文本框承担
     gotoNode: (nodeId: number) => {
       if (state.phase === 'playing') return Promise.resolve({ ok: false, error: '对局中不可跳转' });
       const walk = (node: typeof tree.root): typeof tree.root | null => {

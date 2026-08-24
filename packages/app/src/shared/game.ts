@@ -28,6 +28,8 @@ export interface GameSnapshot {
   moves: MainlineItem[];
   cursorNodeId: number;
   thinking: boolean;
+  /** 暂停中（引擎不出招；互搏观战的主要控制） */
+  paused: boolean;
   /** 当前行棋方被将 */
   inCheck: boolean;
   lastMove: { from: Point; to: Point } | null;

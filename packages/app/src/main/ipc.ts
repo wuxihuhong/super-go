@@ -1,4 +1,4 @@
-import { app, ipcMain, nativeTheme, type BrowserWindow } from 'electron';
+import { app, dialog, ipcMain, nativeTheme, type BrowserWindow } from 'electron';
 import { IPC_CHANNELS, type AppSettings } from '../shared/ipc';
 import type { MatchService } from './match';
 import type { SettingsStore } from './settings';
@@ -35,6 +35,16 @@ export function registerIpc(
     return next;
   });
 
+  // 引擎路径浏览：系统文件对话框（用户值优先，§5.6 逃生口的图形化入口）
+  ipcMain.handle(IPC_CHANNELS.settingsPickEnginePath, async () => {
+    const win = getMainWindow();
+    const result = await dialog.showOpenDialog(win!, {
+      properties: ['openFile'],
+      message: '选择象棋引擎可执行文件',
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+
   nativeTheme.on('updated', () => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.themeChanged, nativeTheme.shouldUseDarkColors);
   });
@@ -52,6 +62,7 @@ export function registerIpc(
     IPC_CHANNELS.gameSetEngineSide,
     (_e, side: Parameters<MatchService['setEngineSide']>[0]) => match.setEngineSide(side),
   );
+  ipcMain.handle(IPC_CHANNELS.gamePauseToggle, () => match.togglePause());
   ipcMain.handle(IPC_CHANNELS.gameGoto, (_e, nodeId: number) => match.goto(nodeId));
   ipcMain.handle(IPC_CHANNELS.gameSnapshotGet, () => match.snapshot());
 }

@@ -61,6 +61,8 @@ export class MatchService {
   private launchedPath: string | null = null;
   private launching: Promise<void> | null = null;
   private thinking = false;
+  /** 暂停：引擎不出招（互搏观战的主要控制；用户回合不受限） */
+  private paused = false;
   /** 异步流程代数：undo/newGame/setEngineSide 使旧思考结果作废 */
   private generation = 0;
   private recovering = false;
@@ -81,6 +83,7 @@ export class MatchService {
     this.generation++;
     this.adapter?.stopSearch();
     this.thinking = false;
+    this.paused = false;
 
     if (this.state.phase === 'playing') {
       this.state.abort();
@@ -116,7 +119,9 @@ export class MatchService {
     this.tree.play(move);
     this.finishIfOver();
     this.pushSnapshot();
-    if (this.state.phase === 'playing' && this.engineToMoveNow()) void this.engineTurn();
+    if (!this.paused && this.state.phase === 'playing' && this.engineToMoveNow()) {
+      void this.engineTurn();
+    }
     return { ok: true };
   }
 
@@ -141,7 +146,7 @@ export class MatchService {
       this.tree.undo();
     }
     this.pushSnapshot();
-    if (this.engineToMoveNow()) void this.engineTurn(); // 引擎执先时重下第一着
+    if (!this.paused && this.engineToMoveNow()) void this.engineTurn(); // 引擎执先时重下第一着
     return { ok: true };
   }
 
@@ -162,6 +167,23 @@ export class MatchService {
     return { ok: true };
   }
 
+  /** 暂停/继续：暂停时作废进行中的思考并停止自动出招（用户回合仍可落子） */
+  togglePause(): IntentResult {
+    if (this.state.phase !== 'playing') {
+      return { ok: false, error: '对局未在进行中' };
+    }
+    this.paused = !this.paused;
+    if (this.paused) {
+      this.generation++;
+      this.adapter?.stopSearch();
+      this.thinking = false;
+    } else if (this.engineToMoveNow()) {
+      void this.engineTurn();
+    }
+    this.pushSnapshot();
+    return { ok: true };
+  }
+
   /** 对局中变更执方：接管（引擎→人）/ 放手（人→引擎）/ 转为互搏 */
   setEngineSide(engineSide: EngineSide): IntentResult {
     if (this.state.phase !== 'playing') {
@@ -172,7 +194,7 @@ export class MatchService {
     this.thinking = false;
     this.state.setEngineSide(engineSide);
     this.pushSnapshot();
-    if (this.engineToMoveNow()) void this.engineTurn();
+    if (!this.paused && this.engineToMoveNow()) void this.engineTurn();
     return { ok: true };
   }
 
@@ -256,7 +278,7 @@ export class MatchService {
       this.thinking = false;
       this.finishIfOver();
       this.pushSnapshot();
-      if (this.state.phase === 'playing' && this.engineToMoveNow()) {
+      if (!this.paused && this.state.phase === 'playing' && this.engineToMoveNow()) {
         void this.engineTurn(); // 互搏：引擎接着走下一手
       }
     } catch (err) {
@@ -433,6 +455,7 @@ export class MatchService {
       fen: this.game.serialize(pos),
       moves: items,
       cursorNodeId: cursor.id,
+      paused: this.paused,
       thinking: this.thinking,
       inCheck: isInCheck(pos, pos.turn),
       lastMove,

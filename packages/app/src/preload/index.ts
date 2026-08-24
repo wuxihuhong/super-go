@@ -28,6 +28,9 @@ const api: SuperGoApi = {
   resign: () => ipcRenderer.invoke(IPC_CHANNELS.gameResign),
   setEngineSide: (side: Parameters<SuperGoApi['setEngineSide']>[0]) =>
     ipcRenderer.invoke(IPC_CHANNELS.gameSetEngineSide, side),
+  togglePause: () => ipcRenderer.invoke(IPC_CHANNELS.gamePauseToggle),
+  pickEnginePath: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.settingsPickEnginePath) as Promise<string | null>,
   gotoNode: (nodeId: number) => ipcRenderer.invoke(IPC_CHANNELS.gameGoto, nodeId),
   getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.gameSnapshotGet) as Promise<GameSnapshot>,
   onSnapshot: (cb: (snap: GameSnapshot) => void) =>

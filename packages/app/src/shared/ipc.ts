@@ -19,6 +19,7 @@ export const IPC_CHANNELS = {
   appInfo: 'app:info',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
+  settingsPickEnginePath: 'settings:pickEnginePath',
   themeChanged: 'theme:changed',
   // 对弈（P1）
   gameNew: 'game:new',
@@ -26,6 +27,7 @@ export const IPC_CHANNELS = {
   gameUndo: 'game:undo',
   gameResign: 'game:resign',
   gameSetEngineSide: 'game:setEngineSide',
+  gamePauseToggle: 'game:pauseToggle',
   gameGoto: 'game:goto',
   gameSnapshotGet: 'game:snapshotGet',
   gameSnapshot: 'game:snapshot',
@@ -61,6 +63,8 @@ export interface AppSettings {
   theme: ThemeSetting;
   /** 未设置 = 跟随系统语言，兜底中文（§7.5）（公有配置） */
   language?: LanguageCode;
+  /** 音效（§7.4：走子/吃子/将军/终局，公有配置） */
+  sound?: boolean;
   /** 象棋独立配置 */
   xiangqi: XiangqiGameSettings;
 }
@@ -85,6 +89,10 @@ export interface SuperGoApi {
   resign(): Promise<IntentResult>;
   /** 对局中变更执方（接管 / 放手 / 转互搏） */
   setEngineSide(engineSide: EngineSideT): Promise<IntentResult>;
+  /** 暂停/继续（引擎不出招；互搏观战的主要控制） */
+  togglePause(): Promise<IntentResult>;
+  /** 引擎路径浏览（Electron 文件对话框；浏览器 mock 返回 null） */
+  pickEnginePath(): Promise<string | null>;
   gotoNode(nodeId: number): Promise<IntentResult>;
   getSnapshot(): Promise<GameSnapshot>;
   onSnapshot(cb: (snap: GameSnapshot) => void): () => void;
