@@ -110,11 +110,24 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     const ended = await waitFor((s) => s.phase === 'ended');
     expect(ended.result).toEqual({ winner: 'second', reason: 'resign' });
 
+    // 终局悔棋复活：撤回一对着法回到对局中（保留执方）
+    const revived = await match.undo();
+    expect(revived.ok).toBe(true);
+    const backPlaying = await waitFor((s) => s.phase === 'playing' && s.moves.length === 2);
+    expect(backPlaying.engineSide).toBe('second');
+    expect(backPlaying.turn).toBe('first');
+    // 再认输进入终局，供后续复盘段落使用
+    match.playMove({ from: { x: 1, y: 9 }, to: { x: 2, y: 7 } });
+    await waitFor((s) => s.moves.length === 4);
+    await match.resign();
+    const endedAgain = await waitFor((s) => s.phase === 'ended');
+    expect(endedAgain.moves.length).toBe(4);
+
     // 复盘：对局结束后跳回第 1 着
-    const jumped = match.goto(ended.moves[0]!.nodeId);
+    const jumped = match.goto(endedAgain.moves[0]!.nodeId);
     expect(jumped.ok).toBe(true);
     expect(latest().moves.length).toBe(1);
-    expect(latest().fen).not.toBe(ended.fen);
+    expect(latest().fen).not.toBe(endedAgain.fen);
 
     // 从当前节点续弈：引擎执黑接手当前局面（快照式同步覆盖非初始局面）
     const continued = await match.newGame({ engineSide: 'second', fromCursor: true });

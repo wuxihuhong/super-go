@@ -63,6 +63,9 @@ export class MatchService {
   private thinking = false;
   /** 暂停：引擎不出招（互搏观战的主要控制；用户回合不受限） */
   private paused = false;
+  /** 终局悔棋复活用：对局的执方与棋力（end 会清空 state，这里留底） */
+  private lastEngineSide: EngineSide = 'second';
+  private lastStrength: StrengthProfile | null = null;
   /** 异步流程代数：undo/newGame/setEngineSide 使旧思考结果作废 */
   private generation = 0;
   private recovering = false;
@@ -99,6 +102,8 @@ export class MatchService {
     const profile = chessStrengthFromConfig(this.getStrengthConfig());
     await this.applyStrength(uciSpecOf(profile));
     this.state.start({ engineSide: intent.engineSide, strength: profile });
+    this.lastEngineSide = intent.engineSide;
+    this.lastStrength = profile;
     this.pushSnapshot();
     if (this.engineToMoveNow()) void this.engineTurn();
     return { ok: true };
@@ -132,7 +137,11 @@ export class MatchService {
   }
 
   async undo(): Promise<IntentResult> {
-    if (this.state.phase !== 'playing') {
+    if (this.state.phase === 'ended') {
+      // 终局悔棋复活：撤回着法、保留原执方与棋力继续对弈（终局即复位的强度重新下发）
+      const revived = await this.newGame({ engineSide: this.lastEngineSide, fromCursor: true });
+      if (!revived.ok) return revived;
+    } else if (this.state.phase !== 'playing') {
       return { ok: false, error: '对局未在进行中' };
     }
     if (this.tree.cursor === this.tree.root) {
@@ -199,6 +208,7 @@ export class MatchService {
     this.adapter?.stopSearch();
     this.thinking = false;
     this.state.setEngineSide(engineSide);
+    this.lastEngineSide = engineSide;
     this.pushSnapshot();
     if (!this.paused && this.engineToMoveNow()) void this.engineTurn();
     return { ok: true };
@@ -209,6 +219,7 @@ export class MatchService {
     if (this.state.phase !== 'playing') return;
     const profile = chessStrengthFromConfig(this.getStrengthConfig());
     this.state.updateStrength(profile);
+    this.lastStrength = profile;
     await this.applyStrength(uciSpecOf(profile));
     this.pushSnapshot();
   }

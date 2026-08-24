@@ -19,7 +19,7 @@ export interface BoardProps {
 }
 
 /** 交叉点边缘预留（cell 的倍数）；外框占其一半 */
-const PAD_CELLS = 0.6;
+const PAD_CELLS = 0.85;
 
 /**
  * 象棋棋盘（Canvas，devicePixelRatio 高分屏）。
@@ -88,7 +88,7 @@ export default function Board(props: BoardProps) {
     ctx.fillStyle = frameGrad;
     roundRect(ctx, 0, 0, width, height, 14);
     ctx.fill();
-    const frameW = Math.min(padX, padY) * 0.45;
+    const frameW = Math.min(padX, padY) * 0.42;
     // 框内沿：上亮下暗（机加工倒角感）
     ctx.strokeStyle = 'rgba(0,0,0,0.16)';
     ctx.lineWidth = 1;
@@ -163,6 +163,23 @@ export default function Board(props: BoardProps) {
     ctx.fillText('楚 河', (px(0) + px(2)) / 2, riverY);
     ctx.fillText('漢 界', (px(6) + px(8)) / 2, riverY);
     ctx.restore();
+
+    // ---- 边沿坐标编号（传统盘面：黑方阿拉伯数字、红方汉字，随翻转跟随各自一侧）----
+    const CN_NUMS = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    ctx.fillStyle = c.river;
+    ctx.font = `${cell * 0.24}px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const labelY1 = frameW / 2 + 1;
+    const labelY2 = height - frameW / 2 - 1;
+    for (let i = 0; i < 9; i++) {
+      // 黑（second）从黑方左往右 1-9；红（first）从红方左往右 一-九（与对方互为反向）
+      const blackVal = props.flip ? 9 - i : i + 1;
+      const redVal = props.flip ? i + 1 : 9 - i;
+      const topIsRed = props.flip;
+      ctx.fillText(topIsRed ? (CN_NUMS[redVal - 1] ?? '') : String(blackVal), px(i), labelY1);
+      ctx.fillText(topIsRed ? String(blackVal) : (CN_NUMS[redVal - 1] ?? ''), px(i), labelY2);
+    }
 
     // ---- 最后一着（落点柔和高亮 + 角标）----
     if (props.lastMove !== null) {

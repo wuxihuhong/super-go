@@ -40,7 +40,8 @@ export default function App() {
   const BANNER_H = 36;
   const GAP = 8;
   const boardHeight = Math.max(240, mainHeight - BANNER_H * 2 - GAP * 2);
-  const boardColumnWidth = boardHeight * 0.9;
+  // 画布宽高比 =（8+2×0.85）/（9+2×0.85），含坐标编号边距
+  const boardColumnWidth = boardHeight * 0.907;
 
   useEffect(() => {
     void window.superGo.getSettings().then((s) => {
@@ -224,7 +225,9 @@ export default function App() {
         title={t('app.name')}
         playing={playing}
         paused={snapshot?.paused === true}
-        canUndo={playing === true && (snapshot?.moves.length ?? 0) > 0}
+        canUndo={
+          (playing === true || snapshot?.phase === 'ended') && (snapshot?.moves.length ?? 0) > 0
+        }
         canResign={playing === true && !spectating}
         panelOpen={panelOpen}
         engineStatus={engineStatus}

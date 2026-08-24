@@ -58,6 +58,8 @@ function createMockApi(): SuperGoApi {
   const state = new GameStateMachine('xiangqi');
   let thinking = false;
   let paused = false;
+  /** 终局悔棋复活用：end 清空 state 前留底执方 */
+  let lastEngineSide: EngineSide = 'second';
   let generation = 0;
 
   const snapshotListeners = new Set<(snap: GameSnapshot) => void>();
@@ -249,6 +251,7 @@ function createMockApi(): SuperGoApi {
       if (!intent.fromCursor) tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
       const profile = chessStrengthFromConfig(normalizeXiangqiStrength(settings.xiangqi?.strength));
       state.start({ engineSide: intent.engineSide, strength: profile });
+      lastEngineSide = intent.engineSide;
       pushStatus('ready');
       pushSnapshot();
       if (engineToMoveNow()) fakeEngineTurn();
@@ -275,8 +278,14 @@ function createMockApi(): SuperGoApi {
       return Promise.resolve({ ok: true });
     },
     undoMove: () => {
-      const guard = guardPlaying();
-      if (guard !== null) return Promise.resolve(guard);
+      if (state.phase === 'ended') {
+        // 终局悔棋复活：保留执方从当前局面继续（对齐 MatchService）
+        state.reset();
+        state.start({ engineSide: lastEngineSide, strength: null });
+      } else {
+        const guard = guardPlaying();
+        if (guard !== null) return Promise.resolve(guard);
+      }
       if (tree.cursor === tree.root) return Promise.resolve({ ok: false, error: '无可悔之着' });
       generation++;
       thinking = false;
