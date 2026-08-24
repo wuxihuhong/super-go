@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import type { SuperGoApi } from '@shared/ipc';
 
 declare global {

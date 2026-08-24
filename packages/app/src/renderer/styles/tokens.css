@@ -1,8 +1,13 @@
 /**
  * 语义色 token（§7.5）：浅深两套同源定义，组件禁止硬编码色值。
- * 跟随系统 = prefers-color-scheme 媒体查询；手动浅/深由 main 进程
- * nativeTheme.themeSource 驱动同一条媒体查询生效（无需 JS 分支）。
- * Canvas 棋盘（P1）从 getComputedStyle 消费同一批变量。
+ *
+ * 生效通道：
+ * - Electron：跟随系统走 prefers-color-scheme 媒体查询；手动浅/深由 main 进程
+ *   nativeTheme.themeSource 驱动同一条媒体查询（无需 JS 分支）。
+ * - 浏览器开发模式（mock API）：无 nativeTheme，用 html.theme-dark/.theme-light
+ *   class 覆盖（class 特异性高于 :root，写在媒体查询之后）。
+ *
+ * Canvas 棋盘从 getComputedStyle 消费同一批变量。
  *
  * 棋盘色板（参考 macOS Chess 的质感：木框、木纹、立体棋子、软阴影）：
  * 棋盘/棋子渲染属内容数据域，UI 骨架仍守 §7.1（灰阶 + 单一强调色、控件无拟物）。
@@ -59,4 +64,55 @@
     --piece-emboss: rgba(0, 0, 0, 0.45);
     --piece-shadow: rgba(0, 0, 0, 0.55);
   }
+}
+
+/* 浏览器开发模式的手动主题覆盖（Electron 内由 nativeTheme 驱动媒体查询，不经过这里） */
+html.theme-dark {
+  --background: #191817;
+  --surface: #232220;
+  --border: #34322e;
+  --foreground: #f2f1ed;
+  --muted-foreground: #a09e97;
+  --accent: #8f89f2;
+  --accent-foreground: #141312;
+  --danger: #f07a6e;
+  --board-frame: #3d3021;
+  --board-frame-hi: #4c3d2a;
+  --board-hi: #3b3325;
+  --board-lo: #2e2819;
+  --board-grain: rgba(240, 222, 180, 0.05);
+  --board-line: #8b7a55;
+  --board-river-text: #7a6b49;
+  --piece-face-hi: #565040;
+  --piece-face-lo: #3e392d;
+  --piece-rim: #6b6350;
+  --piece-red: #e88070;
+  --piece-black: #e6e1d3;
+  --piece-emboss: rgba(0, 0, 0, 0.45);
+  --piece-shadow: rgba(0, 0, 0, 0.55);
+}
+
+html.theme-light {
+  --background: #f5f4f1;
+  --surface: #ffffff;
+  --border: #e3e2de;
+  --foreground: #1d1c1a;
+  --muted-foreground: #75736e;
+  --accent: #4f46e5;
+  --accent-foreground: #ffffff;
+  --danger: #dc2626;
+  --board-frame: #97713b;
+  --board-frame-hi: #a67f48;
+  --board-hi: #f1dfb8;
+  --board-lo: #e5c99a;
+  --board-grain: rgba(122, 92, 50, 0.06);
+  --board-line: #7c6437;
+  --board-river-text: #8d7548;
+  --piece-face-hi: #fdf6e4;
+  --piece-face-lo: #e9dab6;
+  --piece-rim: #b3a077;
+  --piece-red: #a63424;
+  --piece-black: #383327;
+  --piece-emboss: rgba(90, 66, 30, 0.35);
+  --piece-shadow: rgba(74, 54, 22, 0.35);
 }
