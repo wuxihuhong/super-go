@@ -1,52 +1,45 @@
-# Super-Go
+# Super Go
 
-双棋种（围棋 + 象棋）对弈工具。权威设计文档：[DESIGN.md](./DESIGN.md)。
+双棋种（象棋 + 围棋）桌面对弈工具，支持本机人机对弈与连线代打两条核心场景。
 
-## 环境
+当前进度：**象棋人机对弈已完整可用**（见下）；围棋与连线代打在开发计划中（[DESIGN.md §9](./DESIGN.md)）。
 
-- Node ≥ 22，pnpm ≥ 10
-- 仓库布局：pnpm workspaces 双包
+## 象棋人机对弈
 
-```
-packages/core   @super-go/core   领域内核（Game 接口 / MoveTree / 对弈状态机 / 象棋规则·FEN·记谱·PGN·Zobrist），零 Electron 依赖，Node 直接单测
-packages/app    @super-go/app    Electron 壳（main / preload / renderer，electron-vite + React + Tailwind）
-engines/chess/                   Pikafish 发行包（gitignore；放入即用，见下）
-```
+- **3D 棋盘**（Three.js）：木盘 + 车削棋子 + 阴刻字 + 软阴影，固定对弈视角；可在设置中切换平面棋盘
+- **棋力可选**：等级分 / 搜索深度 / 思考时长 / 节点数 / 不设限，五种模式；对局中可随时调整
+- **引擎执方任选**：执红、执黑或引擎左右互搏观战
+- **评估走势图**：每一步的引擎评估折线（红方视角），着法列表与引擎信息同栏
+- 完整对局控制：悔棋、认输、暂停、复盘跳转、终局悔棋复活
+- 走子 / 吃子 / 将军 / 终局音效（可关），中 / 英 / 日界面，浅 / 深 / 跟随系统主题
+- 窗口置顶开关（连线代打时压在第三方平台之上）
+- 内置 [Pikafish](https://github.com/official-pikafish/Pikafish) 引擎，安装包开箱即用
 
-## 象棋引擎（P1）
+## 下载与运行
 
-- 引擎放 `engines/chess/<发行包>/`（如 `pikafish-20260131/MacOS/pikafish-apple-silicon`），main 进程按平台自动探测；用户可在设置 `engine.path` 覆盖。
-- 引擎必须与其 NNUE 权重同目录（`EvalFile` 默认相对路径），适配器以二进制目录为 cwd 启动。
-- 无引擎时 UI 进入"未找到引擎"状态，单测自动 skip，不阻塞门禁。
-
-## 常用命令
+从源码构建安装包（macOS dmg / Windows 安装程序，自动携带引擎）：
 
 ```bash
-pnpm install        # 安装（首次会下载 Electron 二进制）
-pnpm dev            # Electron 开发模式（HMR，只启动桌面应用）
-pnpm dev:web        # 浏览器开发模式（只起 renderer 的 vite 服务，见下）
-pnpm build          # 生产构建（输出 packages/app/out/）
-pnpm test           # vitest（core 单测 + app 协议/引擎集成测试；无引擎自动 skip 引擎部分）
-pnpm typecheck      # 全仓 TypeScript 检查
-pnpm lint           # ESLint
-pnpm gate           # 门禁 = typecheck + lint + test
-pnpm format         # Prettier 格式化
+pnpm install
+pnpm build-app          # 产物在 packages/app/dist/
 ```
 
-## 浏览器开发模式（UI 调试）
+或直接运行开发版：
 
-`pnpm dev:web` 后用浏览器打开 <http://localhost:5174>：没有 Electron preload，
-renderer 自动注入 mock 后端（`src/renderer/lib/mockApi.ts`，仅 DEV 打包）——
-用 core 真规则在页面内跑对弈，引擎应招用材料评估加权的随机合法着模拟，
-胜率条/思考帧/复盘等全部 UI 状态可离线调试；设置持久化到 localStorage，主题走 class 覆盖。
-注意：浏览器安全沙箱不能起本地进程，真实 Pikafish 对弈与原生能力用 `pnpm dev`（Electron）验证。
-另：`SUPER_GO_SHOT=<路径> pnpm dev` 为 Electron UI 自检开关（启动 3s 后自动截图 + 转发 renderer 控制台）。
+```bash
+pnpm dev                # Electron 开发模式
+```
 
-## 分层铁律（详见 AGENTS.md）
+## 开发
 
-- `core` 零 Electron 依赖、零运行时依赖——这是"core 可在 Node 直接单测"门禁的检验标准。
-- 引擎进程、识别推理、原生 IO 全在 main 进程；renderer 只经 IPC 拿数据。
-- `LinkerService` 是全项目唯一允许平台耦合的模块。
-- UI 文案一律走路由键资源包（`packages/app/src/renderer/i18n/`），禁止硬编码；
-  颜色一律走语义 token（`styles/tokens.css`），禁止硬编码色值，Canvas 棋盘消费同一套。
-- 强度档生命周期绑定对局：对局结束/中断立即复位满强度（MatchService 统一管理，AGENTS.md 粘滞门禁）。
+- Node ≥ 22、pnpm ≥ 10
+- `pnpm test` 单测（规则 / 协议 / 引擎集成）；`pnpm gate` = typecheck + lint + test
+- `pnpm dev:web` 浏览器模式调试 UI（无 Electron，自动注入 mock 后端，<http://localhost:5174>）
+
+```
+packages/core   领域内核：规则 / 记谱 / 对弈状态机 / 着法树，零依赖纯 TS
+packages/app    Electron 应用：main（引擎进程 / IPC）、renderer（React UI）
+engines/chess/  象棋引擎发行包（gitignore，dev 时按平台自动探测；打包版内置无需放置）
+```
+
+设计文档与开发约定见 [DESIGN.md](./DESIGN.md) 与 [AGENTS.md](./AGENTS.md)。
