@@ -21,7 +21,11 @@ export interface BoardProps {
 export default function Board(props: BoardProps) {
   const { ref, width, height } = useElementSize<HTMLDivElement>();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const geometryRef = useRef<{ pad: number; cell: number }>({ pad: 0, cell: 0 });
+  const geometryRef = useRef<{ padX: number; padY: number; cell: number }>({
+    padX: 0,
+    padY: 0,
+    cell: 0,
+  });
 
   const draw = useCallback((): void => {
     const canvas = canvasRef.current;
@@ -36,11 +40,13 @@ export default function Board(props: BoardProps) {
     canvas.style.height = `${height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // 几何：9 列 10 行交叉点
-    const cell = Math.min((width - 24) / 8, (height - 24) / 9);
+    // 几何：9 列 10 行交叉点；边缘预留按格距比例（棋子半径 0.44 cell），
+    // 固定像素边距会让顶/底行棋子被画布裁掉
+    const PAD_CELLS = 0.56;
+    const cell = Math.min(width / (8 + 2 * PAD_CELLS), height / (9 + 2 * PAD_CELLS));
     const padX = (width - cell * 8) / 2;
     const padY = (height - cell * 9) / 2;
-    geometryRef.current = { pad: padX, cell };
+    geometryRef.current = { padX, padY, cell };
 
     const px = (gx: number): number => padX + gx * cell;
     const py = (gy: number): number => padY + gy * cell;
@@ -186,9 +192,9 @@ export default function Board(props: BoardProps) {
     const canvas = canvasRef.current;
     if (canvas === null) return;
     const rect = canvas.getBoundingClientRect();
-    const { pad, cell } = geometryRef.current;
-    const gx = Math.round((event.clientX - rect.left - pad) / cell);
-    const gy = Math.round((event.clientY - rect.top - pad) / cell);
+    const { padX, padY, cell } = geometryRef.current;
+    const gx = Math.round((event.clientX - rect.left - padX) / cell);
+    const gy = Math.round((event.clientY - rect.top - padY) / cell);
     if (gx < 0 || gx > 8 || gy < 0 || gy > 9) return;
     props.onSquareClick(props.flip ? 8 - gx : gx, props.flip ? 9 - gy : gy);
   };

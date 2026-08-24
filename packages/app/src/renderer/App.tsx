@@ -180,7 +180,7 @@ export default function App() {
           </div>
           <div
             className="h-full max-w-full"
-            style={{ aspectRatio: '0.94', width: 'auto', flex: '0 1 auto' }}
+            style={{ aspectRatio: '0.90', width: 'auto', flex: '0 1 auto' }}
           >
             <Board
               position={position}
