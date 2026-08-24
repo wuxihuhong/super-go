@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+
+# build output
+out/
+dist/
+build/
+
+# test coverage
+coverage/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# local env
+*.local
+.env
+
+# zcode session artifacts
+.zcode/
+
+# electron
+packages/app/release/

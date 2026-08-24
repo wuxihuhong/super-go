@@ -1,0 +1,25 @@
+{
+  "name": "super-go",
+  "private": true,
+  "version": "0.0.1",
+  "description": "双棋种（围棋 + 象棋）对弈工具",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/ensure-electron.mjs",
+    "dev": "pnpm --filter @super-go/app dev",
+    "build": "pnpm --filter @super-go/app build",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "gate": "pnpm typecheck && pnpm lint && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.10.1",
+    "eslint": "^10.9.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.4"
+  }
+}

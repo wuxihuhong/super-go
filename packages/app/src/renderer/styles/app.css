@@ -1,0 +1,29 @@
+@import './tokens.css';
+@import 'tailwindcss';
+
+/* token → Tailwind 工具类映射（bg-surface / text-muted-foreground / border-border …） */
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-danger: var(--danger);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable', 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans', 'Microsoft YaHei', Meiryo, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

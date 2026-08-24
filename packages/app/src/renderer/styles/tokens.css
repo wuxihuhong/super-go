@@ -1,0 +1,29 @@
+/**
+ * 语义色 token（§7.5）：浅深两套同源定义，组件禁止硬编码色值。
+ * 跟随系统 = prefers-color-scheme 媒体查询；手动浅/深由 main 进程
+ * nativeTheme.themeSource 驱动同一条媒体查询生效（无需 JS 分支）。
+ * Canvas 棋盘（P1）从 getComputedStyle 消费同一批变量。
+ */
+:root {
+  --background: #f7f7f8;
+  --surface: #ffffff;
+  --border: #e4e4e7;
+  --foreground: #18181b;
+  --muted-foreground: #71717a;
+  --accent: #4f46e5;
+  --accent-foreground: #ffffff;
+  --danger: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #17181c;
+    --surface: #1f2025;
+    --border: #303136;
+    --foreground: #f4f4f5;
+    --muted-foreground: #9d9da7;
+    --accent: #818cf8;
+    --accent-foreground: #101014;
+    --danger: #f87171;
+  }
+}
