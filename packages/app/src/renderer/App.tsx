@@ -8,7 +8,7 @@ import {
   type Point,
   type XiangqiPosition,
 } from '@super-go/core';
-import type { EngineStatusPayload, LanguageCode, LiveEval } from '@shared/ipc';
+import type { AppSettings, EngineStatusPayload, LanguageCode, LiveEval } from '@shared/ipc';
 import type { GameSnapshot } from '@shared/game';
 import Board from './components/Board';
 import SidePanel from './components/SidePanel';
@@ -119,31 +119,37 @@ export default function App() {
     });
   }, []);
 
+  /** 外观设置即时生效（§7.5）：语言切换需同步本地 lang；主题走 nativeTheme 事件自动联动 */
+  const handleSettingsChanged = useCallback((next: AppSettings) => {
+    setLang(next.language ?? detectLanguage(navigator.languages));
+  }, []);
+
   if (lang === null) return null;
   const t = createT(lang);
 
   const playing = snapshot?.phase === 'playing';
-  const canContinue =
-    snapshot !== null && snapshot.phase !== 'playing' && snapshot.moves.length > 0;
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div className="relative flex h-full flex-col bg-background">
       <Toolbar
         t={t}
         playing={playing}
         canUndo={playing && (snapshot?.moves.length ?? 0) > 0}
         panelOpen={panelOpen}
+        engineStatus={engineStatus}
         onNewGame={(engineSide, elo) =>
           runIntent(() => window.superGo.newGame({ engineSide, elo, fromCursor: false }))
         }
         onUndo={() => runIntent(() => window.superGo.undoMove())}
         onResign={() => runIntent(() => window.superGo.resign())}
         onTogglePanel={() => setPanelOpen((v) => !v)}
+        onSettingsChanged={handleSettingsChanged}
       />
 
+      {/* 通知浮层（不挤压布局） */}
       {notice !== null && (
         <div
-          className={`flex min-h-8 items-center px-4 py-1 text-xs ${
+          className={`pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-md border border-border bg-surface px-4 py-2 text-xs shadow-md ${
             notice.bad ? 'text-danger' : 'text-muted-foreground'
           }`}
         >
@@ -152,15 +158,15 @@ export default function App() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <main className="flex min-w-0 flex-1 items-center justify-center gap-4 p-6">
-          <div className="h-full py-8">
+        <main className="flex min-w-0 flex-1 items-center justify-center gap-5 p-6">
+          <div className="h-full py-10">
             <WinBar
               redCp={liveEval?.redCp ?? snapshot?.redCp}
               redMate={snapshot?.thinking ? liveEval?.redMate : snapshot?.redMate}
             />
           </div>
           <div
-            className="h-full max-w-full"
+            className="h-full max-w-full rounded-xl border border-border bg-surface p-2 shadow-sm"
             style={{ aspectRatio: '0.90', width: 'auto', flex: '0 1 auto' }}
           >
             <Board
@@ -183,26 +189,14 @@ export default function App() {
             engineStatus={engineStatus}
             liveEval={liveEval}
             onGoto={(nodeId) => runIntent(() => window.superGo.gotoNode(nodeId))}
+            onContinue={() =>
+              runIntent(() =>
+                window.superGo.newGame({ engineSide: 'second', elo: null, fromCursor: true }),
+              )
+            }
           />
         )}
       </div>
-
-      {canContinue && (
-        <footer className="flex h-10 shrink-0 items-center justify-end border-t border-border bg-surface px-4">
-          <button
-            type="button"
-            onClick={() => {
-              // 续弈沿用"我执红 + 不设限"最保守档，需要改档先走新对局面板
-              runIntent(() =>
-                window.superGo.newGame({ engineSide: 'second', elo: null, fromCursor: true }),
-              );
-            }}
-            className="rounded-md border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
-          >
-            {t('setup.continueFrom')}
-          </button>
-        </footer>
-      )}
     </div>
   );
 }

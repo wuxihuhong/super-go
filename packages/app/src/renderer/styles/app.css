@@ -31,3 +31,24 @@ body {
     'PingFang SC', 'Hiragino Sans', 'Microsoft YaHei', Meiryo, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* 键盘可达性：统一焦点环（单一强调色） */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 细滚动条（着法列表等滚动区域） */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}

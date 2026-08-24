@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type { Player } from '@super-go/core';
 import type { GameSnapshot } from '@shared/game';
 import type { EngineStatusPayload, LiveEval } from '@shared/ipc';
 import type { MessageKey, TFunction } from '../i18n';
@@ -9,19 +10,52 @@ export interface SidePanelProps {
   engineStatus: EngineStatusPayload | null;
   liveEval: LiveEval | null;
   onGoto: (nodeId: number) => void;
+  onContinue: () => void;
 }
 
-/** 右侧可折叠面板：状态行 + 着法列表 + 引擎信息（§7.3） */
+/** 右侧可折叠面板：双方行棋卡 + 状态 + 着法列表 + 引擎信息（§7.3） */
 export default function SidePanel(props: SidePanelProps) {
-  const { snapshot } = props;
+  const { snapshot, engineStatus } = props;
   const browsing = snapshot !== null && snapshot.phase !== 'playing';
   const status = statusOf(props);
   const evalText = evalTextOf(props);
+  const canContinue = snapshot !== null && browsing && snapshot.moves.length > 0;
+
+  const redName =
+    snapshot?.engineSide === 'second'
+      ? (engineStatus?.name ?? props.t('side.red'))
+      : snapshot?.engineSide === 'first'
+        ? props.t('player.you')
+        : props.t('side.red');
+  const blackName =
+    snapshot?.engineSide === 'second'
+      ? props.t('player.you')
+      : snapshot?.engineSide === 'first'
+        ? (engineStatus?.name ?? props.t('side.black'))
+        : props.t('side.black');
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-surface">
+      {/* 双方行棋卡（黑上红下，与棋盘方位一致） */}
+      <div className="space-y-1.5 border-b border-border px-3 py-3">
+        <PlayerRow
+          t={props.t}
+          side="second"
+          name={blackName}
+          active={snapshot?.phase === 'playing' && snapshot.turn === 'second'}
+          thinking={snapshot?.thinking === true && snapshot.engineSide === 'second'}
+        />
+        <PlayerRow
+          t={props.t}
+          side="first"
+          name={redName}
+          active={snapshot?.phase === 'playing' && snapshot.turn === 'first'}
+          thinking={snapshot?.thinking === true && snapshot.engineSide === 'first'}
+        />
+      </div>
+
       {/* 状态行 */}
-      <div className="flex min-h-11 items-center gap-2 border-b border-border px-4">
+      <div className="flex min-h-9 items-center gap-2 px-4 py-1.5">
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${
             status.tone === 'danger'
@@ -32,16 +66,28 @@ export default function SidePanel(props: SidePanelProps) {
           }`}
         />
         <span className="text-xs text-foreground">{status.text}</span>
-        {status.check && (
+        {status.check !== undefined && (
           <span className="ml-auto rounded border border-danger px-1.5 py-0.5 text-[10px] text-danger">
             {status.check}
           </span>
         )}
       </div>
 
+      {canContinue && (
+        <div className="px-3 pb-2">
+          <button
+            type="button"
+            onClick={props.onContinue}
+            className="w-full rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground"
+          >
+            {props.t('setup.continueFrom')}
+          </button>
+        </div>
+      )}
+
       {/* 着法列表 */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <h2 className="px-4 pt-3 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <h2 className="px-4 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {props.t('panel.moves')}
         </h2>
         <MoveList t={props.t} snapshot={snapshot} browsing={browsing} onGoto={props.onGoto} />
@@ -53,10 +99,10 @@ export default function SidePanel(props: SidePanelProps) {
           {props.t('panel.engine')}
         </h2>
         <dl className="space-y-1 text-xs">
-          <Row label={props.t('panel.engine')} value={props.engineStatus?.name ?? '—'} />
+          <Row label={props.t('panel.engine')} value={engineStatus?.name ?? '—'} />
           <Row
             label={props.t('toolbar.newGame')}
-            value={engineStatusLabel(props.t, props.engineStatus?.status)}
+            value={engineStatusLabel(props.t, engineStatus?.status)}
           />
           <Row
             label={props.t('panel.engine.strength')}
@@ -70,6 +116,41 @@ export default function SidePanel(props: SidePanelProps) {
         </dl>
       </div>
     </aside>
+  );
+}
+
+function PlayerRow({
+  t,
+  side,
+  name,
+  active,
+  thinking,
+}: {
+  t: TFunction;
+  side: Player;
+  name: string;
+  active: boolean;
+  thinking: boolean;
+}): React.JSX.Element {
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${
+        active ? 'border-accent/50 bg-accent/5' : 'border-border'
+      }`}
+    >
+      <span
+        className={`h-3 w-3 shrink-0 rounded-full ${
+          side === 'first' ? 'bg-piece-red' : 'bg-piece-black'
+        }`}
+      />
+      <span className="min-w-0 flex-1 truncate text-xs font-medium">{name}</span>
+      {active && (
+        <span
+          className={`h-2 w-2 shrink-0 rounded-full bg-accent ${thinking ? 'animate-pulse' : ''}`}
+          title={thinking ? t('status.thinking') : undefined}
+        />
+      )}
+    </div>
   );
 }
 
