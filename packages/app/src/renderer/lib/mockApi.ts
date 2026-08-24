@@ -22,12 +22,7 @@ import {
   type XiangqiMove,
   type XiangqiPosition,
 } from '@super-go/core';
-import type {
-  AppSettings,
-  EngineStatusPayload,
-  SuperGoApi,
-  ThemeSetting,
-} from '@shared/ipc';
+import type { AppSettings, EngineStatusPayload, SuperGoApi, ThemeSetting } from '@shared/ipc';
 import type {
   GameSnapshot,
   IntentResult,

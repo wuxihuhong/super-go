@@ -23,7 +23,8 @@ engines/chess/                   Pikafish 发行包（gitignore；放入即用�
 
 ```bash
 pnpm install        # 安装（首次会下载 Electron 二进制）
-pnpm dev            # 启动开发模式（HMR）；同时可用浏览器开 http://localhost:5173 调试 UI（mock 后端，见下）
+pnpm dev            # Electron 开发模式（HMR，只启动桌面应用）
+pnpm dev:web        # 浏览器开发模式（只起 renderer 的 vite 服务，见下）
 pnpm build          # 生产构建（输出 packages/app/out/）
 pnpm test           # vitest（core 单测 + app 协议/引擎集成测试；无引擎自动 skip 引擎部分）
 pnpm typecheck      # 全仓 TypeScript 检查
@@ -34,12 +35,12 @@ pnpm format         # Prettier 格式化
 
 ## 浏览器开发模式（UI 调试）
 
-`pnpm dev` 后直接用浏览器打开 <http://localhost:5173>：检测不到 Electron preload 时，
+`pnpm dev:web` 后用浏览器打开 <http://localhost:5174>：没有 Electron preload，
 renderer 自动注入 mock 后端（`src/renderer/lib/mockApi.ts`，仅 DEV 打包）——
 用 core 真规则在页面内跑对弈，引擎应招用材料评估加权的随机合法着模拟，
 胜率条/思考帧/复盘等全部 UI 状态可离线调试；设置持久化到 localStorage，主题走 class 覆盖。
-注意：浏览器安全沙箱不能起本地进程，真实 Pikafish 对弈与原生能力仍在 Electron 里验证。
-另：`SUPER_GO_SHOT=<路径> pnpm dev` 为 UI 自检开关（启动 3s 后自动截图 + 转发 renderer 控制台）。
+注意：浏览器安全沙箱不能起本地进程，真实 Pikafish 对弈与原生能力用 `pnpm dev`（Electron）验证。
+另：`SUPER_GO_SHOT=<路径> pnpm dev` 为 Electron UI 自检开关（启动 3s 后自动截图 + 转发 renderer 控制台）。
 
 ## 分层铁律（详见 AGENTS.md）
 
