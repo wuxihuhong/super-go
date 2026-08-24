@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { GameSnapshot } from '@shared/game';
 import type { EngineStatusPayload, LiveEval } from '@shared/ipc';
-import { evalLabel } from '../lib/eval';
+import { evalValueText } from '../lib/eval';
 import type { MessageKey, TFunction } from '../i18n';
 
 export interface SidePanelProps {
@@ -214,6 +214,5 @@ function evalTextOf(props: SidePanelProps): string {
   const { snapshot, liveEval } = props;
   const cp = liveEval?.redCp ?? snapshot?.redCp;
   const mate = liveEval?.redMate ?? snapshot?.redMate;
-  if (cp === undefined && mate === undefined) return '—';
-  return evalLabel(props.t, cp, mate);
+  return evalValueText(props.t, cp, mate).text;
 }

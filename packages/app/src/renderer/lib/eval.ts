@@ -1,33 +1,32 @@
-import type { MessageKey, TFunction } from '../i18n';
+import type { TFunction } from '../i18n';
 
 /**
- * 评估 → 人类可读标签（DESIGN §7.4 轻量分析的展示层）。
- * 引擎厘兵数字不出现在界面上，只保留趋势条 + 自然语言；
- * 阈值：|cp| < 60 均势，< 300 优势，≥ 300 胜势；mate = 步杀。
+ * 评估展示（DESIGN §7.4 轻量分析）：
+ * 局势条（红黑双色）+ 引擎评估值（兵单位，红方视角，如 +1.2）；
+ * 杀棋阶段条已一边倒，只显示 N 步杀（红/黑由颜色区分）。
+ * 红方占比：±1000 厘兵 → 95%/5%（线性钳制，不假装精度）。
  */
-export function evalLabel(t: TFunction, redCp?: number, redMate?: number): string {
-  if (redMate !== undefined) {
-    return fmt(t(redMate > 0 ? 'eval.red.mateN' : 'eval.black.mateN'), Math.abs(redMate));
-  }
-  if (redCp === undefined || Math.abs(redCp) < 60) return t('eval.balanced');
-  const key: MessageKey =
-    redCp > 0
-      ? redCp >= 300
-        ? 'eval.red.winning'
-        : 'eval.red.advantage'
-      : redCp <= -300
-        ? 'eval.black.winning'
-        : 'eval.black.advantage';
-  return t(key);
+export interface EvalValue {
+  text: string;
+  /** 杀棋归属方（文本着色用）；非杀棋为 null */
+  side: 'red' | 'black' | null;
 }
 
-/** 红方占比（0..1）：±1000 厘兵 → 95%/5%（线性钳制，不假装精度） */
+export function evalValueText(t: TFunction, redCp?: number, redMate?: number): EvalValue {
+  if (redMate !== undefined) {
+    return {
+      text: t('eval.mateN').replace('{n}', String(Math.abs(redMate))),
+      side: redMate > 0 ? 'red' : 'black',
+    };
+  }
+  if (redCp === undefined) return { text: '—', side: null };
+  const pawns = Math.max(-99.9, Math.min(99.9, redCp / 100));
+  const sign = pawns > 0 ? '+' : pawns < 0 ? '−' : '';
+  return { text: `${sign}${Math.abs(pawns).toFixed(1)}`, side: null };
+}
+
 export function evalProportion(redCp?: number, redMate?: number): number {
   if (redMate !== undefined) return redMate > 0 ? 1 : 0;
   if (redCp === undefined) return 0.5;
   return 0.5 + Math.max(-0.45, Math.min(0.45, redCp / 2000));
-}
-
-function fmt(template: string, n: number): string {
-  return template.replace('{n}', String(n));
 }
