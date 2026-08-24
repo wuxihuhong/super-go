@@ -25,8 +25,6 @@ export const IPC_CHANNELS = {
   gameUndo: 'game:undo',
   gameResign: 'game:resign',
   gameGoto: 'game:goto',
-  gameImportPgn: 'game:importPgn',
-  gameExportPgn: 'game:exportPgn',
   gameSnapshotGet: 'game:snapshotGet',
   gameSnapshot: 'game:snapshot',
   engineStatus: 'engine:status',
@@ -79,8 +77,6 @@ export interface SuperGoApi {
   undoMove(): Promise<IntentResult>;
   resign(): Promise<IntentResult>;
   gotoNode(nodeId: number): Promise<IntentResult>;
-  importPgn(text: string): Promise<IntentResult>;
-  exportPgn(): Promise<IntentResult>;
   getSnapshot(): Promise<GameSnapshot>;
   onSnapshot(cb: (snap: GameSnapshot) => void): () => void;
   onEngineStatus(cb: (payload: EngineStatusPayload) => void): () => void;

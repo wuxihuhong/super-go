@@ -1,6 +1,6 @@
 /**
  * MatchService 全链路冒烟（Node 直跑，零 Electron——分层检验）。
- * 用真实引擎走完：开局 → 用户着 → 引擎应招 → 悔棋 → 认输 → 导出 PGN → 导入复盘 → 跳转。
+ * 用真实引擎走完：开局 → 用户着 → 引擎应招 → 悔棋 → 认输 → 复盘跳转 → 续弈。
  */
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -77,30 +77,20 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     const ended = await waitFor((s) => s.phase === 'ended');
     expect(ended.result).toEqual({ winner: 'second', reason: 'resign' });
 
-    // 导出 PGN → 重新导入 → 复盘跳转
-    const exported = match.exportPgn();
-    if (!exported.ok) throw new Error(exported.error);
-    expect(exported.text).toContain('1. h2e2');
-    const imported = match.importPgn(exported.text!);
-    expect(imported.ok).toBe(true);
-    const reviewed = await waitFor((s) => s.phase === 'idle' && s.moves.length === 2);
-    expect(reviewed.moves[0]!.iccs).toBe('h2e2');
-
-    const jumped = match.goto(reviewed.moves[0]!.nodeId);
+    // 复盘：对局结束后跳回第 1 着
+    const jumped = match.goto(ended.moves[0]!.nodeId);
     expect(jumped.ok).toBe(true);
     expect(latest().moves.length).toBe(1);
-    expect(latest().fen).not.toBe(reviewed.fen);
+    expect(latest().fen).not.toBe(ended.fen);
 
-    // 从复盘节点续弈：先跳回末节点（轮红），引擎执红立即出招——快照式同步覆盖非初始局面
-    const jumpedBack = match.goto(reviewed.moves[1]!.nodeId);
-    expect(jumpedBack.ok).toBe(true);
-    const continued = await match.newGame({ engineSide: 'first', elo: null, fromCursor: true });
+    // 从当前节点续弈：引擎执黑接手当前局面（快照式同步覆盖非初始局面）
+    const continued = await match.newGame({ engineSide: 'second', elo: null, fromCursor: true });
     expect(continued.ok).toBe(true);
-    const engineRedMoved = await waitFor(
-      (s) => s.phase === 'playing' && s.moves.length === 3 && !s.thinking,
+    const engineMoved = await waitFor(
+      (s) => s.phase === 'playing' && s.moves.length === 2 && !s.thinking,
     );
-    expect(engineRedMoved.turn).toBe('second'); // 红方引擎走完轮黑（用户）
-    expect(engineRedMoved.moves[2]!.redCp).not.toBeUndefined();
+    expect(engineMoved.turn).toBe('first'); // 黑方引擎走完轮红（用户）
+    expect(engineMoved.moves[1]!.redCp).not.toBeUndefined();
     match.dispose();
   });
 });

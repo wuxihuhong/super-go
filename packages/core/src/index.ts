@@ -67,8 +67,6 @@ export { chineseNotation } from './xiangqi/notation.js';
 export { iccsToMove, iccsToPoint, moveToIccs, pointToIccs } from './xiangqi/iccs.js';
 export { xiangqiZobrist } from './xiangqi/zobrist.js';
 export { XiangqiGame } from './xiangqi/xiangqiGame.js';
-export type { PgnMeta, PgnParseResult, PgnResult } from './xiangqi/pgn.js';
-export { exportPgn, parsePgn } from './xiangqi/pgn.js';
 export {
   chessStrengthFromElo,
   XIANGQI_ELO_MAX,

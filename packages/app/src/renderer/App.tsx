@@ -119,22 +119,6 @@ export default function App() {
     });
   }, []);
 
-  const handleExport = useCallback(() => {
-    void window.superGo.exportPgn().then((r) => {
-      if (!r.ok) {
-        setNotice({ text: r.error, bad: true });
-        return;
-      }
-      const blob = new Blob([r.text ?? ''], { type: 'application/x-chess-pgn' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = 'game.pgn';
-      anchor.click();
-      URL.revokeObjectURL(url);
-    });
-  }, []);
-
   if (lang === null) return null;
   const t = createT(lang);
 
@@ -148,15 +132,12 @@ export default function App() {
         t={t}
         playing={playing}
         canUndo={playing && (snapshot?.moves.length ?? 0) > 0}
-        canExport={(snapshot?.moves.length ?? 0) > 0}
         panelOpen={panelOpen}
         onNewGame={(engineSide, elo) =>
           runIntent(() => window.superGo.newGame({ engineSide, elo, fromCursor: false }))
         }
         onUndo={() => runIntent(() => window.superGo.undoMove())}
         onResign={() => runIntent(() => window.superGo.resign())}
-        onImportText={(text) => runIntent(() => window.superGo.importPgn(text))}
-        onExport={handleExport}
         onTogglePanel={() => setPanelOpen((v) => !v)}
       />
 

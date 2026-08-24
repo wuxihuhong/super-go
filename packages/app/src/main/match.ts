@@ -9,14 +9,12 @@
  */
 import {
   chessStrengthFromElo,
-  exportPgn,
   GameStateMachine,
   iccsToMove,
   INITIAL_FEN,
   isInCheck,
   MoveTree,
   moveToIccs,
-  parsePgn,
   XiangqiGame,
   type EvalRecord,
   type MoveNode,
@@ -57,7 +55,7 @@ export class MatchService {
   private adapter: UciAdapter | null = null;
   private launching: Promise<void> | null = null;
   private thinking = false;
-  /** 异步流程代数：undo/newGame/import 使旧思考结果作废 */
+  /** 异步流程代数：undo/newGame 使旧思考结果作废 */
   private generation = 0;
   private recovering = false;
   private lastLiveDepth = -1;
@@ -158,40 +156,6 @@ export class MatchService {
     this.tree.goTo(node);
     this.pushSnapshot();
     return { ok: true };
-  }
-
-  importPgn(text: string): IntentResult {
-    const parsed = parsePgn(text);
-    if (!parsed.ok) return { ok: false, error: parsed.error };
-    this.generation++;
-    this.adapter?.stopSearch();
-    this.thinking = false;
-    if (this.state.phase === 'playing') {
-      this.state.abort();
-      void this.resetStrength();
-    } else {
-      this.state.reset();
-    }
-    const tree = new MoveTree<XiangqiMove, XiangqiPosition>(this.game);
-    for (const move of parsed.moves) tree.play(move);
-    this.tree = tree;
-    this.pushSnapshot();
-    return { ok: true };
-  }
-
-  exportPgn(): IntentResult {
-    const moves = this.tree
-      .pathOf(this.tree.cursor)
-      .slice(1)
-      .map((node) => node.move!);
-    const engineName = this.adapter?.engineName ?? 'Engine';
-    const engineSide = this.state.engineSide;
-    const pgn = exportPgn(this.game, moves, {
-      redName: engineSide === 'second' ? engineName : 'Player',
-      blackName: engineSide === 'first' ? engineName : 'Player',
-      result: this.toPgnResult(this.state.result?.winner),
-    });
-    return { ok: true, text: pgn };
   }
 
   /** 当前快照（renderer 主动拉取，事件推送为主通路） */
@@ -473,12 +437,5 @@ export class MatchService {
       depth: evaluation.depth,
       source: this.adapter?.engineName ?? 'engine',
     };
-  }
-
-  private toPgnResult(winner: Player | null | undefined): '1-0' | '0-1' | '1/2-1/2' | '*' {
-    if (winner === 'first') return '1-0';
-    if (winner === 'second') return '0-1';
-    if (winner === null) return '1/2-1/2';
-    return '*';
   }
 }

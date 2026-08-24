@@ -5,8 +5,6 @@ export default {
   'toolbar.newGame': 'New Game',
   'toolbar.undo': 'Undo',
   'toolbar.resign': 'Resign',
-  'toolbar.importPgn': 'Import PGN',
-  'toolbar.exportPgn': 'Export PGN',
   'toolbar.togglePanel': 'Side panel',
   'setup.side': 'Play as',
   'setup.side.red': 'Red (me)',

@@ -56,8 +56,6 @@ export interface IntentError {
 }
 export interface IntentOk {
   ok: true;
-  /** PGN 导出文本等附加数据 */
-  text?: string;
 }
 export type IntentResult = IntentOk | IntentError;
 

@@ -8,8 +8,6 @@ export default {
   'toolbar.newGame': '新对局',
   'toolbar.undo': '悔棋',
   'toolbar.resign': '认输',
-  'toolbar.importPgn': '导入棋谱',
-  'toolbar.exportPgn': '导出棋谱',
   'toolbar.togglePanel': '侧栏',
   'setup.side': '执方',
   'setup.side.red': '我执红',

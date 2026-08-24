@@ -47,7 +47,5 @@ export function registerIpc(
   ipcMain.handle(IPC_CHANNELS.gameUndo, () => match.undo());
   ipcMain.handle(IPC_CHANNELS.gameResign, () => match.resign());
   ipcMain.handle(IPC_CHANNELS.gameGoto, (_e, nodeId: number) => match.goto(nodeId));
-  ipcMain.handle(IPC_CHANNELS.gameImportPgn, (_e, text: string) => match.importPgn(text));
-  ipcMain.handle(IPC_CHANNELS.gameExportPgn, () => match.exportPgn());
   ipcMain.handle(IPC_CHANNELS.gameSnapshotGet, () => match.snapshot());
 }

@@ -1,26 +1,22 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { Player } from '@super-go/core';
 import type { MessageKey } from '../i18n';
 import SetupPanel from './SetupPanel';
-import { IconExport, IconFlag, IconImport, IconPanel, IconPlus, IconUndo } from './icons';
+import { IconFlag, IconPanel, IconPlus, IconUndo } from './icons';
 
 export interface ToolbarProps {
   t: (key: MessageKey) => string;
   playing: boolean;
   canUndo: boolean;
-  canExport: boolean;
   panelOpen: boolean;
   onNewGame: (engineSide: Player, elo: number | null) => void;
   onUndo: () => void;
   onResign: () => void;
-  onImportText: (text: string) => void;
-  onExport: () => void;
   onTogglePanel: () => void;
 }
 
 export default function Toolbar(props: ToolbarProps) {
   const [setupOpen, setSetupOpen] = useState(false);
-  const fileRef = useRef<HTMLInputElement | null>(null);
 
   const iconButton = (
     key: MessageKey,
@@ -66,21 +62,7 @@ export default function Toolbar(props: ToolbarProps) {
 
       {iconButton('toolbar.undo', <IconUndo />, props.onUndo, !props.canUndo)}
       {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.playing)}
-      {iconButton('toolbar.importPgn', <IconImport />, () => fileRef.current?.click())}
-      {iconButton('toolbar.exportPgn', <IconExport />, props.onExport, !props.canExport)}
       {iconButton('toolbar.togglePanel', <IconPanel />, props.onTogglePanel)}
-
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".pgn,text/plain"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file !== undefined) void file.text().then(props.onImportText);
-          e.target.value = '';
-        }}
-      />
     </header>
   );
 }

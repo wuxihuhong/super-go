@@ -5,8 +5,6 @@ export default {
   'toolbar.newGame': '新規対局',
   'toolbar.undo': '待った',
   'toolbar.resign': '投了',
-  'toolbar.importPgn': '棋譜の読み込み',
-  'toolbar.exportPgn': '棋譜の書き出し',
   'toolbar.togglePanel': 'サイドパネル',
   'setup.side': '手持ち',
   'setup.side.red': '自分が赤（先手）',
