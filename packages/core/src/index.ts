@@ -25,6 +25,7 @@ export type { ApplyResult, Game } from './game.js';
 export { MoveNode, MoveTree } from './moveTree.js';
 export {
   GameStateMachine,
+  type EngineSide,
   type GamePhase,
   type GameStartOptions,
   type GameStateSnapshot,
@@ -68,8 +69,15 @@ export { iccsToMove, iccsToPoint, moveToIccs, pointToIccs } from './xiangqi/iccs
 export { xiangqiZobrist } from './xiangqi/zobrist.js';
 export { XiangqiGame } from './xiangqi/xiangqiGame.js';
 export {
+  chessStrengthFromConfig,
   chessStrengthFromElo,
+  genmoveConstraintFromConfig,
+  normalizeXiangqiStrength,
   XIANGQI_ELO_MAX,
   XIANGQI_ELO_MIN,
   XIANGQI_ELO_PRESETS,
+  XIANGQI_STRENGTH_DEFAULT,
+  type GenmoveConstraint,
+  type XiangqiStrengthConfig,
+  type XiangqiStrengthMode,
 } from './xiangqi/strength.js';

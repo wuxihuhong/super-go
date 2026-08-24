@@ -172,7 +172,18 @@ export const uciCommands = {
   /** 快照式同步：全量 fen + 重放着法（DESIGN.md §5.2，不依赖 undo） */
   position: (fen: string, moves: readonly string[]): string =>
     moves.length === 0 ? `position fen ${fen}` : `position fen ${fen} moves ${moves.join(' ')}`,
-  goMovetime: (ms: number): string => `go movetime ${Math.max(1, Math.round(ms))}`,
+  /** go 约束（§5.5 棋力模式）：深度 / 节点 / 时长可组合（时长作上限兜底） */
+  go: (constraint: { movetimeMs?: number; depth?: number; nodes?: number }): string => {
+    const parts: string[] = ['go'];
+    if (constraint.depth !== undefined)
+      parts.push(`depth ${Math.max(1, Math.round(constraint.depth))}`);
+    if (constraint.nodes !== undefined)
+      parts.push(`nodes ${Math.max(1, Math.round(constraint.nodes))}`);
+    if (constraint.movetimeMs !== undefined) {
+      parts.push(`movetime ${Math.max(1, Math.round(constraint.movetimeMs))}`);
+    }
+    return parts.length === 1 ? 'go movetime 1000' : parts.join(' ');
+  },
   stop: () => 'stop',
   quit: () => 'quit',
 } as const;

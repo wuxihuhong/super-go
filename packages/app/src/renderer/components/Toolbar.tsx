@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Player } from '@super-go/core';
+import type { EngineSide } from '@super-go/core';
 import type { AppSettings, EngineStatusPayload } from '@shared/ipc';
 import type { MessageKey, TFunction } from '../i18n';
 import SettingsPanel from './SettingsPanel';
@@ -10,9 +10,11 @@ export interface ToolbarProps {
   t: TFunction;
   playing: boolean;
   canUndo: boolean;
+  /** 互搏观战不可认输 */
+  canResign: boolean;
   panelOpen: boolean;
   engineStatus: EngineStatusPayload | null;
-  onNewGame: (engineSide: Player, elo: number | null) => void;
+  onNewGame: (engineSide: EngineSide) => void;
   onUndo: () => void;
   onResign: () => void;
   onTogglePanel: () => void;
@@ -83,9 +85,9 @@ export default function Toolbar(props: ToolbarProps) {
               <SetupPanel
                 t={props.t}
                 mode="new"
-                onStart={(side, elo) => {
+                onStart={(side) => {
                   setPopover('none');
-                  props.onNewGame(side, elo);
+                  props.onNewGame(side);
                 }}
                 onCancel={() => setPopover('none')}
               />
@@ -95,7 +97,7 @@ export default function Toolbar(props: ToolbarProps) {
       </div>
 
       {iconButton('toolbar.undo', <IconUndo />, props.onUndo, !props.canUndo)}
-      {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.playing)}
+      {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.canResign)}
       {iconButton('toolbar.togglePanel', <IconPanel />, props.onTogglePanel)}
 
       {/* 右侧：引擎状态 + 设置 */}

@@ -2,13 +2,16 @@
  * MatchService：人机对弈编排（DESIGN.md §4.3 + §5 + §6.1 主链路）。
  *
  * 组合 core 的 Game/MoveTree/GameStateMachine 与 UciAdapter：
- * - 引擎通路：同步局面（快照式全量重发）→ genmove → 拟人化随机延迟 → 本地合法性防线 → 落子；
- * - 强度生命周期（AGENTS.md 粘滞门禁）：start 时按用户显式选择下发，
- *   end/abort/reset 转移处一律复位满强度——时机只在这里，别处不许碰 setStrength；
+ * - 引擎通路：同步局面（快照式全量重发）→ genmove（棋力模式约束：Elo/深度/时长/节点）
+ *   → 拟人化随机延迟 → 本地合法性防线 → 落子；engineSide='both' 时引擎左右互搏（人观战）；
+ * - 棋力属固有配置（settings.xiangqi.strength）：对局中经 refreshStrength 实时下发；
+ *   执方可对局中变更（接管 / 放手 / 转互搏，setEngineSide）；
+ * - 强度生命周期（AGENTS.md 粘滞门禁）：Elo 档在 end/abort/reset 转移处一律复位满强度；
  * - 引擎崩溃 → 自动重启 → 重同步 → 补齐被中断的思考（§5.8 设计内行为）。
  */
 import {
-  chessStrengthFromElo,
+  chessStrengthFromConfig,
+  genmoveConstraintFromConfig,
   GameStateMachine,
   iccsToMove,
   INITIAL_FEN,
@@ -16,12 +19,14 @@ import {
   MoveTree,
   moveToIccs,
   XiangqiGame,
+  type EngineSide,
   type EvalRecord,
   type MoveNode,
   type Player,
   type StrengthProfile,
   type XiangqiMove,
   type XiangqiPosition,
+  type XiangqiStrengthConfig,
 } from '@super-go/core';
 import type { EngineStatus, UciStrengthSpec } from '../shared/engine';
 import type {
@@ -53,9 +58,10 @@ export class MatchService {
   private tree = new MoveTree<XiangqiMove, XiangqiPosition>(this.game);
   private readonly state = new GameStateMachine('xiangqi');
   private adapter: UciAdapter | null = null;
+  private launchedPath: string | null = null;
   private launching: Promise<void> | null = null;
   private thinking = false;
-  /** 异步流程代数：undo/newGame 使旧思考结果作废 */
+  /** 异步流程代数：undo/newGame/setEngineSide 使旧思考结果作废 */
   private generation = 0;
   private recovering = false;
   private lastLiveDepth = -1;
@@ -63,8 +69,8 @@ export class MatchService {
 
   constructor(
     private readonly events: MatchEvents,
-    private readonly binaryPath: string | null,
-    private readonly getThinkMs: () => number,
+    private readonly getEnginePath: () => string | null,
+    private readonly getStrengthConfig: () => XiangqiStrengthConfig,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -87,17 +93,20 @@ export class MatchService {
     const launchError = await this.ensureEngine();
     if (launchError !== null) return launchError;
 
-    const profile = chessStrengthFromElo(intent.elo);
-    await this.applyStrength(profile !== null ? { uciElo: Number(profile.params.uciElo) } : null);
+    const profile = chessStrengthFromConfig(this.getStrengthConfig());
+    await this.applyStrength(uciSpecOf(profile));
     this.state.start({ engineSide: intent.engineSide, strength: profile });
     this.pushSnapshot();
-    if (this.turnNow() === intent.engineSide) void this.engineTurn();
+    if (this.engineToMoveNow()) void this.engineTurn();
     return { ok: true };
   }
 
   playMove(intent: PlayMoveIntent): IntentResult {
     if (this.state.phase !== 'playing' || this.thinking) {
       return { ok: false, error: '当前不可落子' };
+    }
+    if (this.state.engineSide === 'both') {
+      return { ok: false, error: '引擎互搏中，观战模式不可落子' };
     }
     const pos = this.positionNow();
     const move: XiangqiMove = { kind: 'xiangqi', from: intent.from, to: intent.to };
@@ -107,9 +116,7 @@ export class MatchService {
     this.tree.play(move);
     this.finishIfOver();
     this.pushSnapshot();
-    if (this.state.phase === 'playing' && this.turnNow() === this.state.engineSide) {
-      void this.engineTurn();
-    }
+    if (this.state.phase === 'playing' && this.engineToMoveNow()) void this.engineTurn();
     return { ok: true };
   }
 
@@ -124,12 +131,17 @@ export class MatchService {
     this.adapter?.stopSearch();
     this.thinking = false;
     this.tree.undo();
+    if (this.state.engineSide === 'both') {
+      // 互搏观战：回退一着后暂停（不自动重下，避免循环）；可再续弈/接管
+      this.pushSnapshot();
+      return { ok: true };
+    }
     // 连续剪到轮到用户（引擎的应招一并剪掉）
-    while (this.tree.cursor !== this.tree.root && this.turnNow() === this.state.engineSide) {
+    while (this.tree.cursor !== this.tree.root && this.engineToMoveNow()) {
       this.tree.undo();
     }
     this.pushSnapshot();
-    if (this.turnNow() === this.state.engineSide) void this.engineTurn(); // 引擎执先时重下第一着
+    if (this.engineToMoveNow()) void this.engineTurn(); // 引擎执先时重下第一着
     return { ok: true };
   }
 
@@ -137,14 +149,40 @@ export class MatchService {
     if (this.state.phase !== 'playing') {
       return { ok: false, error: '对局未在进行中' };
     }
+    if (this.state.engineSide === 'both') {
+      return { ok: false, error: '观战模式不可认输（可开新对局结束）' };
+    }
     this.generation++;
     this.adapter?.stopSearch();
     this.thinking = false;
-    const engineSide = this.state.engineSide ?? 'first';
+    const engineSide = (this.state.engineSide ?? 'first') as Player;
     this.state.end({ winner: engineSide, reason: 'resign' });
     await this.resetStrength();
     this.pushSnapshot();
     return { ok: true };
+  }
+
+  /** 对局中变更执方：接管（引擎→人）/ 放手（人→引擎）/ 转为互搏 */
+  setEngineSide(engineSide: EngineSide): IntentResult {
+    if (this.state.phase !== 'playing') {
+      return { ok: false, error: '对局未在进行中' };
+    }
+    this.generation++; // 进行中的思考按新执方重新决定
+    this.adapter?.stopSearch();
+    this.thinking = false;
+    this.state.setEngineSide(engineSide);
+    this.pushSnapshot();
+    if (this.engineToMoveNow()) void this.engineTurn();
+    return { ok: true };
+  }
+
+  /** 固有配置变更（棋力实时生效；引擎路径变化则下次冷启动生效，§5.6） */
+  async refreshStrength(): Promise<void> {
+    if (this.state.phase !== 'playing') return;
+    const profile = chessStrengthFromConfig(this.getStrengthConfig());
+    this.state.updateStrength(profile);
+    await this.applyStrength(uciSpecOf(profile));
+    this.pushSnapshot();
   }
 
   goto(nodeId: number): IntentResult {
@@ -167,11 +205,18 @@ export class MatchService {
     this.generation++;
     this.adapter?.quit();
     this.adapter = null;
+    this.launchedPath = null;
   }
 
   // -------------------------------------------------------------------------
   // 引擎回合
   // -------------------------------------------------------------------------
+
+  /** 当前是否轮到引擎（含互搏） */
+  private engineToMoveNow(): boolean {
+    const side = this.state.engineSide;
+    return side === 'both' || side === this.turnNow();
+  }
 
   private async engineTurn(): Promise<void> {
     const gen = ++this.generation;
@@ -186,8 +231,10 @@ export class MatchService {
         .slice(1)
         .map((node) => moveToIccs(node.move!));
       this.adapter!.syncPosition(INITIAL_FEN, moves);
-      const { move, evaluation } = await this.adapter!.genmove({ movetimeMs: this.getThinkMs() });
-      if (gen !== this.generation) return; // 悔棋/新对局已作废
+      const { move, evaluation } = await this.adapter!.genmove(
+        genmoveConstraintFromConfig(this.getStrengthConfig()),
+      );
+      if (gen !== this.generation) return; // 悔棋/新对局/换执方已作废
       if (move === null) return; // 进程退出，恢复流程接管
 
       const engineMove = iccsToMove(move);
@@ -195,11 +242,7 @@ export class MatchService {
         // 本地合法性防线：引擎输出不可信时重启重同步（§5.8）
         console.warn(`[match] 引擎着法未过本地校验: ${move}`);
         await this.recoverEngine();
-        if (
-          gen === this.generation &&
-          this.state.phase === 'playing' &&
-          this.turnNow() === this.state.engineSide
-        ) {
+        if (gen === this.generation && this.state.phase === 'playing' && this.engineToMoveNow()) {
           void this.engineTurn();
         }
         return;
@@ -213,6 +256,9 @@ export class MatchService {
       this.thinking = false;
       this.finishIfOver();
       this.pushSnapshot();
+      if (this.state.phase === 'playing' && this.engineToMoveNow()) {
+        void this.engineTurn(); // 互搏：引擎接着走下一手
+      }
     } catch (err) {
       this.thinking = false;
       console.error('[match] 引擎回合异常', err);
@@ -236,11 +282,18 @@ export class MatchService {
   // -------------------------------------------------------------------------
 
   private async ensureEngine(): Promise<IntentResult | null> {
-    if (this.binaryPath === null) {
+    const binaryPath = this.getEnginePath();
+    if (binaryPath === null) {
       this.pushEngineStatus('not-found');
-      return { ok: false, error: '未找到象棋引擎（engines/chess 下无 Pikafish）' };
+      return { ok: false, error: '未找到象棋引擎（设置引擎路径，或放回 engines/chess）' };
     }
-    if (this.adapter !== null && this.adapter.getStatus() !== 'crashed') return null;
+    if (this.adapter !== null && this.launchedPath === binaryPath) {
+      if (this.adapter.getStatus() !== 'crashed') return null;
+    } else if (this.adapter !== null) {
+      // 设置里换了引擎路径：退旧起新（§5.6 用户值优先）
+      this.adapter.quit();
+      this.adapter = null;
+    }
     if (this.launching !== null) {
       await this.launching;
       return null;
@@ -248,9 +301,10 @@ export class MatchService {
     this.pushEngineStatus('launching');
     const adapter = new UciAdapter();
     this.launching = adapter
-      .launch(this.binaryPath)
+      .launch(binaryPath)
       .then(() => {
         this.adapter = adapter;
+        this.launchedPath = binaryPath;
         adapter.onExit((code) => this.onEngineExit(adapter, code));
         adapter.onEvaluation((evaluation) => this.forwardLiveEval(evaluation));
         this.pushEngineStatus('ready');
@@ -292,15 +346,9 @@ export class MatchService {
         this.pushSnapshot();
         return;
       }
-      // 恢复到对局档位强度；无档位则复位满强度
-      const profile: StrengthProfile | null = this.state.strength;
-      await this.applyStrength(profile !== null ? { uciElo: Number(profile.params.uciElo) } : null);
-      if (this.state.phase === 'playing') {
-        this.pushSnapshot();
-        if (this.turnNow() === this.state.engineSide) void this.engineTurn();
-      } else {
-        this.pushSnapshot();
-      }
+      await this.applyStrength(uciSpecOf(this.state.strength));
+      this.pushSnapshot();
+      if (this.state.phase === 'playing' && this.engineToMoveNow()) void this.engineTurn();
     } finally {
       this.recovering = false;
     }
@@ -328,7 +376,9 @@ export class MatchService {
     if (!this.thinking || this.state.engineSide === null) return;
     if (evaluation.depth !== undefined && evaluation.depth === this.lastLiveDepth) return;
     if (evaluation.depth !== undefined) this.lastLiveDepth = evaluation.depth;
-    const flip = this.state.engineSide === 'first' ? 1 : -1;
+    // 引擎视角 → 红方视角：走子方（思考者）为红时同号
+    const mover = this.turnNow();
+    const flip = mover === 'first' ? 1 : -1;
     this.events.liveEval({
       redCp: evaluation.cp === undefined ? undefined : evaluation.cp * flip,
       redMate: evaluation.mate === undefined ? undefined : evaluation.mate * flip,
@@ -438,4 +488,10 @@ export class MatchService {
       source: this.adapter?.engineName ?? 'engine',
     };
   }
+}
+
+/** Elo 档才有 UCI 弱化；深度/时长/节点/不设限 = 满强度 + 搜索约束 */
+function uciSpecOf(profile: StrengthProfile | null): UciStrengthSpec | null {
+  const elo = profile?.params.uciElo;
+  return typeof elo === 'number' ? { uciElo: elo } : null;
 }

@@ -79,11 +79,15 @@ export default function App() {
     [snapshot, game],
   );
 
-  const userSide: Player = snapshot?.engineSide === 'first' ? 'second' : 'first';
+  const engineSide = snapshot?.engineSide ?? null;
+  const spectating = engineSide === 'both'; // 引擎互搏，人观战
+  const userSide: Player | null =
+    engineSide === 'first' ? 'second' : engineSide === 'second' ? 'first' : null;
   const interactive =
     snapshot !== null &&
     snapshot.phase === 'playing' &&
     !snapshot.thinking &&
+    userSide !== null &&
     snapshot.turn === userSide;
 
   const legalTargets = useMemo(() => {
@@ -107,7 +111,7 @@ export default function App() {
         return;
       }
       const piece = pieceAt(position, x, y);
-      if (piece !== null && pieceSide(piece) === userSide) {
+      if (piece !== null && userSide !== null && pieceSide(piece) === userSide) {
         setSelected({ x, y });
         return;
       }
@@ -136,18 +140,23 @@ export default function App() {
   const t = createT(lang);
 
   const playing = snapshot?.phase === 'playing';
-  const engineSide = snapshot?.engineSide ?? null;
-  // 棋盘方位：上方恒为对手（引擎），下方恒为用户（翻转时引擎执红也在上）
-  const engineBannerSide: Player = engineSide ?? 'second';
-  const userBannerSide: Player = engineSide === 'first' ? 'second' : 'first';
+  // 棋盘方位：上方恒为对手（引擎），下方恒为用户；互搏时两侧都是引擎
+  const flip = snapshot?.engineSide === 'first';
+  const topBannerSide: Player = flip ? 'first' : 'second';
+  const bottomBannerSide: Player = flip ? 'second' : 'first';
   const engineName = engineStatus?.name ?? t('panel.engine');
   const engineThinking = playing === true && snapshot?.thinking === true;
-  const engineCaption =
-    engineSide === null ? '' : (snapshot?.strengthLabel ?? t('panel.engine.unlimited'));
+  const strengthCaption = snapshot?.strengthLabel ?? t('panel.engine.unlimited');
+  const topCaption = engineSide === null ? '' : strengthCaption;
   const userCaption =
-    playing === true && snapshot?.inCheck === true && snapshot?.turn === userSide
+    playing === true &&
+    userSide !== null &&
+    snapshot?.inCheck === true &&
+    snapshot?.turn === userSide
       ? t('status.check')
-      : '';
+      : spectating && playing === true && snapshot?.inCheck === true
+        ? t('status.check')
+        : '';
 
   return (
     <div className="relative flex h-full flex-col bg-background">
@@ -155,10 +164,11 @@ export default function App() {
         t={t}
         playing={playing}
         canUndo={playing && (snapshot?.moves.length ?? 0) > 0}
+        canResign={playing === true && !spectating}
         panelOpen={panelOpen}
         engineStatus={engineStatus}
-        onNewGame={(side, elo) =>
-          runIntent(() => window.superGo.newGame({ engineSide: side, elo, fromCursor: false }))
+        onNewGame={(side) =>
+          runIntent(() => window.superGo.newGame({ engineSide: side, fromCursor: false }))
         }
         onUndo={() => runIntent(() => window.superGo.undoMove())}
         onResign={() => runIntent(() => window.superGo.resign())}
@@ -194,11 +204,11 @@ export default function App() {
               >
                 <PlayerBanner
                   t={t}
-                  side={engineBannerSide}
+                  side={topBannerSide}
                   name={engineSide === null ? t('side.black') : engineName}
-                  active={playing === true && snapshot?.turn === engineBannerSide}
-                  thinking={engineThinking}
-                  caption={engineCaption}
+                  active={playing === true && snapshot?.turn === topBannerSide}
+                  thinking={engineThinking && snapshot?.turn === topBannerSide}
+                  caption={topCaption}
                 />
                 <div className="min-h-0 flex-1 overflow-hidden rounded-xl shadow-md">
                   <Board
@@ -207,17 +217,23 @@ export default function App() {
                     targets={legalTargets}
                     lastMove={snapshot?.lastMove ?? null}
                     checkedKing={checkedKing}
-                    flip={snapshot?.engineSide === 'first'}
+                    flip={flip}
                     themeTick={themeTick}
                     onSquareClick={handleSquareClick}
                   />
                 </div>
                 <PlayerBanner
                   t={t}
-                  side={userBannerSide}
-                  name={t('player.you')}
-                  active={playing === true && snapshot?.turn === userBannerSide}
-                  thinking={false}
+                  side={bottomBannerSide}
+                  name={
+                    userSide === null
+                      ? engineSide === 'both'
+                        ? engineName
+                        : t('side.red')
+                      : t('player.you')
+                  }
+                  active={playing === true && snapshot?.turn === bottomBannerSide}
+                  thinking={spectating && engineThinking && snapshot?.turn === bottomBannerSide}
                   caption={userCaption}
                 />
               </div>
@@ -234,7 +250,10 @@ export default function App() {
             onGoto={(nodeId) => runIntent(() => window.superGo.gotoNode(nodeId))}
             onContinue={() =>
               runIntent(() =>
-                window.superGo.newGame({ engineSide: 'second', elo: null, fromCursor: true }),
+                window.superGo.newGame({
+                  engineSide: spectating ? 'both' : 'second',
+                  fromCursor: true,
+                }),
               )
             }
           />

@@ -79,4 +79,33 @@ describe('GameStateMachine', () => {
     sm.start({ engineSide: 'first', strength: null });
     expect(sm.phase).toBe('playing');
   });
+
+  it('engineSide = both（引擎互搏，人观战）是合法开局形态', () => {
+    const sm = makeMachine();
+    sm.start({ engineSide: 'both', strength: elo2200 });
+    expect(sm.engineSide).toBe('both');
+    expect(sm.phase).toBe('playing');
+    sm.end({ winner: 'first', reason: 'mate' });
+    expect(sm.engineSide).toBeNull(); // 终局复位不残留互搏
+  });
+
+  it('对局中 updateStrength / setEngineSide 可变，终局仍复位', () => {
+    const sm = makeMachine();
+    sm.start({ engineSide: 'second', strength: elo2200 });
+    sm.updateStrength(null); // 对局中改满强度（设置实时调整）
+    expect(sm.strength).toBeNull();
+    sm.setEngineSide('both'); // 转互搏观战
+    expect(sm.engineSide).toBe('both');
+    sm.setEngineSide('first'); // 接管回人执黑
+    expect(sm.engineSide).toBe('first');
+    sm.abort();
+    expect(sm.engineSide).toBeNull();
+    expect(sm.strength).toBeNull();
+  });
+
+  it('非 playing 时 updateStrength / setEngineSide 抛错', () => {
+    const sm = makeMachine();
+    expect(() => sm.updateStrength(elo2200)).toThrow();
+    expect(() => sm.setEngineSide('both')).toThrow();
+  });
 });

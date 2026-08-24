@@ -1,9 +1,10 @@
 /**
  * MatchService 全链路冒烟（Node 直跑，零 Electron——分层检验）。
- * 用真实引擎走完：开局 → 用户着 → 引擎应招 → 悔棋 → 认输 → 复盘跳转 → 续弈。
+ * 用真实引擎走完：开局 → 用户着 → 引擎应招 → 悔棋 → 认输 → 复盘跳转 → 续弈 → 互搏。
  */
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { normalizeXiangqiStrength } from '@super-go/core';
 import { describe, expect, it } from 'vitest';
 import type { GameSnapshot } from '../shared/game';
 import { MatchService, type MatchEvents } from './match';
@@ -25,14 +26,22 @@ function findBinary(): string | null {
 const binary = findBinary();
 
 describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
-  it('开局 → 应招 → 悔棋 → 认输 → PGN 往返 → 复盘跳转', { timeout: 90_000 }, async () => {
+  it('开局 → 应招 → 悔棋 → 认输 → 复盘续弈 → 互搏观战', { timeout: 120_000 }, async () => {
     const snapshots: GameSnapshot[] = [];
     const events: MatchEvents = {
       snapshot: (snap) => snapshots.push(snap),
       engineStatus: () => {},
       liveEval: () => {},
     };
-    const match = new MatchService(events, binary, () => 200);
+    let strengthOverride: { mode: 'elo' | 'time'; elo?: number; movetime?: number } = {
+      mode: 'elo',
+      elo: 1400,
+    };
+    const match = new MatchService(
+      events,
+      () => binary,
+      () => normalizeXiangqiStrength(strengthOverride),
+    );
     const latest = (): GameSnapshot => snapshots[snapshots.length - 1]!;
     // 轮询最新快照（等待的都是稳定态；undo 等同步推送在 await 返回前已就位）
     const waitFor = async (
@@ -47,11 +56,12 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
       throw new Error(`等待快照超时：${JSON.stringify(latest()?.moves ?? [])}`);
     };
 
-    // 开局：用户执红，引擎 1400 分执黑
-    const started = await match.newGame({ engineSide: 'second', elo: 1400 });
+    // 开局：用户执红，引擎 1400 分执黑（棋力走固有配置）
+    const started = await match.newGame({ engineSide: 'second' });
     expect(started.ok).toBe(true);
     expect(latest().phase).toBe('playing');
     expect(latest().turn).toBe('first');
+    expect(latest().strengthLabel).toBe('1400');
 
     // 用户走炮二平五
     const played = match.playMove({ from: { x: 7, y: 7 }, to: { x: 4, y: 7 } });
@@ -61,6 +71,11 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     expect(replied.moves[1]!.notation).not.toBe('');
     expect(replied.turn).toBe('first'); // 又轮到用户
     expect(replied.moves[1]!.redCp).not.toBeUndefined(); // 引擎评估挂在引擎应招上
+
+    // 对局中实时调整棋力（设置联动通路）
+    strengthOverride = { mode: 'time', movetime: 300 };
+    await match.refreshStrength();
+    expect(latest().strengthLabel).toBe('0.3s');
 
     // 悔棋：剪掉引擎应招 + 用户着
     const undone = await match.undo();
@@ -84,13 +99,21 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     expect(latest().fen).not.toBe(ended.fen);
 
     // 从当前节点续弈：引擎执黑接手当前局面（快照式同步覆盖非初始局面）
-    const continued = await match.newGame({ engineSide: 'second', elo: null, fromCursor: true });
+    const continued = await match.newGame({ engineSide: 'second', fromCursor: true });
     expect(continued.ok).toBe(true);
     const engineMoved = await waitFor(
       (s) => s.phase === 'playing' && s.moves.length === 2 && !s.thinking,
     );
     expect(engineMoved.turn).toBe('first'); // 黑方引擎走完轮红（用户）
     expect(engineMoved.moves[1]!.redCp).not.toBeUndefined();
+
+    // 互搏观战：对局中切执方为双引擎，引擎自动连走（连走中 thinking 常驻 true，不作为等待条件）
+    const switched = await match.setEngineSide('both');
+    expect(switched.ok).toBe(true);
+    const bothMoved = await waitFor((s) => s.engineSide === 'both' && s.moves.length >= 4);
+    expect(bothMoved.engineSide).toBe('both');
+    expect(bothMoved.moves.length).toBeGreaterThanOrEqual(4);
+    expect(match.playMove({ from: { x: 8, y: 9 }, to: { x: 8, y: 5 } }).ok).toBe(false); // 观战不可落子
     match.dispose();
   });
 });

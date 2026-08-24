@@ -26,6 +26,8 @@ const api: SuperGoApi = {
   playMove: (intent: PlayMoveIntent) => ipcRenderer.invoke(IPC_CHANNELS.gamePlay, intent),
   undoMove: () => ipcRenderer.invoke(IPC_CHANNELS.gameUndo),
   resign: () => ipcRenderer.invoke(IPC_CHANNELS.gameResign),
+  setEngineSide: (side: Parameters<SuperGoApi['setEngineSide']>[0]) =>
+    ipcRenderer.invoke(IPC_CHANNELS.gameSetEngineSide, side),
   gotoNode: (nodeId: number) => ipcRenderer.invoke(IPC_CHANNELS.gameGoto, nodeId),
   getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.gameSnapshotGet) as Promise<GameSnapshot>,
   onSnapshot: (cb: (snap: GameSnapshot) => void) =>

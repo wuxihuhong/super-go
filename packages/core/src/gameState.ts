@@ -9,22 +9,25 @@ import type { GameKind, GameResult, Player } from './types.js';
 export interface StrengthProfile {
   /** 展示标签：象棋 "2200"（等级分）/ 围棋 "3段"（段位直选） */
   label: string;
-  /** 棋种相关参数负载。P1: { uciElo } 等；P2: { humanRank } 等 */
+  /** 棋种相关参数负载。P1: { uciElo } / { depth } / { nodes } 等；P2: { humanRank } 等 */
   params: Readonly<Record<string, number | string | boolean>>;
 }
+
+/** 引擎执方：单方 / 双方互搏（人观战）/ 无引擎 */
+export type EngineSide = Player | 'both' | null;
 
 export type GamePhase = 'idle' | 'playing' | 'ended';
 
 export interface GameStartOptions {
-  /** 引擎执方；null = 无人机（纯摆谱 / 分析） */
-  engineSide: Player | null;
+  /** 引擎执方；'both' = 左右互搏（人观战）；null = 无人机（纯摆谱 / 分析） */
+  engineSide: EngineSide;
   /** 强度档；null = 满强度（§5.5 默认） */
   strength: StrengthProfile | null;
 }
 
 export interface GameStateSnapshot {
   phase: GamePhase;
-  engineSide: Player | null;
+  engineSide: EngineSide;
   strength: StrengthProfile | null;
   result: GameResult | null;
 }
@@ -34,12 +37,12 @@ export interface GameStateSnapshot {
  * 管理对局元状态：阶段、引擎执方、强度档生命周期、终局结果。
  * 局面本体在 MoveTree，行棋合法性在 Game——本机不做规则判断。
  *
- * 时钟 / 认输 / 求和 / 让先等交互入口在 P1 接入对弈 UI 时扩展；
- * P0 立住的是强度档生命周期这条最容易出错的转移规则（见 __tests__/gameState.test.ts）。
+ * 对局中可调项（棋力 / 执方）经 updateStrength / setEngineSide 变更，
+ * 仍守终局/中止即复位的粘滞防线。
  */
 export class GameStateMachine {
   private _phase: GamePhase = 'idle';
-  private _engineSide: Player | null = null;
+  private _engineSide: EngineSide = null;
   private _strength: StrengthProfile | null = null;
   private _result: GameResult | null = null;
 
@@ -47,7 +50,7 @@ export class GameStateMachine {
     return this._phase;
   }
 
-  get engineSide(): Player | null {
+  get engineSide(): EngineSide {
     return this._engineSide;
   }
 
@@ -79,6 +82,22 @@ export class GameStateMachine {
     this._engineSide = options.engineSide;
     this._strength = options.strength;
     this._result = null;
+  }
+
+  /** 对局中调整棋力档（设置面板实时改，§5.5 强度对局级可变）。非 playing 抛错。 */
+  updateStrength(strength: StrengthProfile | null): void {
+    if (this._phase !== 'playing') {
+      throw new Error('没有进行中的对局');
+    }
+    this._strength = strength;
+  }
+
+  /** 对局中变更执方（接管 / 放手 / 转为互搏）。非 playing 抛错。 */
+  setEngineSide(engineSide: EngineSide): void {
+    if (this._phase !== 'playing') {
+      throw new Error('没有进行中的对局');
+    }
+    this._engineSide = engineSide;
   }
 
   /** 正常终局（绝杀 / 认输 / 双虚着……）。记录结果并复位强度档与引擎执方。 */

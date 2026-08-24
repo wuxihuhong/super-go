@@ -3,11 +3,15 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path';
 import type { AppSettings } from '../shared/ipc';
 
-const DEFAULTS: AppSettings = { theme: 'system' };
+const DEFAULTS: AppSettings = {
+  theme: 'system',
+  xiangqi: { strength: {}, ponder: false },
+};
 
 /**
  * 设置持久化（userData/settings.json）：§5.6"静默给默认，设置留逃生口"的落点。
- * P0 只承载 theme / language 两键，为 P5 的切换 UI 预留；写盘原子替换。
+ * 分层：主题/语言为公有配置；象棋（引擎路径/棋力/闲时思考）独立持久化，围棋 P2 同构扩展。
+ * 写盘原子替换；旧版 { engine: { thinkMs, path } } 迁移到象棋配置。
  */
 export class SettingsStore {
   private readonly file: string;
@@ -15,23 +19,45 @@ export class SettingsStore {
 
   constructor() {
     this.file = join(app.getPath('userData'), 'settings.json');
-    this.data = { ...DEFAULTS, ...this.read() };
+    this.data = { ...DEFAULTS, xiangqi: { ...DEFAULTS.xiangqi }, ...this.read() };
+    this.data.xiangqi = { ...DEFAULTS.xiangqi, ...this.data.xiangqi };
   }
 
   get(): AppSettings {
-    return { ...this.data };
+    return JSON.parse(JSON.stringify(this.data)) as AppSettings;
   }
 
   patch(partial: Partial<AppSettings>): AppSettings {
-    this.data = { ...this.data, ...partial };
+    this.data = {
+      ...this.data,
+      ...partial,
+      xiangqi: { ...this.data.xiangqi, ...partial.xiangqi },
+    };
     this.write();
     return this.get();
   }
 
   private read(): Partial<AppSettings> {
     try {
-      const raw = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<AppSettings>;
-      return raw && typeof raw === 'object' ? raw : {};
+      const raw = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<AppSettings> & {
+        /** 旧版字段（已迁移到 xiangqi） */
+        engine?: { path?: string; thinkMs?: number };
+      };
+      if (raw === null || typeof raw !== 'object') return {};
+      const { engine, ...rest } = raw;
+      const migrated: Partial<AppSettings> = rest;
+      if (engine !== undefined) {
+        // 旧版迁移：engine.thinkMs → xiangqi.strength.movetime；engine.path → enginePath
+        migrated.xiangqi = {
+          ...raw.xiangqi,
+          enginePath: raw.xiangqi?.enginePath ?? engine.path,
+          strength: {
+            ...raw.xiangqi?.strength,
+            ...(engine.thinkMs !== undefined ? { movetime: engine.thinkMs } : {}),
+          },
+        };
+      }
+      return migrated;
     } catch {
       return {};
     }

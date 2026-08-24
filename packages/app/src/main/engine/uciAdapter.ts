@@ -119,7 +119,7 @@ export class UciAdapter implements EngineAdapter {
     this.latestInfo = undefined;
     const move = await new Promise<string | null>((resolve) => {
       this.waitBestmove = resolve;
-      this.send(uciCommands.goMovetime(req.movetimeMs));
+      this.send(uciCommands.go(req));
     });
     this.waitBestmove = null;
     if (this.status === 'thinking') this.status = 'ready';

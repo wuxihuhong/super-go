@@ -1,6 +1,7 @@
 import { app, BrowserWindow, nativeTheme } from 'electron';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { normalizeXiangqiStrength } from '@super-go/core';
 import { IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
 import { enginesRootCandidates, findPikafishBinary } from './engine/discover';
 import { registerIpc } from './ipc';
@@ -89,8 +90,8 @@ void app.whenReady().then(() => {
   };
   const match = new MatchService(
     events,
-    resolveEnginePath(settings.get().engine?.path),
-    () => settings.get().engine?.thinkMs ?? 1000,
+    () => resolveEnginePath(settings.get().xiangqi?.enginePath),
+    () => normalizeXiangqiStrength(settings.get().xiangqi?.strength),
   );
 
   registerIpc(settings, () => mainWindow, match);

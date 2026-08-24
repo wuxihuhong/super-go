@@ -8,15 +8,17 @@
  * 真实引擎通路（UCI 子进程）仍在 Electron 内验证（vitest 集成测试覆盖）。
  */
 import {
-  chessStrengthFromElo,
+  chessStrengthFromConfig,
   GameStateMachine,
   isInCheck,
   MoveTree,
   moveToIccs,
+  normalizeXiangqiStrength,
   pieceAt,
   pieceTypeOf,
   pieceSide,
   XiangqiGame,
+  type EngineSide,
   type GameResult,
   type Player,
   type XiangqiMove,
@@ -190,6 +192,7 @@ function createMockApi(): SuperGoApi {
         finishIfOver();
         pushStatus('ready');
         pushSnapshot();
+        if (state.phase === 'playing' && engineToMoveNow()) fakeEngineTurn(); // 互搏续走
       },
       600 + Math.random() * 600,
     );
@@ -200,6 +203,12 @@ function createMockApi(): SuperGoApi {
     const pos = positionNow();
     const result: GameResult | null = game.isGameOver(pos, [pos]);
     if (result !== null) state.end(result);
+  };
+
+  /** 当前是否轮到引擎（含互搏） */
+  const engineToMoveNow = (): boolean => {
+    const side = state.engineSide;
+    return side === 'both' || side === positionNow().turn;
   };
 
   const guardPlaying = (): IntentResult | null => {
@@ -215,11 +224,15 @@ function createMockApi(): SuperGoApi {
       }),
     getSettings: () => Promise.resolve({ ...settings }),
     setSettings: (patch) => {
-      settings = { ...settings, ...patch, engine: { ...settings.engine, ...patch.engine } };
+      settings = {
+        ...settings,
+        ...patch,
+        xiangqi: { ...settings.xiangqi, ...patch.xiangqi },
+      };
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       applyThemeClass();
       notifyTheme();
-      return Promise.resolve({ ...settings });
+      return Promise.resolve(JSON.parse(JSON.stringify(settings)) as AppSettings);
     },
     onThemeChanged: (cb) => {
       themeListeners.add(cb);
@@ -231,24 +244,27 @@ function createMockApi(): SuperGoApi {
       thinking = false;
       if (state.phase === 'playing') state.abort();
       if (!intent.fromCursor) tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
-      const profile = chessStrengthFromElo(intent.elo);
+      const profile = chessStrengthFromConfig(normalizeXiangqiStrength(settings.xiangqi?.strength));
       state.start({ engineSide: intent.engineSide, strength: profile });
       pushStatus('ready');
       pushSnapshot();
-      if (positionNow().turn === intent.engineSide) fakeEngineTurn();
+      if (engineToMoveNow()) fakeEngineTurn();
       return Promise.resolve({ ok: true });
     },
     playMove: (intent: PlayMoveIntent) => {
       const guard = guardPlaying();
       if (guard !== null) return Promise.resolve(guard);
       if (thinking) return Promise.resolve({ ok: false, error: '引擎思考中' });
+      if (state.engineSide === 'both') {
+        return Promise.resolve({ ok: false, error: '引擎互搏中，观战模式不可落子' });
+      }
       const pos = positionNow();
       const move: XiangqiMove = { kind: 'xiangqi', from: intent.from, to: intent.to };
       if (!game.isLegal(pos, move)) return Promise.resolve({ ok: false, error: '非法着法' });
       tree.play(move);
       finishIfOver();
       pushSnapshot();
-      if (state.phase === 'playing' && positionNow().turn === state.engineSide) fakeEngineTurn();
+      if (state.phase === 'playing' && engineToMoveNow()) fakeEngineTurn();
       return Promise.resolve({ ok: true });
     },
     undoMove: () => {
@@ -258,18 +274,35 @@ function createMockApi(): SuperGoApi {
       generation++;
       thinking = false;
       tree.undo();
-      while (tree.cursor !== tree.root && positionNow().turn === state.engineSide) tree.undo();
+      if (state.engineSide === 'both') {
+        pushSnapshot();
+        return Promise.resolve({ ok: true });
+      }
+      while (tree.cursor !== tree.root && engineToMoveNow()) tree.undo();
       pushSnapshot();
-      if (positionNow().turn === state.engineSide) fakeEngineTurn();
+      if (engineToMoveNow()) fakeEngineTurn();
       return Promise.resolve({ ok: true });
     },
     resign: () => {
       const guard = guardPlaying();
       if (guard !== null) return Promise.resolve(guard);
+      if (state.engineSide === 'both') {
+        return Promise.resolve({ ok: false, error: '观战模式不可认输' });
+      }
       generation++;
       thinking = false;
-      state.end({ winner: state.engineSide ?? 'first', reason: 'resign' });
+      state.end({ winner: (state.engineSide ?? 'first') as Player, reason: 'resign' });
       pushSnapshot();
+      return Promise.resolve({ ok: true });
+    },
+    setEngineSide: (side: EngineSide) => {
+      const guard = guardPlaying();
+      if (guard !== null) return Promise.resolve(guard);
+      generation++;
+      thinking = false;
+      state.setEngineSide(side);
+      pushSnapshot();
+      if (engineToMoveNow()) fakeEngineTurn();
       return Promise.resolve({ ok: true });
     },
     gotoNode: (nodeId: number) => {
@@ -326,12 +359,14 @@ function loadSettings(): AppSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw !== null) {
       const parsed = JSON.parse(raw) as AppSettings;
-      if (parsed.theme !== undefined) return parsed;
+      if (parsed.theme !== undefined) {
+        return { ...parsed, xiangqi: { ponder: false, ...parsed.xiangqi } };
+      }
     }
   } catch {
     /* 忽略损坏的本地设置 */
   }
-  return { theme: 'system' satisfies ThemeSetting };
+  return { theme: 'system' satisfies ThemeSetting, xiangqi: { strength: {}, ponder: false } };
 }
 
 function chromeVersion(): string {

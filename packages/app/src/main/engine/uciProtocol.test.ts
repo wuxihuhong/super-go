@@ -121,7 +121,10 @@ describe('UCI 命令构造', () => {
     expect(uciCommands.position('FEN w', ['h2e2', 'h9g7'])).toBe(
       'position fen FEN w moves h2e2 h9g7',
     );
-    expect(uciCommands.goMovetime(1000)).toBe('go movetime 1000');
-    expect(uciCommands.goMovetime(0.4)).toBe('go movetime 1'); // 钳到 ≥1ms
+    expect(uciCommands.go({ movetimeMs: 1000 })).toBe('go movetime 1000');
+    expect(uciCommands.go({ movetimeMs: 0.4 })).toBe('go movetime 1'); // 钳到 ≥1ms
+    expect(uciCommands.go({ depth: 12 })).toBe('go depth 12');
+    expect(uciCommands.go({ nodes: 400000 })).toBe('go nodes 400000');
+    expect(uciCommands.go({ depth: 10, movetimeMs: 4000 })).toBe('go depth 10 movetime 4000');
   });
 });

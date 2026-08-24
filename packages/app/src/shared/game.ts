@@ -1,7 +1,7 @@
 /**
  * 对弈共享类型：快照 + 意图（main 生产、renderer 消费；禁止 Node/Electron 类型）。
  */
-import type { GameResult, Player, Point } from '@super-go/core';
+import type { EngineSide, GameResult, Player, Point } from '@super-go/core';
 
 export interface MainlineItem {
   nodeId: number;
@@ -18,8 +18,8 @@ export interface MainlineItem {
 
 export interface GameSnapshot {
   phase: 'idle' | 'playing' | 'ended';
-  /** 引擎执方；idle 复盘 / ended 保留终局时的执方 */
-  engineSide: Player | null;
+  /** 引擎执方；'both' = 互搏观战；idle 复盘 / ended 保留终局时的执方 */
+  engineSide: EngineSide;
   strengthLabel: string | null;
   result: GameResult | null;
   turn: Player;
@@ -37,11 +37,9 @@ export interface GameSnapshot {
 }
 
 export interface NewGameIntent {
-  /** 引擎执方 */
-  engineSide: Player;
-  /** null = 不设限（满强度） */
-  elo: number | null;
-  /** 从当前游标局面续弈（导入复盘后接着下）；缺省从头开新局 */
+  /** 引擎执方：'first'/'second' 单方，'both' = 引擎左右互搏（人观战） */
+  engineSide: EngineSide;
+  /** 从当前游标局面续弈；缺省从头开新局。棋力走固有配置（settings.xiangqi.strength） */
   fromCursor?: boolean;
 }
 

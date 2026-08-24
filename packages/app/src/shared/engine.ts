@@ -24,9 +24,11 @@ export interface EnginePanelInfo {
   strengthLabel: string | null;
 }
 
-/** 出招请求约束：P1 固定思考毫秒数；时限制留 P2 */
+/** 出招搜索约束（§5.5 棋力模式）：深度/节点/时长可组合，时长作上限兜底 */
 export interface GenMoveRequest {
-  movetimeMs: number;
+  movetimeMs?: number;
+  depth?: number;
+  nodes?: number;
 }
 
 /** 引擎评估帧（info 行提炼；cp 为走子方视角厘兵） */
