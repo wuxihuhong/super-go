@@ -30,6 +30,10 @@ export function registerIpc(
       // 手动选浅/深即固定；选回 system 恢复跟随（§7.5）
       nativeTheme.themeSource = next.theme;
     }
+    // 窗口置顶即时生效（连线代打时覆盖第三方平台窗口）
+    if (patch.view?.alwaysOnTop !== undefined) {
+      getMainWindow()?.setAlwaysOnTop(next.view?.alwaysOnTop === true);
+    }
     // 棋力属固有配置且对局中可实时调整：设置一变立即下发（深度/时长/节点/不设限即时生效）
     void match.refreshStrength();
     return next;
@@ -63,7 +67,6 @@ export function registerIpc(
     (_e, side: Parameters<MatchService['setEngineSide']>[0]) => match.setEngineSide(side),
   );
   ipcMain.handle(IPC_CHANNELS.gamePauseToggle, () => match.togglePause());
-  ipcMain.handle(IPC_CHANNELS.gameRematch, () => match.rematch());
   ipcMain.handle(IPC_CHANNELS.gameGoto, (_e, nodeId: number) => match.goto(nodeId));
   ipcMain.handle(IPC_CHANNELS.gameSnapshotGet, () => match.snapshot());
 }

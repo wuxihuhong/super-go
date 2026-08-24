@@ -21,6 +21,8 @@ html,
 body,
 #root {
   height: 100%;
+  /* 桌面应用视口：布局自适应（棋盘列宽按可用空间收敛），不出现页面级滚动条 */
+  overflow: hidden;
 }
 
 body {

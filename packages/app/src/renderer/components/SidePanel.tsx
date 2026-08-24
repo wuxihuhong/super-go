@@ -1,19 +1,26 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { GameSnapshot } from '@shared/game';
 import type { EngineStatusPayload, LiveEval } from '@shared/ipc';
+import EvalChart from './EvalChart';
 import { evalValueText } from '../lib/eval';
 import type { MessageKey, TFunction } from '../i18n';
+
+const PANEL_MIN = 224;
+const PANEL_MAX = 480;
+const PANEL_DEFAULT = 288;
 
 export interface SidePanelProps {
   t: TFunction;
   snapshot: GameSnapshot | null;
   engineStatus: EngineStatusPayload | null;
   liveEval: LiveEval | null;
+  /** 主题切换 tick（驱动折线图重绘） */
+  themeTick: number;
   onGoto: (nodeId: number) => void;
   onContinue: () => void;
 }
 
-/** 右侧可折叠面板：状态 + 着法列表 + 引擎信息（双方信息条在棋盘上下沿，§7.3） */
+/** 右侧可折叠面板：状态 + 着法列表 + 评估走势 + 引擎信息；左缘可拖拽调宽（持久化） */
 export default function SidePanel(props: SidePanelProps) {
   const { snapshot, engineStatus } = props;
   const browsing = snapshot !== null && snapshot.phase !== 'playing';
@@ -21,8 +28,48 @@ export default function SidePanel(props: SidePanelProps) {
   const evalText = evalTextOf(props);
   const canContinue = snapshot !== null && browsing && snapshot.moves.length > 0;
 
+  const [width, setWidth] = useState((): number => {
+    const saved = Number(window.localStorage.getItem('sidepanel-width'));
+    return Number.isFinite(saved) && saved >= PANEL_MIN && saved <= PANEL_MAX
+      ? saved
+      : PANEL_DEFAULT;
+  });
+  const drag = useRef<{ startX: number; startW: number; width: number } | null>(null);
+  const onHandleDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    drag.current = { startX: e.clientX, startW: width, width };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onHandleMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const d = drag.current;
+    if (d === null) return;
+    const next = Math.max(PANEL_MIN, Math.min(PANEL_MAX, d.startW - (e.clientX - d.startX)));
+    d.width = next;
+    setWidth(next);
+  };
+  // 指针可能被系统取消（Cmd-Tab/失焦/触控中断）：统一走此处收尾并持久化
+  const onHandleUp = (): void => {
+    const d = drag.current;
+    if (d === null) return;
+    drag.current = null;
+    window.localStorage.setItem('sidepanel-width', String(d.width));
+  };
+
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-surface">
+    <aside
+      className="relative flex shrink-0 flex-col border-l border-border bg-surface"
+      style={{ width }}
+    >
+      {/* 拖拽把手（左缘） */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        onPointerDown={onHandleDown}
+        onPointerMove={onHandleMove}
+        onPointerUp={onHandleUp}
+        onPointerCancel={onHandleUp}
+        onLostPointerCapture={onHandleUp}
+        className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize transition-colors hover:bg-accent/40"
+      />
       {/* 状态行 */}
       <div className="flex min-h-11 items-center gap-2 border-b border-border px-4">
         <span
@@ -62,6 +109,18 @@ export default function SidePanel(props: SidePanelProps) {
         <MoveList t={props.t} snapshot={snapshot} browsing={browsing} onGoto={props.onGoto} />
       </div>
 
+      {/* 评估走势（着法之后、引擎信息之前） */}
+      <div className="border-t border-border px-4 py-2">
+        <h2 className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {props.t('panel.chart')}
+        </h2>
+        <EvalChart
+          moves={snapshot?.moves ?? []}
+          themeTick={props.themeTick}
+          emptyText={props.t('panel.chart.empty')}
+        />
+      </div>
+
       {/* 引擎信息 */}
       <div className="border-t border-border px-4 py-3">
         <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -79,7 +138,11 @@ export default function SidePanel(props: SidePanelProps) {
           />
           <Row
             label={props.t('panel.engine.depth')}
-            value={props.liveEval?.depth !== undefined ? String(props.liveEval.depth) : '—'}
+            value={
+              snapshot?.thinking === true && props.liveEval?.depth !== undefined
+                ? String(props.liveEval.depth)
+                : '—'
+            }
           />
           <Row label={props.t('panel.engine.eval')} value={evalText} />
         </dl>
@@ -222,7 +285,10 @@ function engineStatusLabel(
 
 function evalTextOf(props: SidePanelProps): string {
   const { snapshot, liveEval } = props;
-  const cp = liveEval?.redCp ?? snapshot?.redCp;
-  const mate = liveEval?.redMate ?? snapshot?.redMate;
+  // liveEval 是思考中的瞬时帧：引擎停止/悔棋/跳转后不清空，须以 thinking 门控，
+  // 否则最后一帧（如"#3 绝杀"）一直遮蔽 snapshot 里的当前局面评估
+  const live = snapshot?.thinking === true ? liveEval : null;
+  const cp = live?.redCp ?? snapshot?.redCp;
+  const mate = live?.redMate ?? snapshot?.redMate;
   return evalValueText(props.t, cp, mate).text;
 }

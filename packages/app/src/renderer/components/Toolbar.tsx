@@ -11,6 +11,7 @@ import {
   IconGear,
   IconPanel,
   IconPause,
+  IconPin,
   IconPlay,
   IconPlus,
   IconUndo,
@@ -28,6 +29,8 @@ export interface ToolbarProps {
   /** 互搏观战不可认输 */
   canResign: boolean;
   panelOpen: boolean;
+  /** 窗口置顶（工具栏快速切换，状态随设置持久化） */
+  alwaysOnTop: boolean;
   engineStatus: EngineStatusPayload | null;
   snapshot: GameSnapshot | null;
   popover: Popover;
@@ -37,6 +40,7 @@ export interface ToolbarProps {
   onResign: () => void;
   onPauseToggle: () => void;
   onSetEngineSide: (side: EngineSide) => void;
+  onToggleAlwaysOnTop: () => void;
   onTogglePanel: () => void;
   onSettingsChanged: (next: AppSettings) => void;
 }
@@ -243,6 +247,14 @@ export default function Toolbar(props: ToolbarProps) {
             'right',
           )}
         </div>
+        {/* 窗口级开关收尾最右（mac 惯例：置顶/图钉类视图控制在工具栏末端） */}
+        {iconButton(
+          'toolbar.alwaysOnTop',
+          <IconPin />,
+          props.onToggleAlwaysOnTop,
+          false,
+          props.alwaysOnTop, // 开启时强调色点亮
+        )}
       </div>
     </header>
   );

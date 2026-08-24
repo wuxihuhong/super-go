@@ -231,7 +231,7 @@ function createMockApi(): SuperGoApi {
       settings = {
         ...settings,
         ...patch,
-        view: { board3d: true, ...settings.view, ...patch.view },
+        view: { board3d: true, alwaysOnTop: false, ...settings.view, ...patch.view },
         xiangqi: { ponder: false, ...settings.xiangqi, ...patch.xiangqi },
       };
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -335,20 +335,6 @@ function createMockApi(): SuperGoApi {
       pushSnapshot();
       return Promise.resolve({ ok: true });
     },
-    rematch: () => {
-      // 沿用上局执方从头开始（对齐 MatchService.rematch）
-      generation++;
-      thinking = false;
-      paused = false;
-      if (state.phase === 'playing') state.abort();
-      tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
-      const profile = chessStrengthFromConfig(normalizeXiangqiStrength(settings.xiangqi?.strength));
-      state.start({ engineSide: lastEngineSide, strength: profile });
-      pushStatus('ready');
-      pushSnapshot();
-      if (engineToMoveNow()) fakeEngineTurn();
-      return Promise.resolve({ ok: true });
-    },
     pickEnginePath: () => Promise.resolve(null), // 浏览器沙箱无文件对话框，入口由文本框承担
     gotoNode: (nodeId: number) => {
       if (state.phase === 'playing') return Promise.resolve({ ok: false, error: '对局中不可跳转' });
@@ -407,7 +393,7 @@ function loadSettings(): AppSettings {
       if (parsed.theme !== undefined) {
         return {
           ...parsed,
-          view: { board3d: true, ...parsed.view },
+          view: { board3d: true, alwaysOnTop: false, ...parsed.view },
           xiangqi: { ponder: false, ...parsed.xiangqi },
         };
       }
@@ -417,7 +403,7 @@ function loadSettings(): AppSettings {
   }
   return {
     theme: 'system' satisfies ThemeSetting,
-    view: { board3d: true },
+    view: { board3d: true, alwaysOnTop: false },
     xiangqi: { strength: {}, ponder: false },
   };
 }

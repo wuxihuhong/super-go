@@ -13,10 +13,8 @@ import type { AppSettings, EngineStatusPayload, LanguageCode, LiveEval } from '@
 import type { GameSnapshot } from '@shared/game';
 import Board from './components/Board';
 import Board3D from './components/Board3D';
-import PlayerBanner from './components/PlayerBanner';
 import SidePanel from './components/SidePanel';
 import Toolbar, { type Popover } from './components/Toolbar';
-import WinBar from './components/WinBar';
 import { createT, detectLanguage } from './i18n';
 import { useElementSize } from './lib/useElementSize';
 import { playSound, setSoundEnabled } from './lib/sound';
@@ -39,11 +37,10 @@ export default function App() {
   const [resultDismissed, setResultDismissed] = useState(false);
   const [board3d, setBoard3d] = useState(true);
   const [glFailed, setGlFailed] = useState(false);
-  // 中央区实测高度 → 精确推算棋盘列宽（banner/间距为常量，比例不靠 CSS 拼凑）
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  // 中央区实测高度 → 推算棋盘列宽（useElementSize 报告 contentRect，已不含 p-6 内边距）
   const { ref: mainRef, height: mainHeight } = useElementSize<HTMLElement>();
-  const BANNER_H = 36;
-  const GAP = 8;
-  const boardHeight = Math.max(240, mainHeight - BANNER_H * 2 - GAP * 2);
+  const boardHeight = Math.max(240, mainHeight);
   // 画布宽高比 =（8+2×0.85）/（9+2×0.85），含坐标编号边距
   const boardColumnWidth = boardHeight * 0.907;
 
@@ -52,6 +49,7 @@ export default function App() {
       setLang(s.language ?? detectLanguage(navigator.languages));
       setSoundEnabled(s.sound ?? true);
       setBoard3d(s.view?.board3d ?? true);
+      setAlwaysOnTop(s.view?.alwaysOnTop ?? false);
     });
     void window.superGo.getSnapshot().then(setSnapshot);
     // 主题变化时 CSS 变量已自动切换，这里只为触发 canvas 重绘
@@ -174,7 +172,14 @@ export default function App() {
     setLang(next.language ?? detectLanguage(navigator.languages));
     setSoundEnabled(next.sound ?? true);
     setBoard3d(next.view?.board3d ?? true);
+    setAlwaysOnTop(next.view?.alwaysOnTop ?? false);
   }, []);
+
+  /** 工具栏快速切换窗口置顶（走设置通道：持久化 + main 即时生效） */
+  const handleToggleAlwaysOnTop = useCallback(() => {
+    void window.superGo.setSettings({ view: { alwaysOnTop: !alwaysOnTop } });
+    setAlwaysOnTop(!alwaysOnTop);
+  }, [alwaysOnTop]);
 
   const handleSetEngineSide = useCallback(
     (side: EngineSide) => {
@@ -221,13 +226,6 @@ export default function App() {
   const playing = snapshot?.phase === 'playing';
   // 棋盘方位：上方恒为对手（引擎），下方恒为用户；互搏时两侧都是引擎
   const flip = snapshot?.engineSide === 'first';
-  const topBannerSide: Player = flip ? 'first' : 'second';
-  const bottomBannerSide: Player = flip ? 'second' : 'first';
-  const engineName = engineStatus?.name ?? t('panel.engine');
-  const engineThinking = playing === true && snapshot?.thinking === true;
-  const strengthCaption = snapshot?.strengthLabel ?? t('panel.engine.unlimited');
-  const topCaption = engineSide === null ? '' : strengthCaption;
-  const checkCaption = playing === true && snapshot?.inCheck === true ? t('status.check') : '';
 
   return (
     <div className="relative flex h-full flex-col bg-background">
@@ -241,6 +239,7 @@ export default function App() {
         }
         canResign={playing === true && !spectating}
         panelOpen={panelOpen}
+        alwaysOnTop={alwaysOnTop}
         engineStatus={engineStatus}
         snapshot={snapshot}
         popover={popover}
@@ -252,6 +251,7 @@ export default function App() {
         onResign={() => runIntent(() => window.superGo.resign())}
         onPauseToggle={() => runIntent(() => window.superGo.togglePause())}
         onSetEngineSide={handleSetEngineSide}
+        onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
         onTogglePanel={() => setPanelOpen((v) => !v)}
         onSettingsChanged={handleSettingsChanged}
       />
@@ -268,117 +268,89 @@ export default function App() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <main ref={mainRef} className="flex min-w-0 flex-1 items-center justify-center gap-3 p-6">
+        <main ref={mainRef} className="flex min-w-0 flex-1 items-center justify-center p-6">
           {mainHeight > 0 && (
-            <>
-              <div className="h-full shrink-0 py-1">
-                <WinBar
-                  t={t}
-                  redCp={liveEval?.redCp ?? snapshot?.redCp}
-                  redMate={snapshot?.thinking ? liveEval?.redMate : snapshot?.redMate}
+            <div
+              className={`relative h-full max-w-full overflow-hidden rounded-xl ${
+                board3d && !glFailed ? '' : 'shadow-md' // 3D 自带接地投影，CSS 盒阴影会叠出"外框"
+              }`}
+              style={{ width: boardColumnWidth }}
+            >
+              {board3d && !glFailed ? (
+                <Board3D
+                  position={position}
+                  selected={selected}
+                  targets={legalTargets}
+                  lastMove={snapshot?.lastMove ?? null}
+                  checkedKing={checkedKing}
+                  flip={flip}
+                  themeTick={themeTick}
+                  onSquareClick={handleSquareClick}
+                  onUnavailable={() => setGlFailed(true)}
                 />
-              </div>
-              <div
-                className="flex h-full max-w-full flex-col"
-                style={{ width: boardColumnWidth, gap: GAP }}
-              >
-                <PlayerBanner
-                  t={t}
-                  side={topBannerSide}
-                  name={engineSide === null ? t('side.black') : engineName}
-                  active={playing === true && snapshot?.turn === topBannerSide}
-                  thinking={engineThinking && snapshot?.turn === topBannerSide}
-                  caption={topCaption}
+              ) : (
+                <Board
+                  position={position}
+                  selected={selected}
+                  targets={legalTargets}
+                  lastMove={snapshot?.lastMove ?? null}
+                  checkedKing={checkedKing}
+                  flip={flip}
+                  themeTick={themeTick}
+                  onSquareClick={handleSquareClick}
                 />
-                <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl shadow-md">
-                  {board3d && !glFailed ? (
-                    <Board3D
-                      position={position}
-                      selected={selected}
-                      targets={legalTargets}
-                      lastMove={snapshot?.lastMove ?? null}
-                      checkedKing={checkedKing}
-                      flip={flip}
-                      themeTick={themeTick}
-                      onSquareClick={handleSquareClick}
-                      onUnavailable={() => setGlFailed(true)}
-                    />
-                  ) : (
-                    <Board
-                      position={position}
-                      selected={selected}
-                      targets={legalTargets}
-                      lastMove={snapshot?.lastMove ?? null}
-                      checkedKing={checkedKing}
-                      flip={flip}
-                      themeTick={themeTick}
-                      onSquareClick={handleSquareClick}
-                    />
-                  )}
-                  {/* 终局结果浮层：胜方大字 + 原因 + 快捷操作（渐入，克制动效） */}
-                  {snapshot?.phase === 'ended' && snapshot.result !== null && !resultDismissed && (
-                    <div className="fade-in absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
-                      <div className="w-64 rounded-xl border border-border bg-surface p-5 text-center shadow-xl">
-                        <div
-                          className={`text-2xl font-semibold ${
-                            snapshot.result.winner === 'first'
-                              ? 'text-piece-red'
-                              : snapshot.result.winner === 'second'
-                                ? 'text-piece-black'
-                                : 'text-foreground'
-                          }`}
-                        >
-                          {snapshot.result.winner === 'first'
-                            ? t('status.result.redWin')
-                            : snapshot.result.winner === 'second'
-                              ? t('status.result.blackWin')
-                              : t('status.result.draw')}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {snapshot.result.reason === 'mate'
-                            ? t('status.reason.mate')
-                            : snapshot.result.reason === 'stalemate'
-                              ? t('status.reason.stalemate')
-                              : snapshot.result.reason === 'resign'
-                                ? t('status.reason.resign')
-                                : ''}
-                        </div>
-                        <div className="mt-4 flex justify-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => runIntent(() => window.superGo.rematch())}
-                            className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-accent-foreground"
-                          >
-                            {t('game.rematch')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setResultDismissed(true)}
-                            className="rounded-lg border border-border px-3.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
-                          >
-                            {t('game.review')}
-                          </button>
-                        </div>
-                      </div>
+              )}
+              {/* 终局结果浮层：胜方大字 + 原因 + 快捷操作（渐入，克制动效） */}
+              {snapshot?.phase === 'ended' && snapshot.result !== null && !resultDismissed && (
+                <div className="fade-in absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">
+                  <div className="w-64 rounded-xl border border-border bg-surface p-5 text-center shadow-xl">
+                    <div
+                      className={`text-2xl font-semibold ${
+                        snapshot.result.winner === 'first'
+                          ? 'text-piece-red'
+                          : snapshot.result.winner === 'second'
+                            ? 'text-piece-black'
+                            : 'text-foreground'
+                      }`}
+                    >
+                      {snapshot.result.winner === 'first'
+                        ? t('status.result.redWin')
+                        : snapshot.result.winner === 'second'
+                          ? t('status.result.blackWin')
+                          : t('status.result.draw')}
                     </div>
-                  )}
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {snapshot.result.reason === 'mate'
+                        ? t('status.reason.mate')
+                        : snapshot.result.reason === 'stalemate'
+                          ? t('status.reason.stalemate')
+                          : snapshot.result.reason === 'resign'
+                            ? t('status.reason.resign')
+                            : ''}
+                    </div>
+                    <div className="mt-4 flex justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setResultDismissed(true);
+                          setPopover('setup'); // 弹新对局面板：由用户选执方再开局
+                        }}
+                        className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-accent-foreground"
+                      >
+                        {t('game.rematch')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setResultDismissed(true)}
+                        className="rounded-lg border border-border px-3.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+                      >
+                        {t('game.review')}
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <PlayerBanner
-                  t={t}
-                  side={bottomBannerSide}
-                  name={
-                    userSide === null
-                      ? engineSide === 'both'
-                        ? engineName
-                        : t('side.red')
-                      : t('player.you')
-                  }
-                  active={playing === true && snapshot?.turn === bottomBannerSide}
-                  thinking={spectating && engineThinking && snapshot?.turn === bottomBannerSide}
-                  caption={checkCaption}
-                />
-              </div>
-            </>
+              )}
+            </div>
           )}
         </main>
 
@@ -388,6 +360,7 @@ export default function App() {
             snapshot={snapshot}
             engineStatus={engineStatus}
             liveEval={liveEval}
+            themeTick={themeTick}
             onGoto={(nodeId) => runIntent(() => window.superGo.gotoNode(nodeId))}
             onContinue={() =>
               runIntent(() =>

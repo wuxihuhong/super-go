@@ -10,7 +10,17 @@ import { join } from 'node:path';
 const CANDIDATES: Record<string, string[]> = {
   darwin: ['MacOS/pikafish-apple-silicon', 'MacOS/pikafish-intel'],
   linux: ['Linux/pikafish-avx2', 'Linux/pikafish-bmi2', 'Linux/pikafish-sse41-popcnt'],
-  win32: ['pikafish-avx2.exe', 'pikafish-bmi2.exe', 'pikafish-sse41-popcnt.exe'],
+  // avx512icl 优先（AVX-512 路径，Zen5 如 9950X3D / IceLake+ 命中最优），
+  // 逐级回退兼容老 CPU；都不在则用户可在设置里指定路径（§5.6 逃生口）
+  win32: [
+    'pikafish-avx512icl.exe',
+    'pikafish-vnni512.exe',
+    'pikafish-avx512.exe',
+    'pikafish-avxvnni.exe',
+    'pikafish-bmi2.exe',
+    'pikafish-avx2.exe',
+    'pikafish-sse41-popcnt.exe',
+  ],
 };
 
 /** 在 enginesDir（= <repo>/engines/chess）下找本平台 Pikafish */

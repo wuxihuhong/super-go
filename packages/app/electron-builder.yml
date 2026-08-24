@@ -1,0 +1,49 @@
+# 打包配置（electron-builder）：pnpm build-app 在本机产出 mac dmg + Windows 安装包
+appId: com.super-go.app
+productName: Super Go
+directories:
+  output: dist
+  buildResources: build
+# asar 只含编译产物（依赖已内联 bundle，见 electron.vite.config.ts）
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+asarUnpack:
+  - '**/*.node'
+compression: maximum
+# 无签名证书：跳过公证流程（产物仍可右键打开/安装）
+mac:
+  category: public.app-category.games
+  target:
+    - target: dmg
+      arch: [arm64]
+  identity: null
+  extendInfo:
+    LSMinimumSystemVersion: '12.0'
+  # 引擎随包分发：只带本平台二进制 + NNUE（51MB）
+  extraResources:
+    - from: ../../engines/chess
+      to: engines/chess
+      filter:
+        - '*/MacOS/**'
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  requestedExecutionLevel: asInvoker
+  # 全部 CPU 变体都带上（每个 1.5MB）：安装机自动命中（avx512icl 优先），
+  # 9950X3D（Zen5，AVX-512）命中 pikafish-avx512icl.exe
+  extraResources:
+    - from: ../../engines/chess
+      to: engines/chess
+      filter:
+        - '*/*.exe'
+        - '*/pikafish.nnue'
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-${version}-setup.${ext}
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}

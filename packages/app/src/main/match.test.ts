@@ -123,9 +123,9 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     const endedAgain = await waitFor((s) => s.phase === 'ended');
     expect(endedAgain.moves.length).toBe(4);
 
-    // 再来一局：沿用执方从头开始（终局浮层快捷入口）
-    const rematched = await match.rematch();
-    expect(rematched.ok).toBe(true);
+    // 终局后重开（原 rematch 快捷链已删，走 newGame 同参等价）
+    const restarted = await match.newGame({ engineSide: 'second', fromCursor: false });
+    expect(restarted.ok).toBe(true);
     const fresh = await waitFor((s) => s.phase === 'playing' && s.moves.length === 0);
     expect(fresh.engineSide).toBe('second');
 

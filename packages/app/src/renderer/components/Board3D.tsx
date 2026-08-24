@@ -1,10 +1,9 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { pieceAt, pieceChar, pieceSide, type Point, type XiangqiPosition } from '@super-go/core';
-import { cannonPawnPoints, cornerMarks, drawMoveArrow, grooveLine } from '../lib/boardDraw';
-import { cssColor } from '../lib/theme';
+import { cannonPawnPoints, cornerMarks, drawMoveMarks, grooveLine } from '../lib/boardDraw';
+import { cssColor, isDarkTheme } from '../lib/theme';
 import { useElementSize } from '../lib/useElementSize';
 
 export interface Board3DProps {
@@ -27,7 +26,7 @@ export interface Board3DProps {
  * - 材质：车削轮廓棋子（LatheGeometry）+ 阴刻字顶盘 + clearcoat 清漆 +
  *   RoomEnvironment 环境反射 + 实时软阴影（棋影落盘、盘影落地）。
  * - 盘面：多层程序木纹 + 刻线凹槽光影 + 炮/兵位折角标记（传统盘面）。
- * 拖拽旋转（限制俯仰）、滚轮缩放、点击拾取落子；颜色全走语义 token。
+ * 固定取景（对弈视角不可拖拽/缩放），点击拾取落子；颜色全走语义 token。
  */
 
 const MARGIN = 1.2; // 格线区外的框带宽度（世界单位）
@@ -60,13 +59,14 @@ export default function Board3D(props: Board3DProps) {
     renderer: THREE.WebGLRenderer;
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
-    controls: OrbitControls;
     boardCtx: CanvasRenderingContext2D;
     boardTex: THREE.CanvasTexture;
     sideMat: THREE.MeshPhysicalMaterial;
     pieceGroup: THREE.Group;
     /** 棋子材质缓存（键：piece + 主题） */
     matCache: Map<string, THREE.MeshPhysicalMaterial>;
+    /** 按需渲染（场景被 effect 修改后调用） */
+    scheduleRender: () => void;
   } | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -87,7 +87,7 @@ export default function Board3D(props: Board3DProps) {
     renderer.toneMapping = THREE.NeutralToneMapping;
     renderer.toneMappingExposure = 0.94;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap; // r185：PCFSoftShadowMap 已弃用
     host.appendChild(renderer.domElement);
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
@@ -177,17 +177,10 @@ export default function Board3D(props: Board3DProps) {
     const pieceGroup = new THREE.Group();
     scene.add(pieceGroup);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.enablePan = false;
-    controls.minDistance = 18; // 再近则近端盘角溢出视野（45° 俯角最坏情形）
-    controls.maxDistance = 28;
-    controls.minPolarAngle = 0.2;
-    controls.maxPolarAngle = 1.25;
-    controls.rotateSpeed = 0.55;
-    controls.target.set(0, 0, 0.4);
+    // 固定取景：对弈视角不可拖拽/缩放（初始化时相机看向 (0,0,0.35)，翻转由 effect 设置）
+    camera.lookAt(0, 0, 0.35);
 
-    // 点击拾取（拖动距离小才算点击；拾取平面 = 盘面 y=0）
+    // 点击拾取（位移小才算点击，防划过误触；拾取平面 = 盘面 y=0）
     const raycaster = new THREE.Raycaster();
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     let downAt: { x: number; y: number } | null = null;
@@ -219,28 +212,27 @@ export default function Board3D(props: Board3DProps) {
     bodyGeometry();
     topGeometry();
 
+    // 按需渲染：固定取景无动画（OrbitControls 阻尼已移除），场景修改都发生在
+    // React effect 里——常驻 rAF 会以 60fps 重绘静止的 PBR+阴影画面空耗 GPU。
+    // 各 effect 末尾调用 scheduleRender()，这里只画首帧。
+    const scheduleRender = (): void => {
+      renderer.render(scene, camera);
+    };
+    scheduleRender();
+
     sceneRef.current = {
       renderer,
       scene,
       camera,
-      controls,
       boardCtx,
       boardTex,
       sideMat,
       pieceGroup,
       matCache: new Map(),
+      scheduleRender,
     };
-
-    let raf = 0;
-    const loop = (): void => {
-      raf = requestAnimationFrame(loop);
-      controls.update();
-      renderer.render(scene, camera);
-    };
-    loop();
 
     return () => {
-      cancelAnimationFrame(raf);
       renderer.domElement.removeEventListener('pointerdown', onDown);
       renderer.domElement.removeEventListener('pointerup', onUp);
       const s = sceneRef.current;
@@ -251,7 +243,6 @@ export default function Board3D(props: Board3DProps) {
           m.dispose();
         }
       }
-      controls.dispose();
       bodyGeometry().dispose();
       bodyGeomSingleton = null;
       topGeometry().dispose();
@@ -277,15 +268,16 @@ export default function Board3D(props: Board3DProps) {
     gl.renderer.setSize(width, height, false);
     gl.camera.aspect = width / height;
     gl.camera.updateProjectionMatrix();
+    gl.scheduleRender();
   }, [width, height]);
 
-  // ---- 视角（执方/翻转：相机在用户一侧） ----
+  // ---- 视角（执方/翻转：相机固定在用户一侧，仅朝向切换） ----
   useEffect(() => {
     const gl = sceneRef.current;
     if (gl === null) return;
     gl.camera.position.set(0, 20, props.flip ? -13 : 13);
-    gl.controls.target.set(0, 0, props.flip ? -0.35 : 0.35);
-    gl.controls.update();
+    gl.camera.lookAt(0, 0, props.flip ? -0.35 : 0.35);
+    gl.scheduleRender();
   }, [props.flip]);
 
   // ---- 盘面纹理（木纹 + 刻线 + 传统标记；随局面/主题重绘） ----
@@ -295,6 +287,7 @@ export default function Board3D(props: Board3DProps) {
     paintBoardTexture(gl.boardCtx, props);
     gl.boardTex.needsUpdate = true;
     gl.sideMat.color.set(cssColor('--board-frame'));
+    gl.scheduleRender();
   }, [props, props.themeTick]);
 
   // ---- 棋子（车削实体 + 刻字顶盘，按主题缓存材质） ----
@@ -303,7 +296,7 @@ export default function Board3D(props: Board3DProps) {
     if (gl === null) return;
     const { pieceGroup, matCache } = gl;
     pieceGroup.clear();
-    const dark = document.documentElement.classList.contains('theme-dark');
+    const dark = isDarkTheme();
     const sideMat = cachedPieceSideMaterial(matCache, dark);
     for (let y = 0; y < 10; y++) {
       for (let x = 0; x < 9; x++) {
@@ -321,6 +314,7 @@ export default function Board3D(props: Board3DProps) {
         pieceGroup.add(g);
       }
     }
+    gl.scheduleRender();
   }, [props.position, props.flip, props.themeTick]);
 
   return (
@@ -573,6 +567,14 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
     danger: cssColor('--danger'),
   };
 
+  // ---- flip：整图旋转 180° 绘制（见 P() 注释） ----
+  ctx.save();
+  if (props.flip) {
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(Math.PI);
+    ctx.translate(-W / 2, -H / 2);
+  }
+
   // ---- 木纹基底：对角渐变 + 宽年轮条带 + 细纹 + 长深纹 + 光泽 ----
   const grad = ctx.createLinearGradient(0, 0, W, H);
   grad.addColorStop(0, c.hi);
@@ -629,6 +631,10 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
   const cell = PXU;
   const px = (f: number): number => (MARGIN + f) * PXU;
   const py = (r: number): number => (MARGIN + r) * PXU;
+  // flip（执黑）= 贴图整体旋转 180°：静态盘面（格线/编号/河界文字）一次转对。
+  // 但棋子不随贴图旋转（仍在原世界坐标，拾取公式不变），所以**对局标记**
+  // （选中/落点/走子/将军）在旋转坐标里要反向镜像（画到 (8-x,9-y)），
+  // 旋转后才落回棋子实际所在格位——否则标记跑到对角镜像位。
   const P = (p: Point): { x: number; y: number } => ({
     x: px(props.flip ? 8 - p.x : p.x),
     y: py(props.flip ? 9 - p.y : p.y),
@@ -709,9 +715,9 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
   const bandY2 = H - MARGIN * 0.42 * PXU;
   // 浅色木框带 → 深褐刻字（--board-label 是深框用的奶白色，此处不可见）
   for (let i = 0; i < 9; i++) {
-    const blackVal = props.flip ? 9 - i : i + 1;
-    const redVal = props.flip ? i + 1 : 9 - i;
-    const topIsRed = props.flip;
+    const blackVal = i + 1;
+    const redVal = 9 - i;
+    const topIsRed = false;
     carved(
       topIsRed ? (CN[redVal - 1] ?? '') : String(blackVal),
       px(i),
@@ -732,7 +738,7 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
   if (props.lastMove !== null) {
     const from = P(props.lastMove.from);
     const to = P(props.lastMove.to);
-    drawMoveArrow(ctx, from.x, from.y, to.x, to.y, cell, c.accent);
+    drawMoveMarks(ctx, from.x, from.y, to.x, to.y, cell, c.accent);
   }
   if (props.checkedKing !== null) {
     const k = P(props.checkedKing);
@@ -771,4 +777,5 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
     ctx.stroke();
     ctx.restore();
   }
+  ctx.restore(); // flip 旋转结束
 }

@@ -136,11 +136,6 @@ export class MatchService {
     return { ok: true };
   }
 
-  /** 再来一局：沿用上局执方与棋力从头开始（终局浮层的快捷入口） */
-  rematch(): Promise<IntentResult> {
-    return this.newGame({ engineSide: this.lastEngineSide, fromCursor: false });
-  }
-
   async undo(): Promise<IntentResult> {
     if (this.state.phase === 'ended') {
       // 终局悔棋复活：撤回着法、保留原执方与棋力继续对弈（终局即复位的强度重新下发）

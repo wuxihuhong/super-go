@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme } from 'electron';
+import { app, BrowserWindow, Menu, nativeTheme } from 'electron';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeXiangqiStrength } from '@super-go/core';
@@ -10,7 +10,39 @@ import { SettingsStore } from './settings';
 
 let mainWindow: BrowserWindow | null = null;
 
-function createWindow(): BrowserWindow {
+// 应用名（mac 菜单栏/dock、Windows 进程名）；安装包显示名由 electron-builder 的 productName 决定
+app.setName('Super Go');
+
+/**
+ * 应用菜单：菜单栏第一项 = app 名（开发模式默认菜单显示 "Electron"，打包版不受影响）。
+ * 子菜单用 role 构建（文案随系统语言自动本地化，无硬编码）。
+ */
+function installAppMenu(): void {
+  const isMac = process.platform === 'darwin';
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      ...(isMac
+        ? [
+            {
+              label: app.getName(),
+              submenu: [
+                { role: 'about' as const },
+                { type: 'separator' as const },
+                { role: 'hide' as const },
+                { role: 'hideOthers' as const },
+                { type: 'separator' as const },
+                { role: 'quit' as const },
+              ],
+            },
+          ]
+        : []),
+      { role: 'editMenu' as const },
+      { role: 'windowMenu' as const },
+    ]),
+  );
+}
+
+function createWindow(alwaysOnTop: boolean): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -18,6 +50,7 @@ function createWindow(): BrowserWindow {
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
+    alwaysOnTop, // 置顶属视图偏好（settings.view），随设置持久化
     // mac 融合原生观感（参考 Chess.app）：藏标题栏、红绿灯内嵌进工具栏；
     // Windows/Linux 保留系统窗框
     ...(process.platform === 'darwin'
@@ -73,6 +106,7 @@ function resolveEnginePath(userPath: string | undefined): string | null {
 }
 
 void app.whenReady().then(() => {
+  installAppMenu();
   const settings = new SettingsStore();
   // 默认跟随系统；用户改过则用持久化的选择（§7.5）
   nativeTheme.themeSource = settings.get().theme;
@@ -95,11 +129,11 @@ void app.whenReady().then(() => {
   );
 
   registerIpc(settings, () => mainWindow, match);
-  mainWindow = createWindow();
+  mainWindow = createWindow(settings.get().view?.alwaysOnTop === true);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createWindow();
+      mainWindow = createWindow(settings.get().view?.alwaysOnTop === true);
     }
   });
 

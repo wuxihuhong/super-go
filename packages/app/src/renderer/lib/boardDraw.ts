@@ -92,8 +92,11 @@ export function cannonPawnPoints(): { x: number; y: number; edge: 'left' | 'righ
   return pts;
 }
 
-/** 走子轨迹箭头：起点 → 终点（止于目标子前），强调色低透明度（2D/3D 盘面共用） */
-export function drawMoveArrow(
+/**
+ * 走子标记（醒目版，无连线）：起点实心圆点 + 终点取景框式四角角标
+ * （全不透明 + 粗线 + 中心淡填充；角标半径大于棋子，3D 立体棋子也盖不住）。
+ */
+export function drawMoveMarks(
   ctx: CanvasRenderingContext2D,
   x1: number,
   y1: number,
@@ -102,34 +105,35 @@ export function drawMoveArrow(
   cell: number,
   color: string,
 ): void {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const len = Math.hypot(dx, dy);
-  if (len < 1) return;
-  const ux = dx / len;
-  const uy = dy / len;
-  const head = cell * 0.3;
-  const startX = x1 + ux * cell * 0.32;
-  const startY = y1 + uy * cell * 0.32;
-  const endX = x2 - ux * cell * 0.42;
-  const endY = y2 - uy * cell * 0.42;
   ctx.save();
-  ctx.globalAlpha = 0.55;
-  ctx.strokeStyle = color;
+  // 起点：实心圆点
+  ctx.globalAlpha = 0.95;
   ctx.fillStyle = color;
-  ctx.lineCap = 'round';
-  ctx.lineWidth = cell * 0.09;
   ctx.beginPath();
-  ctx.moveTo(startX, startY);
-  ctx.lineTo(endX - ux * head * 0.7, endY - uy * head * 0.7);
-  ctx.stroke();
-  const nx = -uy;
-  const ny = ux;
-  ctx.beginPath();
-  ctx.moveTo(endX, endY);
-  ctx.lineTo(endX - ux * head + nx * head * 0.42, endY - uy * head + ny * head * 0.42);
-  ctx.lineTo(endX - ux * head - nx * head * 0.42, endY - uy * head - ny * head * 0.42);
-  ctx.closePath();
+  ctx.arc(x1, y1, cell * 0.15, 0, Math.PI * 2);
   ctx.fill();
+  // 终点：中心淡填充
+  ctx.globalAlpha = 0.18;
+  ctx.beginPath();
+  ctx.arc(x2, y2, cell * 0.42, 0, Math.PI * 2);
+  ctx.fill();
+  // 终点：四角角标（取景框）
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(2.5, cell * 0.085);
+  const R = cell * 0.55; // 半边长（大于棋子半径，角标落在棋子外）
+  const L = cell * 0.2; // 角标臂长
+  const corner = (sx: 1 | -1, sy: 1 | -1): void => {
+    ctx.beginPath();
+    ctx.moveTo(x2 + sx * (R - L), y2 + sy * R);
+    ctx.lineTo(x2 + sx * R, y2 + sy * R);
+    ctx.lineTo(x2 + sx * R, y2 + sy * (R - L));
+    ctx.stroke();
+  };
+  corner(1, 1);
+  corner(1, -1);
+  corner(-1, 1);
+  corner(-1, -1);
   ctx.restore();
 }

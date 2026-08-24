@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { pieceAt, pieceChar, pieceSide, type Point, type XiangqiPosition } from '@super-go/core';
-import { cannonPawnPoints, cornerMarks, drawMoveArrow } from '../lib/boardDraw';
+import { cannonPawnPoints, cornerMarks, drawMoveMarks } from '../lib/boardDraw';
 import { cssColor } from '../lib/theme';
 import { useElementSize } from '../lib/useElementSize';
 
@@ -203,7 +203,7 @@ export default function Board(props: BoardProps) {
     if (props.lastMove !== null) {
       const from = toScreen(props.lastMove.from.x, props.lastMove.from.y);
       const to = toScreen(props.lastMove.to.x, props.lastMove.to.y);
-      drawMoveArrow(ctx, from.sx, from.sy, to.sx, to.sy, cell, c.accent);
+      drawMoveMarks(ctx, from.sx, from.sy, to.sx, to.sy, cell, c.accent);
     }
 
     // ---- 被将军的王 ----

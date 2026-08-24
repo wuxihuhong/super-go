@@ -28,7 +28,6 @@ export const IPC_CHANNELS = {
   gameResign: 'game:resign',
   gameSetEngineSide: 'game:setEngineSide',
   gamePauseToggle: 'game:pauseToggle',
-  gameRematch: 'game:rematch',
   gameGoto: 'game:goto',
   gameSnapshotGet: 'game:snapshotGet',
   gameSnapshot: 'game:snapshot',
@@ -68,8 +67,10 @@ export interface AppSettings {
   sound?: boolean;
   /** 视图偏好（公有配置） */
   view?: {
-    /** 真 3D 透视棋盘（Three.js，可拖拽旋转）；关闭用平面 Canvas */
+    /** 真 3D 透视棋盘（Three.js，固定对弈取景）；关闭用平面 Canvas */
     board3d?: boolean;
+    /** 窗口始终保持在其他应用之上（连线代打等场景） */
+    alwaysOnTop?: boolean;
   };
   /** 象棋独立配置 */
   xiangqi: XiangqiGameSettings;
@@ -98,7 +99,6 @@ export interface SuperGoApi {
   /** 暂停/继续（引擎不出招；互搏观战的主要控制） */
   togglePause(): Promise<IntentResult>;
   /** 再来一局：沿用上局执方与棋力从头开始 */
-  rematch(): Promise<IntentResult>;
   /** 引擎路径浏览（Electron 文件对话框；浏览器 mock 返回 null） */
   pickEnginePath(): Promise<string | null>;
   gotoNode(nodeId: number): Promise<IntentResult>;
