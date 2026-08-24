@@ -65,6 +65,8 @@ export function isSameMove(a: Move, b: Move): boolean {
 export interface CpScore {
   kind: 'cp';
   value: number;
+  /** 杀棋步数（引擎 score mate N）；显示层映射为大比分厘兵 */
+  mate?: number;
 }
 
 /** 围棋：胜率（0..1）+ 目差 */

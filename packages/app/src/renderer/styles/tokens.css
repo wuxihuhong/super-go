@@ -3,6 +3,9 @@
  * 跟随系统 = prefers-color-scheme 媒体查询；手动浅/深由 main 进程
  * nativeTheme.themeSource 驱动同一条媒体查询生效（无需 JS 分支）。
  * Canvas 棋盘（P1）从 getComputedStyle 消费同一批变量。
+ *
+ * 棋盘色板属数据语义域（棋盘/棋子是内容不是装饰，§7.1）：
+ * 红 = 红方、黑 = 黑方、accent = 选中/提示/最后一着。
  */
 :root {
   --background: #f7f7f8;
@@ -13,6 +16,14 @@
   --accent: #4f46e5;
   --accent-foreground: #ffffff;
   --danger: #dc2626;
+  /* 棋盘（Canvas 与 DOM 同源） */
+  --board-surface: #ece2c8;
+  --board-line: #8b7b5e;
+  --board-river-text: #9a8a6b;
+  --piece-surface: #f7f1e0;
+  --piece-border: #b7a888;
+  --piece-red: #b3372a;
+  --piece-black: #33302a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,5 +36,13 @@
     --accent: #818cf8;
     --accent-foreground: #101014;
     --danger: #f87171;
+    /* 棋盘（暗色一等公民：暗木盘 + 提亮墨色保证可读） */
+    --board-surface: #2c2921;
+    --board-line: #7d6f52;
+    --board-river-text: #6f6248;
+    --piece-surface: #3a362c;
+    --piece-border: #5c523d;
+    --piece-red: #e07a6a;
+    --piece-black: #d8d3c6;
   }
 }

@@ -11,6 +11,10 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-danger: var(--danger);
+  --color-board-surface: var(--board-surface);
+  --color-board-line: var(--board-line);
+  --color-piece-red: var(--piece-red);
+  --color-piece-black: var(--piece-black);
 }
 
 html,
