@@ -16,6 +16,7 @@ import SidePanel from './components/SidePanel';
 import Toolbar from './components/Toolbar';
 import WinBar from './components/WinBar';
 import { createT, detectLanguage } from './i18n';
+import { useElementSize } from './lib/useElementSize';
 
 /**
  * 对弈主界面（§7.3 三区布局：顶部工具栏 / 居中棋盘 / 右侧可折叠面板）。
@@ -31,6 +32,12 @@ export default function App() {
   const [notice, setNotice] = useState<{ text: string; bad: boolean } | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [themeTick, setThemeTick] = useState(0);
+  // 中央区实测高度 → 精确推算棋盘列宽（banner/间距为常量，比例不靠 CSS 拼凑）
+  const { ref: mainRef, height: mainHeight } = useElementSize<HTMLElement>();
+  const BANNER_H = 36;
+  const GAP = 8;
+  const boardHeight = Math.max(240, mainHeight - BANNER_H * 2 - GAP * 2);
+  const boardColumnWidth = boardHeight * 0.9;
 
   useEffect(() => {
     void window.superGo.getSettings().then((s) => {
@@ -171,48 +178,50 @@ export default function App() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <main className="flex min-w-0 flex-1 items-center justify-center p-6">
-          <div className="flex h-full w-fit flex-col gap-2.5">
-            <PlayerBanner
-              t={t}
-              side={engineBannerSide}
-              name={engineSide === null ? t('side.black') : engineName}
-              active={playing === true && snapshot?.turn === engineBannerSide}
-              thinking={engineThinking}
-              caption={engineCaption}
-            />
-            <div className="flex min-h-0 flex-1 gap-4">
-              <div className="h-full py-3">
+        <main ref={mainRef} className="flex min-w-0 flex-1 items-center justify-center gap-3 p-6">
+          {mainHeight > 0 && (
+            <>
+              <div className="h-full shrink-0 py-1">
                 <WinBar
                   redCp={liveEval?.redCp ?? snapshot?.redCp}
                   redMate={snapshot?.thinking ? liveEval?.redMate : snapshot?.redMate}
                 />
               </div>
               <div
-                className="h-full max-w-full overflow-hidden rounded-xl shadow-md"
-                style={{ aspectRatio: '0.90', width: 'auto', flex: '0 1 auto' }}
+                className="flex max-w-full flex-col"
+                style={{ width: boardColumnWidth, gap: GAP }}
               >
-                <Board
-                  position={position}
-                  selected={selected}
-                  targets={legalTargets}
-                  lastMove={snapshot?.lastMove ?? null}
-                  checkedKing={checkedKing}
-                  flip={snapshot?.engineSide === 'first'}
-                  themeTick={themeTick}
-                  onSquareClick={handleSquareClick}
+                <PlayerBanner
+                  t={t}
+                  side={engineBannerSide}
+                  name={engineSide === null ? t('side.black') : engineName}
+                  active={playing === true && snapshot?.turn === engineBannerSide}
+                  thinking={engineThinking}
+                  caption={engineCaption}
+                />
+                <div className="min-h-0 flex-1 overflow-hidden rounded-xl shadow-md">
+                  <Board
+                    position={position}
+                    selected={selected}
+                    targets={legalTargets}
+                    lastMove={snapshot?.lastMove ?? null}
+                    checkedKing={checkedKing}
+                    flip={snapshot?.engineSide === 'first'}
+                    themeTick={themeTick}
+                    onSquareClick={handleSquareClick}
+                  />
+                </div>
+                <PlayerBanner
+                  t={t}
+                  side={userBannerSide}
+                  name={t('player.you')}
+                  active={playing === true && snapshot?.turn === userBannerSide}
+                  thinking={false}
+                  caption={userCaption}
                 />
               </div>
-            </div>
-            <PlayerBanner
-              t={t}
-              side={userBannerSide}
-              name={t('player.you')}
-              active={playing === true && snapshot?.turn === userBannerSide}
-              thinking={false}
-              caption={userCaption}
-            />
-          </div>
+            </>
+          )}
         </main>
 
         {panelOpen && (
