@@ -45,6 +45,62 @@ export interface ToolbarProps {
 const DRAG = { WebkitAppRegion: 'drag' } as React.CSSProperties;
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
 
+/** 快捷键修饰键：mac ⌘ / 其他 Ctrl+ */
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+
+/** key → 说明文案键（同 key 加 .hint 后缀） */
+function hintKeyOf(key: MessageKey): MessageKey {
+  return `${key}.hint` as MessageKey;
+}
+
+/** 图标按钮 + 悬停提示（按钮名 + 快捷键 + 功能说明；250ms 延迟出现，移开即隐） */
+function ToolButton(props: {
+  label: string;
+  hint?: string;
+  /** 无修饰键的裸键名（如 'N'、'Z'、' '） */
+  shortcut?: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  accent?: boolean;
+}): React.JSX.Element {
+  const shortcutText =
+    props.shortcut === undefined
+      ? undefined
+      : props.shortcut === ' '
+        ? 'Space'
+        : `${MOD}${props.shortcut}`;
+  return (
+    <span className="group relative">
+      <button
+        type="button"
+        style={NO_DRAG}
+        aria-label={props.label}
+        disabled={props.disabled}
+        onClick={props.onClick}
+        className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-transparent ${
+          props.accent
+            ? 'text-accent hover:bg-accent/10 disabled:hover:text-accent'
+            : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground disabled:hover:text-muted-foreground'
+        }`}
+      >
+        {props.icon}
+      </button>
+      <span className="pointer-events-none absolute top-full left-1/2 z-50 mt-1.5 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-[11px] leading-tight whitespace-nowrap text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-hover:delay-250">
+        <span className="font-medium">
+          {props.label}
+          {shortcutText !== undefined && (
+            <kbd className="ml-1.5 rounded border border-background/30 px-1 py-px font-sans">
+              {shortcutText}
+            </kbd>
+          )}
+        </span>
+        {props.hint !== undefined && <span className="block text-background/70">{props.hint}</span>}
+      </span>
+    </span>
+  );
+}
+
 export default function Toolbar(props: ToolbarProps) {
   const closePopover = (): void => props.onPopoverChange('none');
 
@@ -54,22 +110,17 @@ export default function Toolbar(props: ToolbarProps) {
     onClick: () => void,
     disabled = false,
     accent = false,
+    shortcut?: string,
   ): React.JSX.Element => (
-    <button
-      key={key}
-      type="button"
-      style={NO_DRAG}
-      title={props.t(key)}
-      disabled={disabled}
+    <ToolButton
+      label={props.t(key)}
+      hint={props.t(hintKeyOf(key))}
+      shortcut={shortcut}
+      icon={icon}
       onClick={onClick}
-      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-transparent ${
-        accent
-          ? 'text-accent hover:bg-accent/10 disabled:hover:text-accent'
-          : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground disabled:hover:text-muted-foreground'
-      }`}
-    >
-      {icon}
-    </button>
+      disabled={disabled}
+      accent={accent}
+    />
   );
 
   const popoverLayer = (
@@ -115,6 +166,7 @@ export default function Toolbar(props: ToolbarProps) {
           () => props.onPopoverChange('setup'),
           false,
           true,
+          'N',
         )}
         {popoverLayer(
           'setup',
@@ -131,12 +183,15 @@ export default function Toolbar(props: ToolbarProps) {
         )}
       </div>
 
-      {iconButton('toolbar.undo', <IconUndo />, props.onUndo, !props.canUndo)}
+      {iconButton('toolbar.undo', <IconUndo />, props.onUndo, !props.canUndo, false, 'Z')}
       {props.playing &&
         iconButton(
           props.paused ? 'toolbar.resume' : 'toolbar.pause',
           props.paused ? <IconPlay /> : <IconPause />,
           props.onPauseToggle,
+          false,
+          false,
+          ' ',
         )}
       {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.canResign)}
 
@@ -172,10 +227,15 @@ export default function Toolbar(props: ToolbarProps) {
             )}
           </div>
         )}
-        {iconButton('toolbar.togglePanel', <IconPanel />, props.onTogglePanel)}
+        {iconButton('toolbar.togglePanel', <IconPanel />, props.onTogglePanel, false, false, 'B')}
         <div className="relative">
-          {iconButton('settings.title', <IconGear />, () =>
-            props.onPopoverChange(props.popover === 'settings' ? 'none' : 'settings'),
+          {iconButton(
+            'settings.title',
+            <IconGear />,
+            () => props.onPopoverChange(props.popover === 'settings' ? 'none' : 'settings'),
+            false,
+            false,
+            ',',
           )}
           {popoverLayer(
             'settings',

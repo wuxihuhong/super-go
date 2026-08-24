@@ -72,4 +72,12 @@ export default {
   'settings.sound.on': 'On',
   'settings.sound.off': 'Off',
   'settings.browse': 'Browse…',
+  'toolbar.newGame.hint': 'Pick a side and start a new game',
+  'toolbar.undo.hint': 'Take back your last move and the reply',
+  'toolbar.resign.hint': 'Resign and end the current game',
+  'toolbar.pause.hint': 'Pause engine moves (main control for engine-vs-engine)',
+  'toolbar.resume.hint': 'Resume engine moves',
+  'toolbar.game.hint': 'Adjust side & strength in-game (instant effect)',
+  'toolbar.togglePanel.hint': 'Show or hide the moves & engine panel',
+  'settings.title.hint': 'Theme, language, sound & xiangqi settings',
 } as const;
