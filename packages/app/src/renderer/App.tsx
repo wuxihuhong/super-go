@@ -12,6 +12,7 @@ import {
 import type { AppSettings, EngineStatusPayload, LanguageCode, LiveEval } from '@shared/ipc';
 import type { GameSnapshot } from '@shared/game';
 import Board from './components/Board';
+import Board3D from './components/Board3D';
 import PlayerBanner from './components/PlayerBanner';
 import SidePanel from './components/SidePanel';
 import Toolbar, { type Popover } from './components/Toolbar';
@@ -36,6 +37,8 @@ export default function App() {
   const [themeTick, setThemeTick] = useState(0);
   const [popover, setPopover] = useState<Popover>('none');
   const [resultDismissed, setResultDismissed] = useState(false);
+  const [board3d, setBoard3d] = useState(true);
+  const [glFailed, setGlFailed] = useState(false);
   // 中央区实测高度 → 精确推算棋盘列宽（banner/间距为常量，比例不靠 CSS 拼凑）
   const { ref: mainRef, height: mainHeight } = useElementSize<HTMLElement>();
   const BANNER_H = 36;
@@ -48,6 +51,7 @@ export default function App() {
     void window.superGo.getSettings().then((s) => {
       setLang(s.language ?? detectLanguage(navigator.languages));
       setSoundEnabled(s.sound ?? true);
+      setBoard3d(s.view?.board3d ?? true);
     });
     void window.superGo.getSnapshot().then(setSnapshot);
     // 主题变化时 CSS 变量已自动切换，这里只为触发 canvas 重绘
@@ -169,6 +173,7 @@ export default function App() {
   const handleSettingsChanged = useCallback((next: AppSettings) => {
     setLang(next.language ?? detectLanguage(navigator.languages));
     setSoundEnabled(next.sound ?? true);
+    setBoard3d(next.view?.board3d ?? true);
   }, []);
 
   const handleSetEngineSide = useCallback(
@@ -286,16 +291,30 @@ export default function App() {
                   caption={topCaption}
                 />
                 <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl shadow-md">
-                  <Board
-                    position={position}
-                    selected={selected}
-                    targets={legalTargets}
-                    lastMove={snapshot?.lastMove ?? null}
-                    checkedKing={checkedKing}
-                    flip={flip}
-                    themeTick={themeTick}
-                    onSquareClick={handleSquareClick}
-                  />
+                  {board3d && !glFailed ? (
+                    <Board3D
+                      position={position}
+                      selected={selected}
+                      targets={legalTargets}
+                      lastMove={snapshot?.lastMove ?? null}
+                      checkedKing={checkedKing}
+                      flip={flip}
+                      themeTick={themeTick}
+                      onSquareClick={handleSquareClick}
+                      onUnavailable={() => setGlFailed(true)}
+                    />
+                  ) : (
+                    <Board
+                      position={position}
+                      selected={selected}
+                      targets={legalTargets}
+                      lastMove={snapshot?.lastMove ?? null}
+                      checkedKing={checkedKing}
+                      flip={flip}
+                      themeTick={themeTick}
+                      onSquareClick={handleSquareClick}
+                    />
+                  )}
                   {/* 终局结果浮层：胜方大字 + 原因 + 快捷操作（渐入，克制动效） */}
                   {snapshot?.phase === 'ended' && snapshot.result !== null && !resultDismissed && (
                     <div className="fade-in absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-[2px]">

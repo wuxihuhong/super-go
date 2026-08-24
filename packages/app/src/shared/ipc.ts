@@ -66,6 +66,11 @@ export interface AppSettings {
   language?: LanguageCode;
   /** 音效（§7.4：走子/吃子/将军/终局，公有配置） */
   sound?: boolean;
+  /** 视图偏好（公有配置） */
+  view?: {
+    /** 真 3D 透视棋盘（Three.js，可拖拽旋转）；关闭用平面 Canvas */
+    board3d?: boolean;
+  };
   /** 象棋独立配置 */
   xiangqi: XiangqiGameSettings;
 }

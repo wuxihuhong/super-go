@@ -231,7 +231,8 @@ function createMockApi(): SuperGoApi {
       settings = {
         ...settings,
         ...patch,
-        xiangqi: { ...settings.xiangqi, ...patch.xiangqi },
+        view: { board3d: true, ...settings.view, ...patch.view },
+        xiangqi: { ponder: false, ...settings.xiangqi, ...patch.xiangqi },
       };
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       applyThemeClass();
@@ -404,13 +405,21 @@ function loadSettings(): AppSettings {
     if (raw !== null) {
       const parsed = JSON.parse(raw) as AppSettings;
       if (parsed.theme !== undefined) {
-        return { ...parsed, xiangqi: { ponder: false, ...parsed.xiangqi } };
+        return {
+          ...parsed,
+          view: { board3d: true, ...parsed.view },
+          xiangqi: { ponder: false, ...parsed.xiangqi },
+        };
       }
     }
   } catch {
     /* 忽略损坏的本地设置 */
   }
-  return { theme: 'system' satisfies ThemeSetting, xiangqi: { strength: {}, ponder: false } };
+  return {
+    theme: 'system' satisfies ThemeSetting,
+    view: { board3d: true },
+    xiangqi: { strength: {}, ponder: false },
+  };
 }
 
 function chromeVersion(): string {

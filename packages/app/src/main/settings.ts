@@ -5,6 +5,7 @@ import type { AppSettings } from '../shared/ipc';
 
 const DEFAULTS: AppSettings = {
   theme: 'system',
+  view: { board3d: true },
   xiangqi: { strength: {}, ponder: false },
 };
 
@@ -31,6 +32,7 @@ export class SettingsStore {
     this.data = {
       ...this.data,
       ...partial,
+      view: { ...this.data.view, ...partial.view },
       xiangqi: { ...this.data.xiangqi, ...partial.xiangqi },
     };
     this.write();

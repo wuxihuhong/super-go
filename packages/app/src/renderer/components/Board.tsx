@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { pieceAt, pieceChar, pieceSide, type Point, type XiangqiPosition } from '@super-go/core';
+import { cannonPawnPoints, cornerMarks, drawMoveArrow } from '../lib/boardDraw';
 import { cssColor } from '../lib/theme';
 import { useElementSize } from '../lib/useElementSize';
 
@@ -152,6 +153,22 @@ export default function Board(props: BoardProps) {
     ctx.strokeRect(padX - inset, padY - inset, cell * 8 + inset * 2, cell * 9 + inset * 2);
     ctx.lineWidth = 1;
 
+    // ---- 炮位/兵位折角标记（传统盘面，几何对称 flip 无需变换） ----
+    for (const pt of cannonPawnPoints()) {
+      cornerMarks(
+        ctx,
+        px(pt.x),
+        py(pt.y),
+        cell,
+        c.line,
+        pt.edge === null
+          ? { left: true, right: true }
+          : pt.edge === 'left'
+            ? { left: false, right: true }
+            : { left: true, right: false },
+      );
+    }
+
     // ---- 楚河汉界 ----
     ctx.fillStyle = c.river;
     ctx.font = `${cell * 0.38}px 'Kaiti SC', 'STKaiti', 'KaiTi', serif`;
@@ -182,17 +199,11 @@ export default function Board(props: BoardProps) {
       ctx.fillText(topIsRed ? String(blackVal) : (CN_NUMS[redVal - 1] ?? ''), px(i), labelY2);
     }
 
-    // ---- 最后一着（落点柔和高亮 + 角标）----
+    // ---- 最后一着（起点 → 终点轨迹箭头）----
     if (props.lastMove !== null) {
-      const m = toScreen(props.lastMove.to.x, props.lastMove.to.y);
-      ctx.save();
-      ctx.globalAlpha = 0.14;
-      ctx.fillStyle = c.accent;
-      const half = cell * 0.5;
-      roundRect(ctx, m.sx - half, m.sy - half, half * 2, half * 2, half * 0.35);
-      ctx.fill();
-      ctx.restore();
-      cornerTicks(ctx, m.sx, m.sy, cell * 0.36, c.accent);
+      const from = toScreen(props.lastMove.from.x, props.lastMove.from.y);
+      const to = toScreen(props.lastMove.to.x, props.lastMove.to.y);
+      drawMoveArrow(ctx, from.sx, from.sy, to.sx, to.sy, cell, c.accent);
     }
 
     // ---- 被将军的王 ----
@@ -385,30 +396,4 @@ function roundRect(
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
-}
-
-/** 四角刻线标记（最后一着） */
-function cornerTicks(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  half: number,
-  color: string,
-): void {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
-  const len = half * 0.5;
-  for (const [sx, sy] of [
-    [-1, -1],
-    [1, -1],
-    [-1, 1],
-    [1, 1],
-  ] as const) {
-    ctx.beginPath();
-    ctx.moveTo(cx + sx * half, cy + sy * half - sy * len);
-    ctx.lineTo(cx + sx * half, cy + sy * half);
-    ctx.lineTo(cx + sx * half - sx * len, cy + sy * half);
-    ctx.stroke();
-  }
-  ctx.lineWidth = 1;
 }

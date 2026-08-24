@@ -100,6 +100,16 @@ export default function SettingsPanel(props: SettingsPanelProps) {
             (value) => patch({ sound: value === 'true' }),
           )}
         </Row>
+        <Row label={props.t('settings.view.board3d')} hint={props.t('settings.view.board3d.hint')}>
+          {segmented(
+            [
+              { value: 'true', label: props.t('settings.sound.on') },
+              { value: 'false', label: props.t('settings.sound.off') },
+            ],
+            (settings?.view?.board3d ?? true) ? 'true' : 'false',
+            (value) => patch({ view: { board3d: value === 'true' } }),
+          )}
+        </Row>
       </Section>
 
       {/* 象棋（棋种独立配置） */}
