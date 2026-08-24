@@ -105,7 +105,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
       {/* 象棋（棋种独立配置） */}
       <Section title={props.t('settings.xiangqi')}>
         <Row label={props.t('settings.enginePath')} hint={props.t('settings.enginePath.rowHint')}>
-          <span className="flex items-center gap-1">
+          <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
             <input
               type="text"
               aria-label={props.t('settings.enginePath')}
@@ -117,7 +117,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
                   patchXiangqi({ enginePath: value });
                 }
               }}
-              className="w-40 rounded-md border border-border bg-background px-2 py-1 text-xs"
+              className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
             />
             <button
               type="button"
@@ -126,7 +126,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
                   if (path !== null && path !== '') patchXiangqi({ enginePath: path });
                 });
               }}
-              className="rounded-md border border-border bg-surface px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+              className="shrink-0 whitespace-nowrap rounded-md border border-border bg-surface px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
             >
               {props.t('settings.browse')}
             </button>
