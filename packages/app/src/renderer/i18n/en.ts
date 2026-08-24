@@ -86,7 +86,7 @@ export default {
   'toolbar.newGame.hint': 'Pick a side and start a new game',
   'toolbar.undo.hint': 'Take back your last move and the reply',
   'toolbar.resign.hint': 'Resign and end the current game',
-  'toolbar.pause.hint': 'Pause engine moves (main control for engine-vs-engine)',
+  'toolbar.pause.hint': 'Pause engine moves; you can still play your turns; Space',
   'toolbar.resume.hint': 'Resume engine moves',
   'toolbar.game.hint': 'Adjust side & strength in-game (instant effect)',
   'toolbar.togglePanel.hint': 'Show or hide the moves & engine panel',

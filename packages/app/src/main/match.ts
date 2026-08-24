@@ -111,6 +111,12 @@ export class MatchService {
     if (this.state.engineSide === 'both') {
       return { ok: false, error: '引擎互搏中，观战模式不可落子' };
     }
+    // 回合制不变量（底线）：严格轮替，任何一方不得连走两步——
+    // 轮到引擎时（含暂停中，引擎尚未落子）用户不可落子，动谁的子都不行；
+    // 轮到用户时暂停期间照常可走（暂停只冻结引擎）
+    if (this.turnNow() === this.state.engineSide) {
+      return { ok: false, error: '轮到引擎行棋' };
+    }
     const pos = this.positionNow();
     const move: XiangqiMove = { kind: 'xiangqi', from: intent.from, to: intent.to };
     if (!this.game.isLegal(pos, move)) {

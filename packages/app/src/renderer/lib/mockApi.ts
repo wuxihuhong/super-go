@@ -261,6 +261,10 @@ function createMockApi(): SuperGoApi {
       if (state.engineSide === 'both') {
         return Promise.resolve({ ok: false, error: '引擎互搏中，观战模式不可落子' });
       }
+      // 回合制不变量：严格轮替，任何一方不得连走两步（引擎未走时用户不可再走）
+      if (positionNow().turn === state.engineSide) {
+        return Promise.resolve({ ok: false, error: '轮到引擎行棋' });
+      }
       const pos = positionNow();
       const move: XiangqiMove = { kind: 'xiangqi', from: intent.from, to: intent.to };
       if (!game.isLegal(pos, move)) return Promise.resolve({ ok: false, error: '非法着法' });

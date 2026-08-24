@@ -77,16 +77,34 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     await match.refreshStrength();
     expect(latest().strengthLabel).toBe('0.3s');
 
-    // 悔棋：剪掉引擎应招 + 用户着
+    // 暂停语义（底线 = 严格轮替）：暂停只冻结引擎，用户回合照走；
+    // 但引擎未落子前任何一方不得再走（不能连走两步，无论动谁的子）
+    const pausedOnce = await match.togglePause();
+    expect(pausedOnce.ok).toBe(true);
+    const userMovedWhilePaused = match.playMove({ from: { x: 1, y: 7 }, to: { x: 1, y: 4 } });
+    expect(userMovedWhilePaused.ok).toBe(true); // 轮到用户，暂停中照常可走
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(latest().moves.length).toBe(3); // 引擎被冻结，未应招
+    const ownPieceAgain = match.playMove({ from: { x: 1, y: 9 }, to: { x: 2, y: 7 } }); // 再走自己的马
+    expect(ownPieceAgain.ok).toBe(false); // 引擎未走，不可连走两步
+    const enginePieceMove = match.playMove({ from: { x: 7, y: 0 }, to: { x: 6, y: 2 } }); // 动引擎的马
+    expect(enginePieceMove.ok).toBe(false); // 同样被回合制拒绝
+    const resumedOnce = await match.togglePause();
+    expect(resumedOnce.ok).toBe(true);
+    await waitFor((s) => s.moves.length === 4 && !s.thinking); // 恢复后引擎补招
+    await match.togglePause(); // 再暂停：顺带覆盖「暂停中悔棋」
+
+    // 悔棋：剪掉一对（引擎应招 + 用户着），回到用户回合
     const undone = await match.undo();
     expect(undone.ok).toBe(true);
-    const afterUndo = await waitFor((s) => s.moves.length === 0);
+    const afterUndo = await waitFor((s) => s.moves.length === 2);
     expect(afterUndo.turn).toBe('first');
     expect(afterUndo.thinking).toBe(false);
+    await match.togglePause(); // 解除暂停，恢复后续对局节奏
 
-    // 再走一步并认输
-    match.playMove({ from: { x: 7, y: 7 }, to: { x: 4, y: 7 } });
-    await waitFor((s) => s.moves.length === 2);
+    // 再走一步并认输（当前局面红马 (1,9)→(2,7) 合法）
+    match.playMove({ from: { x: 1, y: 9 }, to: { x: 2, y: 7 } });
+    await waitFor((s) => s.moves.length === 4);
     const resigned = await match.resign();
     expect(resigned.ok).toBe(true);
     const ended = await waitFor((s) => s.phase === 'ended');

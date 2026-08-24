@@ -83,7 +83,7 @@ export default {
   'toolbar.newGame.hint': '手持ちを選んで新しい対局を開始',
   'toolbar.undo.hint': '自分の一手指しと応手を待った',
   'toolbar.resign.hint': '投了して現在の対局を終了',
-  'toolbar.pause.hint': 'エンジンの着手を一時停止（観戦の主制御）',
+  'toolbar.pause.hint': 'エンジンの一時停止、自分の手番は指せる。Space',
   'toolbar.resume.hint': 'エンジンの着手を再開',
   'toolbar.game.hint': '対局中の手持ち・棋力調整（即時反映）',
   'toolbar.togglePanel.hint': '着手・エンジンパネルの表示切替',

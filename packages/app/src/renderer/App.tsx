@@ -109,11 +109,11 @@ export default function App() {
   const spectating = engineSide === 'both'; // 引擎互搏，人观战
   const userSide: Player | null =
     engineSide === 'first' ? 'second' : engineSide === 'second' ? 'first' : null;
+  // 暂停只冻结引擎，用户的回合照常可走（不可跨步：非用户回合 UI 不可落子）
   const interactive =
     snapshot !== null &&
     snapshot.phase === 'playing' &&
     !snapshot.thinking &&
-    !snapshot.paused &&
     userSide !== null &&
     snapshot.turn === userSide;
 

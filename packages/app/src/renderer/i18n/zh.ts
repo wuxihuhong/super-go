@@ -87,7 +87,7 @@ export default {
   'toolbar.newGame.hint': '选择执方，开始一盘新对弈',
   'toolbar.undo.hint': '撤回你最近一步与引擎的应招',
   'toolbar.resign.hint': '认输，结束当前对局',
-  'toolbar.pause.hint': '暂停引擎出招（互搏观战的主控）',
+  'toolbar.pause.hint': '暂停引擎出招，你的回合仍可走棋；空格同效',
   'toolbar.resume.hint': '继续：恢复引擎出招',
   'toolbar.game.hint': '对局中调整执方与棋力（临时配置，即时生效）',
   'toolbar.togglePanel.hint': '显示或隐藏右侧着法与引擎面板',
