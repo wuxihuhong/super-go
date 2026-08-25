@@ -1,6 +1,8 @@
 /**
  * 棋盘朝向规则。钉住的是一条硬规则：
  * **朝向在开局那一刻确定，此后只有"平台自己翻了视角"能改它。**
+ * 执方与视角解耦（2026-08-26）：新对局弹窗只选朝向（选中颜色朝下），
+ * 引擎执方归工具栏开关管、切换不翻盘。
  *
  * 两个真出过的 bug：
  * 1. 切换引擎执方时无条件取反 → 朝向取决于按钮被点了奇数次还是偶数次；
@@ -10,22 +12,20 @@
 import { describe, expect, it } from 'vitest';
 import { anchorFlipFor, nextBoardFlip } from './boardOrientation';
 
-describe('anchorFlipFor（开局锚定）', () => {
-  it('引擎执红 → 人执黑 → 翻转', () => {
-    expect(anchorFlipFor('first')).toBe(true);
+describe('anchorFlipFor（开局锚定：弹窗选的执方 = 视角）', () => {
+  it('我执黑 → 黑方朝下（翻转）', () => {
+    expect(anchorFlipFor('second')).toBe(true);
   });
 
-  it('引擎执黑 / 互搏 / 无引擎 → 红方视角，不翻转', () => {
-    expect(anchorFlipFor('second')).toBe(false);
-    expect(anchorFlipFor('both')).toBe(false);
-    expect(anchorFlipFor(null)).toBe(false);
+  it('我执红 → 红方朝下，不翻转', () => {
+    expect(anchorFlipFor('first')).toBe(false);
   });
 });
 
 describe('nextBoardFlip（朝向状态转移）', () => {
-  it('开局按人类执方锚定，与之前的朝向无关', () => {
-    expect(nextBoardFlip(false, { type: 'newGame', engineSide: 'first' })).toBe(true);
-    expect(nextBoardFlip(true, { type: 'newGame', engineSide: 'second' })).toBe(false);
+  it('开局按所选执方锚定，与之前的朝向无关', () => {
+    expect(nextBoardFlip(false, { type: 'newGame', humanSide: 'second' })).toBe(true);
+    expect(nextBoardFlip(true, { type: 'newGame', humanSide: 'first' })).toBe(false);
   });
 
   it('连线跟随平台视角（连线 = 开局，锚定来自平台）', () => {
@@ -39,7 +39,7 @@ describe('nextBoardFlip（朝向状态转移）', () => {
     expect(flip).toBe(true);
   });
 
-  it('未列出的事件一律不改朝向：切换执方、停止连线、悔棋…', () => {
+  it('未列出的事件一律不改朝向：切换执方、停止连线、悔棋、续弈…', () => {
     for (const current of [false, true]) {
       // 这些操作根本不产生朝向事件，等价于"没有转移"
       expect(nextBoardFlip(current, { type: 'unknown' } as never)).toBe(current);

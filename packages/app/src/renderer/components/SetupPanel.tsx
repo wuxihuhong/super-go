@@ -1,26 +1,26 @@
 import { useState } from 'react';
-import type { EngineSide } from '@super-go/core';
+import type { Player } from '@super-go/core';
 import type { TFunction } from '../i18n';
 
 export interface SetupPanelProps {
   t: TFunction;
   /** 续弈模式：从当前游标局面接着下（标题与确认键不同） */
   mode: 'new' | 'continue';
-  onStart: (engineSide: EngineSide) => void;
+  onStart: (humanSide: Player) => void;
   onCancel: () => void;
 }
 
 /**
- * 新对局：只选执方。棋力/引擎属固有配置（设置面板，一次配置全局生效）。
- * 三种形态：我执红 / 我执黑 / 引擎左右互搏（人观战）。
+ * 新对局：只选执方 = 棋盘朝向（选中的颜色朝下），不设置引擎执方——
+ * 引擎控制全归工具栏红/黑两个开关（双开 = 互搏，双关 = 人执双方）。
+ * 棋力/引擎属固有配置（设置面板，一次配置全局生效）。
  */
 export default function SetupPanel(props: SetupPanelProps) {
-  const [engineSide, setEngineSide] = useState<Exclude<EngineSide, null>>('second'); // 默认我执红
+  const [humanSide, setHumanSide] = useState<Player>('first'); // 默认我执红
 
-  const options: ReadonlyArray<{ value: Exclude<EngineSide, null>; label: string }> = [
-    { value: 'second', label: props.t('setup.side.red') },
-    { value: 'first', label: props.t('setup.side.black') },
-    { value: 'both', label: props.t('setup.side.engineVsEngine') },
+  const options: ReadonlyArray<{ value: Player; label: string }> = [
+    { value: 'first', label: props.t('setup.side.red') },
+    { value: 'second', label: props.t('setup.side.black') },
   ];
 
   return (
@@ -35,9 +35,9 @@ export default function SetupPanel(props: SetupPanelProps) {
             <button
               key={option.value}
               type="button"
-              onClick={() => setEngineSide(option.value)}
+              onClick={() => setHumanSide(option.value)}
               className={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors ${
-                engineSide === option.value
+                humanSide === option.value
                   ? 'bg-surface text-accent shadow-sm ring-1 ring-accent/40'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
@@ -58,7 +58,7 @@ export default function SetupPanel(props: SetupPanelProps) {
         </button>
         <button
           type="button"
-          onClick={() => props.onStart(engineSide)}
+          onClick={() => props.onStart(humanSide)}
           className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-accent-foreground"
         >
           {props.t(props.mode === 'new' ? 'setup.start' : 'setup.continueFrom')}

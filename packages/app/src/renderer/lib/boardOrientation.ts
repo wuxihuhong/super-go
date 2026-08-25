@@ -5,6 +5,10 @@
  * 连线也是开局（连线 = 以平台识别局面重开一局，§6.1），它的锚定来自平台视角。
  * 除此之外没有任何操作能翻转棋盘——目前 UI 里也没有手动翻转控件。
  *
+ * 执方与视角解耦（2026-08-26 定稿）：新对局弹窗选的是**棋盘朝向**（选中的
+ * 颜色朝下），不设置引擎执方；引擎控制只归工具栏红/黑两个开关（双开互搏、
+ * 双关人执双方）。续弈 / 终局悔棋复活也不重新锚定——局面没变，棋盘不能动。
+ *
  * 因此这两件事**都不得翻转棋盘**：
  * - **对局中切换引擎执方**。用户正盯着一个局面，突然转 180° 是灾难性体验；而且执红/执黑
  *   是两个独立开关，"都开"是互搏、"都关"是人执双方，这些状态下"翻转"根本没有对应语义；
@@ -16,25 +20,25 @@
  * 2. 朝向每次渲染现算（连线中用平台视角、否则用开局锚定），于是停止连线的瞬间会掉回
  *    陈旧的锚定值，凭空翻一次。所以朝向必须是**状态**，不是**算出来的**。
  */
-import type { EngineSide } from '@super-go/core';
+import type { Player } from '@super-go/core';
 
-/** 开局锚定：引擎执红 ⇒ 人执黑 ⇒ 翻转（互搏/无引擎按红方视角） */
-export function anchorFlipFor(engineSide: EngineSide): boolean {
-  return engineSide === 'first';
+/** 开局锚定：我执黑 ⇒ 黑方朝下（翻转）；我执红 ⇒ 红方朝下 */
+export function anchorFlipFor(humanSide: Player): boolean {
+  return humanSide === 'second';
 }
 
 /** 能改变朝向的全部事件——只有这两个 */
 export type OrientationEvent =
-  /** 开了一局本机对弈：按人类执方锚定 */
-  | { type: 'newGame'; engineSide: EngineSide }
+  /** 开了一局本机对弈：按弹窗所选执方（视角）锚定 */
+  | { type: 'newGame'; humanSide: Player }
   /** 连线识别到平台视角（开局锚定，或对局中平台自己翻了） */
   | { type: 'platformView'; reversed: boolean };
 
-/** 朝向状态转移。未列出的事件（切换执方、停止连线、悔棋…）一律不改朝向。 */
+/** 朝向状态转移。未列出的事件（切换执方、停止连线、悔棋、续弈…）一律不改朝向。 */
 export function nextBoardFlip(current: boolean, event: OrientationEvent): boolean {
   switch (event.type) {
     case 'newGame':
-      return anchorFlipFor(event.engineSide);
+      return anchorFlipFor(event.humanSide);
     case 'platformView':
       return event.reversed;
     default:

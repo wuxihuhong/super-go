@@ -5,7 +5,8 @@
  * - 引擎通路：同步局面（快照式全量重发）→ genmove（棋力模式约束：Elo/深度/时长/节点）
  *   → 拟人化随机延迟 → 本地合法性防线 → 落子；engineSide='both' 时引擎左右互搏（人观战）；
  * - 棋力属固有配置（settings.xiangqi.strength）：对局中经 refreshStrength 实时下发；
- *   执方可对局中变更（接管 / 放手 / 转互搏，setEngineSide）；
+ *   执方只由工具栏红/黑开关设置（setEngineSide，接管/放手/转互搏）；新开一局缺省
+ *   = 引擎不上场（开局的选项只定棋盘朝向，2026-08-26 定稿）；
  * - 强度生命周期（AGENTS.md 粘滞门禁）：Elo 档在 end/abort/reset 转移处一律复位满强度；
  * - 引擎崩溃 → 自动重启 → 重同步 → 补齐被中断的思考（§5.8 设计内行为）。
  */
@@ -63,7 +64,7 @@ export class MatchService {
   /** 暂停：引擎不出招（互搏观战的主要控制；用户回合不受限） */
   private paused = false;
   /** 终局悔棋复活用：对局的执方与棋力（end 会清空 state，这里留底） */
-  private lastEngineSide: EngineSide = 'second';
+  private lastEngineSide: EngineSide = null;
   private lastStrength: StrengthProfile | null = null;
   /** 异步流程代数：undo/newGame/setEngineSide 使旧思考结果作废 */
   private generation = 0;
@@ -165,10 +166,15 @@ export class MatchService {
     const launchError = await this.ensureEngine();
     if (launchError !== null) return launchError;
 
+    // 开局的选项只定棋盘朝向，不设置引擎执方（2026-08-26 定稿）：
+    // 新开一局缺省 = 引擎不上场（对齐连线 armGame 模型），执方只由工具栏开关设置；
+    // fromCursor（续弈 / 终局悔棋复活）= 保留当前执方，局面没动引擎就不换岗
+    const engineSide =
+      intent.engineSide ?? (intent.fromCursor === true ? this.lastEngineSide : null);
     const profile = chessStrengthFromConfig(this.getStrengthConfig());
     await this.applyStrength(uciSpecOf(profile));
-    this.state.start({ engineSide: intent.engineSide, strength: profile });
-    this.lastEngineSide = intent.engineSide;
+    this.state.start({ engineSide, strength: profile });
+    this.lastEngineSide = engineSide;
     this.lastStrength = profile;
     this.pushSnapshot();
     if (this.engineToMoveNow()) void this.engineTurn();
@@ -204,8 +210,8 @@ export class MatchService {
 
   async undo(): Promise<IntentResult> {
     if (this.state.phase === 'ended') {
-      // 终局悔棋复活：撤回着法、保留原执方与棋力继续对弈（终局即复位的强度重新下发）
-      const revived = await this.newGame({ engineSide: this.lastEngineSide, fromCursor: true });
+      // 终局悔棋复活：撤回着法、沿用原执方与棋力继续对弈（终局即复位的强度重新下发）
+      const revived = await this.newGame({ fromCursor: true });
       if (!revived.ok) return revived;
     } else if (this.state.phase !== 'playing') {
       return { ok: false, error: '对局未在进行中' };

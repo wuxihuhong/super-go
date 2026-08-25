@@ -59,7 +59,6 @@ export default {
   'side.red': '红方',
   'side.black': '黑方',
   'player.you': '我',
-  'setup.side.engineVsEngine': '引擎互搏',
   'settings.common': '通用',
   'settings.xiangqi': '象棋',
   'settings.enginePath': '引擎路径',
@@ -76,7 +75,6 @@ export default {
   'settings.thinkTime.hint': '时长模式下即棋力本体；其他模式下是每步出招的节奏上限。0.1–60 秒',
   'settings.strength.depth.hint': '每步最多搜索的层数（1–30），越深越强也越慢',
   'settings.strength.nodes.hint': '每步最多搜索的节点数（1k–100M）',
-  'setup.side.hint': '随时可切换：选某方=人下这一侧；互搏=引擎对下、人观战',
   'settings.enginePath.rowHint':
     '本地 Pikafish 可执行文件；留空自动探测 engines/chess，修改后下一局生效',
   'settings.ponder': '闲时思考',

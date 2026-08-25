@@ -57,7 +57,6 @@ export default {
   'side.red': 'Red',
   'side.black': 'Black',
   'player.you': 'Me',
-  'setup.side.engineVsEngine': 'Engine vs Engine',
   'settings.common': 'General',
   'settings.xiangqi': 'Xiangqi',
   'settings.enginePath': 'Engine path',
@@ -76,7 +75,6 @@ export default {
     'Decides strength in time mode; otherwise caps per-move pace. 0.1–60 s',
   'settings.strength.depth.hint': 'Max search plies per move (1–30); deeper = stronger but slower',
   'settings.strength.nodes.hint': 'Max search nodes per move (1k–100M)',
-  'setup.side.hint': 'Switch anytime: a side = you play it; engine-vs-engine = watch',
   'settings.enginePath.rowHint':
     'Local Pikafish executable; empty = auto-detect engines/chess; applies next game',
   'settings.ponder': 'Pondering',

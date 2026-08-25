@@ -72,7 +72,7 @@ function createMockApi(): SuperGoApi {
   let thinking = false;
   let paused = false;
   /** 终局悔棋复活用：end 清空 state 前留底执方 */
-  let lastEngineSide: EngineSide = 'second';
+  let lastEngineSide: EngineSide = null;
   let generation = 0;
 
   const snapshotListeners = new Set<(snap: GameSnapshot) => void>();
@@ -288,8 +288,11 @@ function createMockApi(): SuperGoApi {
       if (state.phase === 'playing') state.abort();
       if (!intent.fromCursor) tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
       const profile = chessStrengthFromConfig(normalizeXiangqiStrength(settings.xiangqi?.strength));
-      state.start({ engineSide: intent.engineSide, strength: profile });
-      lastEngineSide = intent.engineSide;
+      // 对齐 MatchService：新开一局 = 引擎不上场（开局选项只定视角）；续弈/复活保留当前执方
+      const engineSide =
+        intent.engineSide ?? (intent.fromCursor === true ? lastEngineSide : null);
+      state.start({ engineSide, strength: profile });
+      lastEngineSide = engineSide;
       pushStatus('ready');
       pushSnapshot();
       if (engineToMoveNow()) fakeEngineTurn();

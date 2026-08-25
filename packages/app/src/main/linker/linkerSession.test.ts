@@ -129,7 +129,7 @@ function makeFakeMatch(engineReplies: string[]) {
       newGames.push(intent);
       tree = new FakeTree();
       if (intent.initialFen !== undefined) tree.root.position = parseFen(intent.initialFen);
-      engineSide = intent.engineSide;
+      engineSide = intent.engineSide ?? null;
       await maybeEngineTurn();
       return { ok: true };
     },

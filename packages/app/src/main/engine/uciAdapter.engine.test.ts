@@ -18,16 +18,20 @@ import { UciAdapter } from './uciAdapter';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..', '..', '..');
 
-/** 按平台/目录探测 Pikafish 可执行文件 */
+/** 按当前平台探测 Pikafish 可执行文件（跨平台候选不可混用：Windows 无法执行 Mach-O/ELF，
+ *  探到也只能挂起超时；非本平台的二进制当不存在处理，走 skipIf 缺引擎跳过路径） */
 function findPikafish(): string | null {
   const enginesDir = join(REPO_ROOT, 'engines', 'chess');
   if (!existsSync(enginesDir)) return null;
-  const candidates: Array<(dir: string) => string> = [
-    (dir) => join(dir, 'MacOS', 'pikafish-apple-silicon'),
-    (dir) => join(dir, 'MacOS', 'pikafish-intel'),
-    (dir) => join(dir, 'Linux', 'pikafish-avx2'),
-    (dir) => join(dir, 'pikafish-avx2.exe'),
-  ];
+  const candidates: Array<(dir: string) => string> =
+    process.platform === 'win32'
+      ? [(dir) => join(dir, 'pikafish-avx2.exe'), (dir) => join(dir, 'Windows', 'pikafish-avx2.exe')]
+      : process.platform === 'darwin'
+        ? [
+            (dir) => join(dir, 'MacOS', 'pikafish-apple-silicon'),
+            (dir) => join(dir, 'MacOS', 'pikafish-intel'),
+          ]
+        : [(dir) => join(dir, 'Linux', 'pikafish-avx2')];
   for (const entry of readdirSync(enginesDir)) {
     for (const build of candidates) {
       const path = build(join(enginesDir, entry));

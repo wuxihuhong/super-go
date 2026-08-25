@@ -21,11 +21,18 @@ const REPO_ROOT = join(import.meta.dirname, '..', '..', '..', '..');
 function findBinary(): string | null {
   const dir = join(REPO_ROOT, 'engines', 'chess');
   if (!existsSync(dir)) return null;
+  // 只认当前平台的可执行（Windows 上探到 mac/Linux 二进制也无法 spawn，只会挂起超时）
+  const candidates: string[] =
+    process.platform === 'win32'
+      ? ['pikafish-avx2.exe', join('Windows', 'pikafish-avx2.exe')]
+      : process.platform === 'darwin'
+        ? [join('MacOS', 'pikafish-apple-silicon')]
+        : [join('Linux', 'pikafish-avx2')];
   for (const entry of readdirSync(dir)) {
-    const candidate = join(dir, entry, 'MacOS', 'pikafish-apple-silicon');
-    if (existsSync(candidate)) return candidate;
-    const linux = join(dir, entry, 'Linux', 'pikafish-avx2');
-    if (existsSync(linux)) return linux;
+    for (const rel of candidates) {
+      const candidate = join(dir, entry, rel);
+      if (existsSync(candidate)) return candidate;
+    }
   }
   return null;
 }
@@ -247,6 +254,57 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     expect(
       match.playObserved({ kind: 'xiangqi', from: { x: 0, y: 9 }, to: { x: 4, y: 4 } }).ok,
     ).toBe(false);
+    match.dispose();
+  });
+
+  it('开局不设置引擎执方：新局引擎不上场、人执双方；按钮接管；续弈/复活保留执方', { timeout: 60_000 }, async () => {
+    const snapshots: GameSnapshot[] = [];
+    const events: MatchEvents = {
+      snapshot: (snap) => snapshots.push(snap),
+      engineStatus: () => {},
+      liveEval: () => {},
+    };
+    const match = new MatchService(
+      events,
+      () => binary,
+      () => normalizeXiangqiStrength({ mode: 'time', movetime: 100 }),
+    );
+    const latest = (): GameSnapshot => snapshots[snapshots.length - 1]!;
+    const waitFor = async (
+      predicate: (snap: GameSnapshot) => boolean,
+      ms = 20_000,
+    ): Promise<GameSnapshot> => {
+      const deadline = Date.now() + ms;
+      while (Date.now() <= deadline) {
+        if (snapshots.length > 0 && predicate(latest())) return latest();
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error(`等待快照超时：${JSON.stringify(latest()?.moves ?? [])}`);
+    };
+
+    // 新开一局不带 engineSide：引擎不上场（开局选项只定视角），人执双方红黑轮流可落子
+    const started = await match.newGame({ fromCursor: false });
+    expect(started.ok).toBe(true);
+    await waitFor((s) => s.phase === 'playing' && s.moves.length === 0);
+    expect(latest().engineSide).toBe(null);
+    expect(match.playMove({ from: { x: 7, y: 7 }, to: { x: 4, y: 7 } }).ok).toBe(true); // 红：中炮
+    expect(match.playMove({ from: { x: 1, y: 2 }, to: { x: 1, y: 4 } }).ok).toBe(true); // 黑：进炮
+    await new Promise((r) => setTimeout(r, 800));
+    expect(latest().moves).toHaveLength(2); // 引擎静默，没人替谁走
+    expect(latest().thinking).toBe(false);
+
+    // 工具栏开关接管黑方 → 引擎开始应招
+    await match.setEngineSide('second');
+    expect(match.playMove({ from: { x: 1, y: 9 }, to: { x: 2, y: 7 } }).ok).toBe(true); // 红马二进三
+    await waitFor((s) => s.moves.length === 4 && !s.thinking);
+
+    // 认输终局 → 悔棋复活：fromCursor 保留当前执方（引擎继续执黑）
+    await match.resign();
+    await waitFor((s) => s.phase === 'ended');
+    const revived = await match.undo();
+    expect(revived.ok).toBe(true);
+    const backPlaying = await waitFor((s) => s.phase === 'playing' && s.moves.length === 2);
+    expect(backPlaying.engineSide).toBe('second');
     match.dispose();
   });
 });

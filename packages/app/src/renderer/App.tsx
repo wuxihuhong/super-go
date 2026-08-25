@@ -137,15 +137,14 @@ export default function App() {
 
   const engineSide = snapshot?.engineSide ?? null;
   const spectating = engineSide === 'both'; // 引擎互搏，人观战
-  const userSide: Player | null =
-    engineSide === 'first' ? 'second' : engineSide === 'second' ? 'first' : null;
-  // 暂停只冻结引擎，用户的回合照常可走（不可跨步：非用户回合 UI 不可落子）
+  /** 引擎是否托管某一方（toolbar 两开关；双关 = 人执双方） */
+  const engineControls = (side: Player): boolean => engineSide === 'both' || engineSide === side;
+  // 暂停只冻结引擎，用户的回合照常可走（不可跨步：引擎回合 / 观战时 UI 不可落子）
   const interactive =
     snapshot !== null &&
     snapshot.phase === 'playing' &&
     !snapshot.thinking &&
-    userSide !== null &&
-    snapshot.turn === userSide;
+    !engineControls(snapshot.turn);
 
   const legalTargets = useMemo(() => {
     if (selected === null) return [];
@@ -168,7 +167,7 @@ export default function App() {
         return;
       }
       const piece = pieceAt(position, x, y);
-      if (piece !== null && userSide !== null && pieceSide(piece) === userSide) {
+      if (piece !== null && pieceSide(piece) === position.turn) {
         setSelected({ x, y });
         return;
       }
@@ -179,7 +178,7 @@ export default function App() {
         setSelected(null);
       }
     },
-    [interactive, position, selected, legalTargets, userSide],
+    [interactive, position, selected, legalTargets],
   );
 
   const runIntent = useCallback((action: () => Promise<{ ok: boolean; error?: string }>) => {
@@ -202,13 +201,6 @@ export default function App() {
     void window.superGo.setSettings({ view: { alwaysOnTop: !alwaysOnTop } });
     setAlwaysOnTop(!alwaysOnTop);
   }, [alwaysOnTop]);
-
-  const handleSetEngineSide = useCallback(
-    (side: EngineSide) => {
-      runIntent(() => window.superGo.setEngineSide(side));
-    },
-    [runIntent],
-  );
 
   // ---- 快捷键：⌘/Ctrl+N 新对局 · ⌘Z 悔棋 · ⌘, 设置 · 空格 暂停/继续 · ⌘B 侧栏 ----
   useEffect(() => {
@@ -242,9 +234,9 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [runIntent]);
 
-  // 棋盘方位（用户模型 2026-08-25 定稿）——hooks 区实现：
-  // 人机开局按执方锚定；连线按平台视角（reversed）持续跟随；
-  // 工具栏切执方 → 翻转一次（奇偶）
+  // 棋盘方位（执方与视角解耦，2026-08-26 定稿）——hooks 区实现：
+  // 新对局弹窗选的执方只作开局视角锚定（选中颜色朝下），不设置引擎执方；
+  // 连线按平台视角（reversed）持续跟随；切换引擎执方/续弈/悔棋一律不翻盘
   const linkerActive =
     linkerStatus !== null &&
     linkerStatus.phase !== 'idle' &&
@@ -252,17 +244,23 @@ export default function App() {
     linkerStatus.phase !== 'error';
   /** 棋盘朝向：**状态**而非每次渲染现算——现算会在停止连线的瞬间凭空翻一次 */
   const [flip, setFlip] = useState(false);
+  /** 待消费的开局视角（新对局弹窗的选择；进入对局那一刻锚定后即清空） */
+  const pendingAnchorRef = useRef<Player | null>(null);
   const prevPhaseRef = useRef<string>('idle');
   useEffect(() => {
     const phase = snapshot?.phase ?? 'idle';
     const was = prevPhaseRef.current;
     prevPhaseRef.current = phase;
-    // 只在"进入对局"这一刻锚定：对局中切换执方不重新锚定，也不翻转（见 boardOrientation）
+    // 只在"进入对局"这一刻、且弹窗留有视角选择时锚定：
+    // 续弈 / 终局悔棋复活 / 连线重开都不重新锚定（局面没变，棋盘就不能动，见 boardOrientation）
     if (phase === 'playing' && was !== 'playing' && !linkerActive) {
-      const engineSide = snapshot?.engineSide ?? null;
-      setFlip((cur) => nextBoardFlip(cur, { type: 'newGame', engineSide }));
+      const anchor = pendingAnchorRef.current;
+      if (anchor !== null) {
+        pendingAnchorRef.current = null;
+        setFlip((cur) => nextBoardFlip(cur, { type: 'newGame', humanSide: anchor }));
+      }
     }
-  }, [snapshot?.phase, snapshot?.engineSide, linkerActive]);
+  }, [snapshot?.phase, linkerActive]);
 
   // 连线：跟随平台视角（§6.1）。连线也是开局，锚定来自平台；对局中平台自己翻了也跟着翻。
   // 停止连线不在此列——对局保留、局面没动，棋盘就不能动。
@@ -325,13 +323,14 @@ export default function App() {
         snapshot={snapshot}
         popover={popover}
         onPopoverChange={setPopover}
-        onNewGame={(side) =>
-          runIntent(() => window.superGo.newGame({ engineSide: side, fromCursor: false }))
-        }
+        onNewGame={(side) => {
+          // 弹窗选的执方只作为视角锚定；引擎执方不在此设置（缺省 = 沿用工具栏开关状态）
+          pendingAnchorRef.current = side;
+          runIntent(() => window.superGo.newGame({ fromCursor: false }));
+        }}
         onUndo={() => runIntent(() => window.superGo.undoMove())}
         onResign={() => runIntent(() => window.superGo.resign())}
         onPauseToggle={() => runIntent(() => window.superGo.togglePause())}
-        onSetEngineSide={handleSetEngineSide}
         onToggleEngineSide={handleToggleEngineSide}
         onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
         boardZoomDisabled={!board3d || glFailed}
@@ -424,7 +423,7 @@ export default function App() {
                         type="button"
                         onClick={() => {
                           setResultDismissed(true);
-                          setPopover('setup'); // 弹新对局面板：由用户选执方再开局
+                          setPopover('setup'); // 弹新对局面板：由用户选视角（执方）再开局
                         }}
                         className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-accent-foreground"
                       >
@@ -453,14 +452,7 @@ export default function App() {
             liveEval={liveEval}
             themeTick={themeTick}
             onGoto={(nodeId) => runIntent(() => window.superGo.gotoNode(nodeId))}
-            onContinue={() =>
-              runIntent(() =>
-                window.superGo.newGame({
-                  engineSide: spectating ? 'both' : 'second',
-                  fromCursor: true,
-                }),
-              )
-            }
+            onContinue={() => runIntent(() => window.superGo.newGame({ fromCursor: true }))}
           />
         )}
       </div>

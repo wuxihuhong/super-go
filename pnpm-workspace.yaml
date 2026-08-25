@@ -1,9 +1,17 @@
 packages:
   - packages/*
 
-# pnpm 10 默认拦截依赖构建脚本，这里放行需要 postinstall 的依赖
-onlyBuiltDependencies:
-  - electron
-  - esbuild
-  - koffi
+# pnpm 11 用 allowBuilds（名称→布尔）取代了 onlyBuiltDependencies（旧键会被静默忽略）；
+# electron-winstaller 是 Windows 打包链（electron-builder）才拉起的依赖，一并放行。
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  koffi: true
+  onnxruntime-node: true
+
+# pnpm 11 默认开启 minimumReleaseAge 新鲜度检查；onnxruntime 1.29.0 是
+# 7ccb47b 有意升级并已随锁文件提交的版本（发布仅 2 天被误拦），仅豁免这两个包
+minimumReleaseAgeExclude:
   - onnxruntime-node
+  - onnxruntime-common

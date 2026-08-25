@@ -1,4 +1,4 @@
-import type { EngineSide } from '@super-go/core';
+import type { Player } from '@super-go/core';
 import type {
   AppSettings,
   EngineStatusPayload,
@@ -46,11 +46,11 @@ export interface ToolbarProps {
   snapshot: GameSnapshot | null;
   popover: Popover;
   onPopoverChange: (popover: Popover) => void;
-  onNewGame: (engineSide: EngineSide) => void;
+  /** 新对局弹窗所选执方（纯视角锚定，不设置引擎执方） */
+  onNewGame: (humanSide: Player) => void;
   onUndo: () => void;
   onResign: () => void;
   onPauseToggle: () => void;
-  onSetEngineSide: (side: EngineSide) => void;
   /** 工具栏执方开关：切换某一方是否由引擎托管（双开=互搏，双关=无引擎） */
   onToggleEngineSide: (side: 'first' | 'second') => void;
   onToggleAlwaysOnTop: () => void;
@@ -282,14 +282,7 @@ export default function Toolbar(props: ToolbarProps) {
             )}
             {popoverLayer(
               'game',
-              props.snapshot !== null ? (
-                <GamePanel
-                  t={props.t}
-                  snapshot={props.snapshot}
-                  onSetEngineSide={props.onSetEngineSide}
-                  onSettingsChanged={props.onSettingsChanged}
-                />
-              ) : null,
+              <GamePanel t={props.t} onSettingsChanged={props.onSettingsChanged} />,
               'right',
             )}
           </div>
