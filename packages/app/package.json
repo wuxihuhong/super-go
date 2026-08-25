@@ -19,6 +19,7 @@
   "devDependencies": {
     "@super-go/core": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@types/three": "^0.185.4",
@@ -26,11 +27,18 @@
     "electron": "^43.4.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
-    "tailwindcss": "^4.3.3",
-    "vite": "^7.3.6",
-    "vitest": "^4.1.11",
+    "pngjs": "^7.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "three": "^0.185.1"
+    "tailwindcss": "^4.3.3",
+    "three": "^0.185.1",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@nut-tree/node-mac-permissions": "2.2.1",
+    "@nut-tree/nut-js": "4.2.0",
+    "koffi": "3.1.6",
+    "onnxruntime-node": "1.29.0"
   }
 }

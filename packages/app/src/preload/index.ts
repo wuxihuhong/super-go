@@ -6,6 +6,15 @@ import {
   type SuperGoApi,
 } from '../shared/ipc';
 import type { GameSnapshot, LiveEval, NewGameIntent, PlayMoveIntent } from '../shared/game';
+import type {
+  LinkerLogEntry,
+  LinkerPermissionId,
+  LinkerResolution,
+  LinkerPermissionState,
+  LinkerStartIntent,
+  LinkerStatus,
+  TargetWindow,
+} from '../shared/linker';
 
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   const listener = (_event: unknown, payload: T): void => cb(payload);
@@ -39,6 +48,23 @@ const api: SuperGoApi = {
     subscribe<EngineStatusPayload>(IPC_CHANNELS.engineStatus, cb),
   onLiveEval: (cb: (evaluation: LiveEval) => void) =>
     subscribe<LiveEval>(IPC_CHANNELS.gameLiveEval, cb),
+
+  linkerListWindows: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.linkerListWindows) as Promise<TargetWindow[]>,
+  linkerActiveWindow: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.linkerActiveWindow) as Promise<TargetWindow | null>,
+  linkerStart: (intent: LinkerStartIntent) => ipcRenderer.invoke(IPC_CHANNELS.linkerStart, intent),
+  linkerStop: () => ipcRenderer.send(IPC_CHANNELS.linkerStop),
+  linkerPauseToggle: () => ipcRenderer.send(IPC_CHANNELS.linkerPauseToggle),
+  linkerResolve: (resolution: LinkerResolution) =>
+    ipcRenderer.send(IPC_CHANNELS.linkerResolve, resolution),
+  linkerPermissions: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.linkerPermissions) as Promise<LinkerPermissionState[]>,
+  linkerAskPermission: (id: LinkerPermissionId) => ipcRenderer.send(IPC_CHANNELS.linkerAskPermission, id),
+  onLinkerStatus: (cb: (status: LinkerStatus) => void) =>
+    subscribe<LinkerStatus>(IPC_CHANNELS.linkerStatus, cb),
+  onLinkerLog: (cb: (entry: LinkerLogEntry) => void) =>
+    subscribe<LinkerLogEntry>(IPC_CHANNELS.linkerLog, cb),
 };
 
 contextBridge.exposeInMainWorld('superGo', api);

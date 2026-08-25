@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Mock 棋盘平台（连线测试靶）</title>
+<style>
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #2c2a28;
+    font-family: system-ui, sans-serif;
+    color: #ddd;
+  }
+  .wrap { text-align: center; }
+  canvas { display: block; margin: 0 auto; box-shadow: 0 8px 30px rgba(0,0,0,.5); border-radius: 8px; }
+  .row { margin-top: 12px; display: flex; gap: 16px; justify-content: center; align-items: center; font-size: 13px; }
+  button { padding: 4px 12px; border-radius: 6px; border: 1px solid #666; background: #3a3733; color: #ddd; cursor: pointer; }
+  button.on { border-color: #e8b04b; color: #e8b04b; }
+  #status { color: #999; min-width: 200px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="board" width="900" height="1000"></canvas>
+  <div class="row">
+    <span>自动应手（模拟对手）<button id="auto" class="on">开</button></span>
+    <span>走子动画 <button id="anim" class="on">开</button></span>
+    <button id="reset">重开一局</button>
+    <span id="status">红方行棋 · 两击走子（先点起点再点终点）</span>
+  </div>
+</div>
+<script>
+/**
+ * 连线测试靶：模拟第三方平台棋盘。
+ * - 视觉口径对齐常见平台：木色盘面、9×10 交叉点、圆片棋子 + 汉字；
+ * - 交互：两击走子（先点起点、再点终点），只做粗规则（车马炮象士将兵斜直走判断从简，允许任意走）——
+ *   合法性由 Super Go 侧的 core 规则校验，本页只是靶子；
+ * - 自动应手：轮到黑时 1.2s 后随机黑方一步（用简单规则就近走）；
+ * - 走子动画：200ms 缓动（测试 Super Go 的动画确认开关）。
+ */
+const CW = 8 * 100, CH = 9 * 100;               // 交叉点区域（8×9 格距）
+const ORIGIN = { x: 50, y: 50 };                 // 盘面内边距
+const CELL = 100;
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+
+const ROWS = ['rnbakabnr', '..........', '.c.....c.', 'p.p.p.p.p', '..........',
+              '..........', 'P.P.P.P.P', '.C.....C.', '..........', 'RNBAKABNR'];
+let board = [];
+let turn = 'first';
+let selected = null;
+let animating = null;   // {piece, from, to, t0}
+let autoReply = true;
+let animEnabled = true;
+
+function reset() {
+  board = ROWS.map(r => r.split('').map(c => c === '.' || c === ' ' ? null : c));
+  turn = 'first'; selected = null; animating = null;
+  updateStatus();
+}
+
+function updateStatus(msg) {
+  document.getElementById('status').textContent =
+    msg ?? ((turn === 'first' ? '红方' : '黑方') + '行棋 · 两击走子（先点起点再点终点）');
+}
+
+function ptOf(x, y) { return { x: ORIGIN.x + x * CELL, y: ORIGIN.y + y * CELL }; }
+function gridOf(px, py) {
+  const gx = Math.round((px - ORIGIN.x) / CELL), gy = Math.round((py - ORIGIN.y) / CELL);
+  if (gx < 0 || gx > 8 || gy < 0 || gy > 9) return null;
+  const p = ptOf(gx, gy);
+  if (Math.hypot(px - p.x, py - p.y) > CELL * 0.45) return null;
+  return { x: gx, y: gy };
+}
+
+function drawPiece(px, py, piece) {
+  const red = piece === piece.toUpperCase();
+  const g = ctx.createRadialGradient(px - 12, py - 14, 8, px, py, 46);
+  g.addColorStop(0, red ? '#ff9d7a' : '#9aa2ad');
+  g.addColorStop(1, red ? '#c0392b' : '#2f3640');
+  ctx.beginPath(); ctx.arc(px, py, 36, 0, Math.PI * 2);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = red ? '#8e2418' : '#141a20'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(px, py, 29, 0, Math.PI * 2);
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.stroke();
+  // 红黑异写（模型按字形分类，黑方必须用黑字：将士象马车炮卒）
+  const CHAR = {
+    K: '帥', A: '仕', B: '相', N: '馬', R: '車', C: '炮', P: '兵',
+    k: '將', a: '士', b: '象', n: '馬', r: '車', c: '炮', p: '卒',
+  };
+  const ch = CHAR[piece] ?? CHAR[piece.toUpperCase()];
+  ctx.fillStyle = red ? '#fff5e6' : '#e8edf2';
+  ctx.font = '600 38px "PingFang SC", serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(ch, px, py + 3);
+}
+
+function draw() {
+  // 盘面
+  const bg = ctx.createLinearGradient(0, 0, 900, 1000);
+  bg.addColorStop(0, '#d9b57c'); bg.addColorStop(1, '#b98a4e');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, 900, 1000);
+  ctx.strokeStyle = '#6d4a23'; ctx.lineWidth = 2;
+  for (let y = 0; y < 10; y++) { const a = ptOf(0, y), b = ptOf(8, y); line(a, b); }
+  for (let x = 0; x <= 8; x++) {
+    if (x === 0 || x === 8) { const a = ptOf(x, 0), b = ptOf(x, 9); line(a, b); }
+    else { line(ptOf(x, 0), ptOf(x, 4)); line(ptOf(x, 5), ptOf(x, 9)); }
+  }
+  // 楚河汉界
+  ctx.fillStyle = '#7a5426'; ctx.font = '600 52px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('楚 河', 260, ptOf(0, 4.5).y); ctx.fillText('汉 界', 640, ptOf(0, 4.5).y);
+  // 宫斜线
+  line(ptOf(3, 0), ptOf(5, 2)); line(ptOf(5, 0), ptOf(3, 2));
+  line(ptOf(3, 7), ptOf(5, 9)); line(ptOf(5, 7), ptOf(3, 9));
+  // 选中
+  if (selected) { const p = ptOf(selected.x, selected.y); ctx.beginPath(); ctx.arc(p.x, p.y, 50, 0, Math.PI * 2); ctx.lineWidth = 4; ctx.strokeStyle = '#e8b04b'; ctx.stroke(); }
+  // 棋子
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 9; x++) {
+    const piece = board[y][x];
+    if (!piece) continue;
+    if (animating && animating.x === x && animating.y === y) continue;
+    const p = ptOf(x, y); drawPiece(p.x, p.y, piece);
+  }
+  // 动画中的棋子
+  if (animating) {
+    const { piece, from, to, t0 } = animating;
+    const t = Math.min(1, (performance.now() - t0) / 200);
+    const a = ptOf(from.x, from.y), b = ptOf(to.x, to.y);
+    const e = 1 - Math.pow(1 - t, 2);
+    drawPiece(a.x + (b.x - a.x) * e, a.y + (b.y - a.y) * e, piece);
+    if (t >= 1) animating = null;
+  }
+  requestAnimationFrame(draw);
+}
+function line(a, b) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+
+canvas.addEventListener('click', (e) => {
+  const r = canvas.getBoundingClientRect();
+  const g = gridOf(e.clientX - r.left, e.clientY - r.top);
+  if (!g || animating) return;
+  if (!selected) {
+    const piece = board[g.y][g.x];
+    if (piece) selected = g;
+    return;
+  }
+  if (selected.x === g.x && selected.y === g.y) { selected = null; return; }
+  move(selected, g);
+  selected = null;
+});
+
+function move(from, to) {
+  const piece = board[from.y][from.x];
+  if (!piece) return;
+  const red = piece === piece.toUpperCase();
+  if ((turn === 'first') !== red) return; // 只允许行棋方
+  board[to.y][to.x] = piece;
+  board[from.y][from.x] = null;
+  if (animEnabled) animating = { piece, from, to, x: to.x, y: to.y, t0: performance.now() };
+  turn = turn === 'first' ? 'second' : 'first';
+  updateStatus();
+  if (autoReply && turn === 'second') setTimeout(autoMove, 1200);
+}
+
+/** 简单黑方应手：随便挑一个黑子走一步（近似合法即可，靶子不较真） */
+function autoMove() {
+  if (turn !== 'second') return;
+  const moves = [];
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 9; x++) {
+    const piece = board[y][x];
+    if (!piece || piece === piece.toUpperCase()) continue;
+    for (const [dx, dy] of [[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,1],[1,-1],[-1,-1],[2,1],[1,2]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || nx > 8 || ny < 0 || ny > 9) continue;
+      const target = board[ny][nx];
+      if (target && target === target.toLowerCase()) continue;
+      moves.push([{x, y}, {x: nx, y: ny}]);
+    }
+  }
+  if (moves.length === 0) return;
+  // 偏好吃子（红大写）
+  const cap = moves.filter(([, t]) => board[t.y][t.x]);
+  const m = (cap.length ? cap : moves)[Math.floor(Math.random() * (cap.length ? cap.length : moves.length))];
+  move(m[0], m[1]);
+}
+
+document.getElementById('auto').onclick = (e) => {
+  autoReply = !autoReply;
+  e.target.textContent = autoReply ? '开' : '关';
+  e.target.classList.toggle('on', autoReply);
+};
+document.getElementById('anim').onclick = (e) => {
+  animEnabled = !animEnabled;
+  e.target.textContent = animEnabled ? '开' : '关';
+  e.target.classList.toggle('on', animEnabled);
+};
+document.getElementById('reset').onclick = () => { reset(); };
+
+reset();
+draw();
+</script>
+</body>
+</html>

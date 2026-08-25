@@ -14,7 +14,6 @@ import {
   genmoveConstraintFromConfig,
   GameStateMachine,
   iccsToMove,
-  INITIAL_FEN,
   isInCheck,
   MoveTree,
   moveToIccs,
@@ -71,12 +70,75 @@ export class MatchService {
   private recovering = false;
   private lastLiveDepth = -1;
   private strengthTail: Promise<void> = Promise.resolve();
+  /** 引擎着法落子拦截（连线注入点：§6.1 出招 → 点击平台 → 本地落子） */
+  private engineMoveInterceptor: ((move: XiangqiMove) => Promise<boolean>) | null = null;
 
   constructor(
     private readonly events: MatchEvents,
     private readonly getEnginePath: () => string | null,
     private readonly getStrengthConfig: () => XiangqiStrengthConfig,
   ) {}
+
+  /** 连线会话注入/移除落子拦截（null = 移除） */
+  setEngineMoveInterceptor(fn: ((move: XiangqiMove) => Promise<boolean>) | null): void {
+    this.engineMoveInterceptor = fn;
+  }
+
+  /** 连线 diff 基准：当前游标局面 */
+  currentPosition(): XiangqiPosition {
+    return this.positionNow();
+  }
+
+  /**
+   * 连线专用：以平台观测为准落子（**平台是事实源**）。
+   *
+   * 与 playMove 的区别是绕过"轮到引擎行棋"与 thinking 门禁：连线中平台上已经
+   * 发生的事实不容本地拒绝——包括用户在待人工介入时替引擎手工走掉的那一步，
+   * 以及引擎回合内对方抢先落子。仍走规则校验，非法着法照样拒绝（识别防线）。
+   */
+  playObserved(move: XiangqiMove): IntentResult {
+    if (this.state.phase !== 'playing') {
+      return { ok: false, error: '对局未在进行中' };
+    }
+    if (!this.game.isLegal(this.positionNow(), move)) {
+      return { ok: false, error: '非法着法' };
+    }
+    // 平台已经走了，引擎正在算的那一步就此作废
+    this.generation++;
+    this.adapter?.stopSearch();
+    this.thinking = false;
+    this.tree.play(move);
+    this.finishIfOver();
+    this.pushSnapshot();
+    if (!this.paused && this.state.phase === 'playing' && this.engineToMoveNow()) {
+      void this.engineTurn();
+    }
+    return { ok: true };
+  }
+
+  /** 暂停置位（幂等；togglePause 与连线的冻结/解冻共用，避免 toggle 奇偶错位） */
+  setPaused(paused: boolean): IntentResult {
+    if (this.state.phase !== 'playing') {
+      return { ok: false, error: '对局未在进行中' };
+    }
+    if (this.paused === paused) return { ok: true };
+    this.paused = paused;
+    if (paused) {
+      this.abortThinking();
+    } else if (this.engineToMoveNow()) {
+      void this.engineTurn();
+    }
+    this.pushSnapshot();
+    return { ok: true };
+  }
+
+  /** 作废进行中的思考并复位 thinking（所有"引擎这一手不算了"的路径统一走这里） */
+  private abortThinking(): void {
+    this.generation++;
+    this.adapter?.stopSearch();
+    this.thinking = false;
+    this.pushSnapshot();
+  }
 
   // -------------------------------------------------------------------------
   // 意图（renderer → main）
@@ -94,6 +156,10 @@ export class MatchService {
     }
     if (!intent.fromCursor) {
       this.tree = new MoveTree<XiangqiMove, XiangqiPosition>(this.game);
+      // 连线重开一局：根局面来自平台识别（§6.1）；填 root 缓存即整树从此生长
+      if (intent.initialFen !== undefined) {
+        this.tree.root.position = this.game.parse(intent.initialFen);
+      }
     }
 
     const launchError = await this.ensureEngine();
@@ -184,19 +250,7 @@ export class MatchService {
 
   /** 暂停/继续：暂停时作废进行中的思考并停止自动出招（用户回合仍可落子） */
   togglePause(): IntentResult {
-    if (this.state.phase !== 'playing') {
-      return { ok: false, error: '对局未在进行中' };
-    }
-    this.paused = !this.paused;
-    if (this.paused) {
-      this.generation++;
-      this.adapter?.stopSearch();
-      this.thinking = false;
-    } else if (this.engineToMoveNow()) {
-      void this.engineTurn();
-    }
-    this.pushSnapshot();
-    return { ok: true };
+    return this.setPaused(!this.paused);
   }
 
   /** 对局中变更执方：接管（引擎→人）/ 放手（人→引擎）/ 转为互搏 */
@@ -269,12 +323,21 @@ export class MatchService {
         .pathOf(this.tree.cursor)
         .slice(1)
         .map((node) => moveToIccs(node.move!));
-      this.adapter!.syncPosition(INITIAL_FEN, moves);
+      // 根局面 = 标准初始（人机）或连线灌入的识别局面（positionOf(root) 统一取）
+      this.adapter!.syncPosition(
+        this.game.serialize(this.tree.positionOf(this.tree.root)),
+        moves,
+      );
       const { move, evaluation } = await this.adapter!.genmove(
         genmoveConstraintFromConfig(this.getStrengthConfig()),
       );
-      if (gen !== this.generation) return; // 悔棋/新对局/换执方已作废
-      if (move === null) return; // 进程退出，恢复流程接管
+      if (gen !== this.generation) return; // 悔棋/新对局/换执方已作废（新一代自己管 thinking）
+      if (move === null) {
+        // 进程退出，恢复流程接管——但 thinking 必须就地复位，否则 playMove 的
+        // `|| this.thinking` 门禁会把用户也挡在外面（连手动接管都走不了）
+        this.abortThinking();
+        return;
+      }
 
       const engineMove = iccsToMove(move);
       if (engineMove === null || !this.game.isLegal(pos, engineMove)) {
@@ -289,6 +352,18 @@ export class MatchService {
 
       await sleep(randomBetween(300, 900)); // 拟人化延迟（§6.1 同机制）
       if (gen !== this.generation) return;
+
+      // 引擎着法落子拦截（连线注入：先点击平台、平台渲染确认后再本地落子）
+      if (this.engineMoveInterceptor !== null) {
+        const proceed = await this.engineMoveInterceptor(engineMove);
+        if (gen !== this.generation) return;
+        if (!proceed) {
+          // 外部放弃落子（连线待人工介入/已停止）：本地不落子，保持与平台一致。
+          // thinking 必须复位——否则对局被永久锁死，引擎不走、用户也不能手动接管。
+          this.abortThinking();
+          return;
+        }
+      }
 
       const node = this.tree.play(engineMove);
       node.evalRecord = this.toEvalRecord(evaluation);

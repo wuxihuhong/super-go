@@ -64,6 +64,12 @@ export {
   pseudoLegalMoves,
 } from './xiangqi/rules.js';
 export { INITIAL_FEN, parseFen, toFen } from './xiangqi/fen.js';
+export type {
+  BoardSanityIssue,
+  BoardSanityReason,
+  RecognizedBoard,
+} from './xiangqi/boardSanity.js';
+export { validateRecognizedBoard } from './xiangqi/boardSanity.js';
 export { chineseNotation } from './xiangqi/notation.js';
 export { iccsToMove, iccsToPoint, moveToIccs, pointToIccs } from './xiangqi/iccs.js';
 export { xiangqiZobrist } from './xiangqi/zobrist.js';

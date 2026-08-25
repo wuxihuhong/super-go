@@ -4,7 +4,14 @@
  */
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { normalizeXiangqiStrength } from '@super-go/core';
+import {
+  applyMove,
+  INITIAL_FEN,
+  moveToIccs,
+  normalizeXiangqiStrength,
+  parseFen,
+  toFen,
+} from '@super-go/core';
 import { describe, expect, it } from 'vitest';
 import type { GameSnapshot } from '../shared/game';
 import { MatchService, type MatchEvents } from './match';
@@ -167,6 +174,79 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     expect(resumed.ok).toBe(true);
     await waitFor((s) => !s.paused && s.moves.length > beforePause);
     expect(latest().paused).toBe(false);
+    match.dispose();
+  });
+
+  it('连线重开一局：initialFen 任意局面开局 + 出招拦截（平台代落子语义）', { timeout: 60_000 }, async () => {
+    const snapshots: GameSnapshot[] = [];
+    const events: MatchEvents = {
+      snapshot: (snap) => snapshots.push(snap),
+      engineStatus: () => {},
+      liveEval: () => {},
+    };
+    const match = new MatchService(
+      events,
+      () => binary,
+      () => normalizeXiangqiStrength({ mode: 'time', movetime: 300 }),
+    );
+    const latest = (): GameSnapshot => snapshots[snapshots.length - 1]!;
+    const waitFor = async (
+      predicate: (snap: GameSnapshot) => boolean,
+      ms = 20_000,
+    ): Promise<GameSnapshot> => {
+      const deadline = Date.now() + ms;
+      while (Date.now() <= deadline) {
+        if (snapshots.length > 0 && predicate(latest())) return latest();
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error(`等待快照超时：${JSON.stringify(latest()?.moves ?? [])}`);
+    };
+
+    // 中途接入局面：红已走中炮（b2e2），轮黑——连线识别灌入的 FEN
+    const midFen = toFen(
+      applyMove(parseFen(INITIAL_FEN), {
+        kind: 'xiangqi',
+        from: { x: 1, y: 7 },
+        to: { x: 4, y: 7 },
+      }).position,
+    );
+    const intercepted: string[] = [];
+    match.setEngineMoveInterceptor(async (move) => {
+      intercepted.push(moveToIccs(move));
+      return true; // 模拟平台点击成功
+    });
+
+    // 引擎执黑应招（开局即轮到引擎 = 接入局面轮黑）
+    const started = await match.newGame({ engineSide: 'second', initialFen: midFen });
+    expect(started.ok).toBe(true);
+    const replied = await waitFor((s) => s.moves.length === 1 && !s.thinking);
+    expect(replied.fen).not.toBe(midFen);
+    expect(intercepted).toHaveLength(1);
+    expect(intercepted[0]).toBe(replied.moves[0]!.iccs); // 拦截到的着法 = 实际落子
+    expect(latest().moves[0]!.redCp).not.toBeUndefined(); // 评估照挂
+
+    // 拦截器返回 false（平台点击失败 → 连线转待人工介入）：引擎着法不落子
+    match.setEngineMoveInterceptor(async () => false);
+    const played = match.playMove({ from: { x: 7, y: 9 }, to: { x: 6, y: 7 } }); // 红马二进三
+    expect(played.ok).toBe(true);
+    await new Promise((r) => setTimeout(r, 1200));
+    const after = latest();
+    expect(after.moves).toHaveLength(2); // 用户着法在，引擎应招被拦截吞掉
+
+    // 回归防线：拦截器拒绝后 thinking 必须复位。否则 playMove 的 `|| this.thinking`
+    // 门禁会把用户也挡在外面——引擎不走、人也接管不了，整局死锁。
+    expect(after.thinking).toBe(false);
+
+    // 平台是事实源：用户在平台上替引擎走掉这一步，本地必须接受（绕过轮值门禁）
+    const engineTurnMove = { kind: 'xiangqi', from: { x: 7, y: 0 }, to: { x: 6, y: 2 } } as const;
+    expect(match.playMove({ from: engineTurnMove.from, to: engineTurnMove.to }).ok).toBe(false);
+    expect(match.playObserved(engineTurnMove).ok).toBe(true);
+    expect(latest().moves).toHaveLength(3);
+
+    // 非法着法照样拒绝（识别防线不因"平台是事实源"而失守）
+    expect(
+      match.playObserved({ kind: 'xiangqi', from: { x: 0, y: 9 }, to: { x: 4, y: 4 } }).ok,
+    ).toBe(false);
     match.dispose();
   });
 });

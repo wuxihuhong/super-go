@@ -5,3 +5,5 @@ packages:
 onlyBuiltDependencies:
   - electron
   - esbuild
+  - koffi
+  - onnxruntime-node

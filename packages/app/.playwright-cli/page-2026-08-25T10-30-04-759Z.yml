@@ -1,0 +1,86 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e6]:
+      - button "新对局" [ref=e7]
+      - generic:
+        - generic: 新对局⌘N
+        - generic: 选择执方，开始一盘新对弈
+    - generic [ref=e11]:
+      - button "悔棋" [disabled] [ref=e12]
+      - generic:
+        - generic: 悔棋⌘Z
+        - generic: 撤回你最近一步与引擎的应招
+    - generic [ref=e16]:
+      - button "认输" [disabled] [ref=e17]
+      - generic:
+        - text: 认输
+        - generic: 认输，结束当前对局
+    - generic: Super-Go
+    - generic [ref=e20]:
+      - generic [ref=e23]:
+        - button "引擎执红" [disabled] [ref=e24]
+        - generic:
+          - text: 引擎执红
+          - generic: 引擎托管红方；两个都开 = 引擎互搏，都关 = 无人机（随时可切）
+      - generic [ref=e26]:
+        - button "引擎执黑" [disabled] [ref=e27]
+        - generic:
+          - text: 引擎执黑
+          - generic: 引擎托管黑方；两个都开 = 引擎互搏，都关 = 无人机（随时可切）
+      - generic [ref=e30]:
+        - button "连线" [ref=e31]
+        - generic:
+          - text: 连线
+          - generic: 连接第三方平台棋盘：识别局面、引擎代走或观战；⌘/Ctrl+Shift+X 紧急停止
+      - generic [ref=e35]:
+        - button "放大棋盘" [active] [ref=e36]
+        - generic:
+          - text: 放大棋盘
+          - generic: 仅 3D 棋盘；50%–200%，每次 10%
+      - generic [ref=e41]:
+        - button "缩小棋盘" [ref=e42]
+        - generic:
+          - text: 缩小棋盘
+          - generic: 仅 3D 棋盘；50%–200%，每次 10%
+      - generic [ref=e46]:
+        - button "侧栏" [ref=e47]
+        - generic:
+          - generic: 侧栏⌘B
+          - generic: 显示或隐藏右侧着法与引擎面板
+      - generic [ref=e51]:
+        - button "设置" [ref=e52]
+        - generic:
+          - generic: 设置⌘,
+          - generic: 主题、语言、音效与象棋固有配置
+      - generic [ref=e56]:
+        - button "窗口置顶" [ref=e57]
+        - generic:
+          - text: 窗口置顶
+          - generic: 开启后窗口浮在其他应用之上（连线代打盖住棋盘平台），按钮点亮即生效
+  - generic [ref=e60]:
+    - main [ref=e61]
+    - complementary [ref=e62]:
+      - separator [ref=e63]
+      - generic [ref=e64]: 复盘中：点击着法可跳转
+      - generic [ref=e67]:
+        - heading "着法" [level=2] [ref=e68]
+        - paragraph [ref=e70]: 尚无着法
+      - heading "评估走势" [level=2] [ref=e72]
+      - generic [ref=e75]:
+        - heading "引擎" [level=2] [ref=e76]
+        - generic [ref=e77]:
+          - generic [ref=e78]:
+            - term [ref=e79]: 引擎
+            - definition [ref=e80]: —
+          - generic [ref=e81]:
+            - term [ref=e82]: 新对局
+            - definition [ref=e83]: —
+          - generic [ref=e84]:
+            - term [ref=e85]: 强度
+            - definition [ref=e86]: 不设限
+          - generic [ref=e87]:
+            - term [ref=e88]: 深度
+            - definition [ref=e89]: —
+          - generic [ref=e90]:
+            - term [ref=e91]: 优势
+            - definition [ref=e92]: —

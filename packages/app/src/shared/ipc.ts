@@ -5,6 +5,16 @@
 import type { EngineSide as EngineSideT, XiangqiStrengthConfig } from '@super-go/core';
 import type { EngineStatus } from './engine';
 import type { GameSnapshot, IntentResult, LiveEval, NewGameIntent, PlayMoveIntent } from './game';
+import type {
+  LinkerLogEntry,
+  LinkerPermissionId,
+  LinkerPermissionState,
+  LinkerResolution,
+  LinkerSettings,
+  LinkerStartIntent,
+  LinkerStatus,
+  TargetWindow,
+} from './linker';
 
 export type {
   GameSnapshot,
@@ -14,6 +24,18 @@ export type {
   NewGameIntent,
   PlayMoveIntent,
 } from './game';
+export type {
+  LinkerLogEntry,
+  LinkerPermissionId,
+  LinkerPermissionState,
+  LinkerPhase,
+  LinkerReason,
+  LinkerResolution,
+  LinkerSettings,
+  LinkerStartIntent,
+  LinkerStatus,
+  TargetWindow,
+} from './linker';
 
 export const IPC_CHANNELS = {
   appInfo: 'app:info',
@@ -33,6 +55,17 @@ export const IPC_CHANNELS = {
   gameSnapshot: 'game:snapshot',
   engineStatus: 'engine:status',
   gameLiveEval: 'game:liveEval',
+  // 连线（P2，DESIGN §6）
+  linkerListWindows: 'linker:windows',
+  linkerActiveWindow: 'linker:activeWindow',
+  linkerStart: 'linker:start',
+  linkerStop: 'linker:stop',
+  linkerPauseToggle: 'linker:pauseToggle',
+  linkerResolve: 'linker:resolve',
+  linkerPermissions: 'linker:permissions',
+  linkerAskPermission: 'linker:askPermission',
+  linkerStatus: 'linker:status',
+  linkerLog: 'linker:log',
 } as const;
 
 export type ThemeSetting = 'system' | 'light' | 'dark';
@@ -71,9 +104,13 @@ export interface AppSettings {
     board3d?: boolean;
     /** 窗口始终保持在其他应用之上（连线代打等场景） */
     alwaysOnTop?: boolean;
+    /** 3D 棋盘在中央区的占比（0.5–1，仅 3D 生效；2D 恒满高） */
+    board3dScale?: number;
   };
   /** 象棋独立配置 */
   xiangqi: XiangqiGameSettings;
+  /** 连线参数（§6.5） */
+  linker: LinkerSettings;
 }
 
 export interface EngineStatusPayload {
@@ -106,4 +143,19 @@ export interface SuperGoApi {
   onSnapshot(cb: (snap: GameSnapshot) => void): () => void;
   onEngineStatus(cb: (payload: EngineStatusPayload) => void): () => void;
   onLiveEval(cb: (evaluation: LiveEval) => void): () => void;
+
+  // 连线（P2）
+  linkerListWindows(): Promise<TargetWindow[]>;
+  /** 当前前台窗口（"切换到目标窗口后确认"选择模式） */
+  linkerActiveWindow(): Promise<TargetWindow | null>;
+  linkerStart(intent: LinkerStartIntent): Promise<IntentResult>;
+  linkerStop(): void;
+  linkerPauseToggle(): void;
+  /** 待人工介入时的决断：重试 / 以平台局面重开 / 转观战（§6.6） */
+  linkerResolve(resolution: LinkerResolution): void;
+  /** macOS 三权限状态（Windows 恒空数组 = 无门槛） */
+  linkerPermissions(): Promise<LinkerPermissionState[]>;
+  linkerAskPermission(id: LinkerPermissionId): void;
+  onLinkerStatus(cb: (status: LinkerStatus) => void): () => void;
+  onLinkerLog(cb: (entry: LinkerLogEntry) => void): () => void;
 }

@@ -1,23 +1,34 @@
 import type { EngineSide } from '@super-go/core';
-import type { AppSettings, EngineStatusPayload } from '@shared/ipc';
+import type {
+  AppSettings,
+  EngineStatusPayload,
+  LinkerLogEntry,
+  LinkerResolution,
+  LinkerStartIntent,
+  LinkerStatus,
+} from '@shared/ipc';
 import type { GameSnapshot } from '@shared/game';
 import type { MessageKey, TFunction } from '../i18n';
 import GamePanel from './GamePanel';
+import LinkerPanel from './LinkerPanel';
 import SettingsPanel from './SettingsPanel';
 import SetupPanel from './SetupPanel';
 import {
   IconFlag,
   IconGame,
   IconGear,
+  IconLink,
   IconPanel,
   IconPause,
   IconPin,
   IconPlay,
   IconPlus,
   IconUndo,
+  IconZoomIn,
+  IconZoomOut,
 } from './icons';
 
-export type Popover = 'none' | 'setup' | 'settings' | 'game';
+export type Popover = 'none' | 'setup' | 'settings' | 'game' | 'linker';
 
 export interface ToolbarProps {
   t: TFunction;
@@ -40,9 +51,22 @@ export interface ToolbarProps {
   onResign: () => void;
   onPauseToggle: () => void;
   onSetEngineSide: (side: EngineSide) => void;
+  /** 工具栏执方开关：切换某一方是否由引擎托管（双开=互搏，双关=无引擎） */
+  onToggleEngineSide: (side: 'first' | 'second') => void;
   onToggleAlwaysOnTop: () => void;
   onTogglePanel: () => void;
   onSettingsChanged: (next: AppSettings) => void;
+  /** 3D 棋盘缩放（仅 3D 可用；2D/回退时禁用） */
+  boardZoomDisabled: boolean;
+  onBoardZoomIn: () => void;
+  onBoardZoomOut: () => void;
+  /** 连线（P2） */
+  linkerStatus: LinkerStatus | null;
+  linkerLogs: LinkerLogEntry[];
+  onLinkerStart: (intent: LinkerStartIntent) => void;
+  onLinkerStop: () => void;
+  onLinkerPauseToggle: () => void;
+  onLinkerResolve: (resolution: LinkerResolution) => void;
 }
 
 /** hiddenInset 标题栏下，header 整体可拖拽窗口；交互元素逐一豁免 */
@@ -58,8 +82,7 @@ function hintKeyOf(key: MessageKey): MessageKey {
 }
 
 /** 图标按钮 + 悬停提示（按钮名 + 快捷键 + 功能说明；250ms 延迟出现，移开即隐） */
-function ToolButton(props: {
-  label: string;
+function ToolButton(props: {  label: string;
   hint?: string;
   /** 无修饰键的裸键名（如 'N'、'Z'、' '） */
   shortcut?: string;
@@ -99,6 +122,46 @@ function ToolButton(props: {
             </kbd>
           )}
         </span>
+        {props.hint !== undefined && <span className="block text-background/70">{props.hint}</span>}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * 引擎执方按钮（红/黑棋子色圆点）：选中态以 accent 环表达，棋子色恒定
+ * （颜色承担数据语义，不随选中变化）。
+ */
+function EngineSideButton(props: {
+  label: string;
+  hint?: string;
+  color: 'red' | 'black';
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}): React.JSX.Element {
+  return (
+    <span className="group relative">
+      <button
+        type="button"
+        style={NO_DRAG}
+        aria-label={props.label}
+        disabled={props.disabled}
+        onClick={props.onClick}
+        className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${
+          props.active ? 'bg-accent/10 ring-1 ring-accent' : 'hover:bg-foreground/5'
+        }`}
+      >
+        <span
+          className={`h-3.5 w-3.5 rounded-full border ${
+            props.color === 'red'
+              ? 'border-piece-red/60 bg-piece-red'
+              : 'border-piece-black/60 bg-piece-black'
+          }`}
+        />
+      </button>
+      <span className="pointer-events-none absolute top-full left-1/2 z-50 mt-1.5 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-[11px] leading-tight whitespace-nowrap text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-hover:delay-250">
+        <span className="font-medium">{props.label}</span>
         {props.hint !== undefined && <span className="block text-background/70">{props.hint}</span>}
       </span>
     </span>
@@ -204,7 +267,7 @@ export default function Toolbar(props: ToolbarProps) {
         {props.title}
       </span>
 
-      {/* 右侧：引擎状态 + 对局临时配置 + 侧栏 + 设置 */}
+      {/* 右侧：引擎状态 + 对局临时配置 + 连线 + 侧栏 + 设置 */}
       <div className="ml-auto flex items-center gap-2" style={NO_DRAG}>
         <span className="flex items-center gap-1.5">
           <span className={`h-2 w-2 rounded-full ${dotTone()}`} />
@@ -231,6 +294,53 @@ export default function Toolbar(props: ToolbarProps) {
             )}
           </div>
         )}
+        {/* 引擎执方（独立开关）：红/黑各自切换引擎托管；两个都开 = 引擎互搏，
+            都关 = 无引擎（人执双方 / 纯观战）。任何对弈状态下随时可切 */}
+        <EngineSideButton
+          label={props.t('toolbar.engineRed')}
+          hint={props.t('toolbar.engineRed.hint')}
+          color="red"
+          active={
+            props.snapshot?.engineSide === 'first' || props.snapshot?.engineSide === 'both'
+          }
+          disabled={!props.playing}
+          onClick={() => props.onToggleEngineSide('first')}
+        />
+        <EngineSideButton
+          label={props.t('toolbar.engineBlack')}
+          hint={props.t('toolbar.engineBlack.hint')}
+          color="black"
+          active={
+            props.snapshot?.engineSide === 'second' || props.snapshot?.engineSide === 'both'
+          }
+          disabled={!props.playing}
+          onClick={() => props.onToggleEngineSide('second')}
+        />
+        <div className="relative">
+          {iconButton(
+            'toolbar.linker',
+            <IconLink />,
+            () => props.onPopoverChange(props.popover === 'linker' ? 'none' : 'linker'),
+            false,
+            props.linkerStatus !== null &&
+              !['idle', 'stopped', 'error'].includes(props.linkerStatus.phase),
+          )}
+          {popoverLayer(
+            'linker',
+            <LinkerPanel
+              t={props.t}
+              status={props.linkerStatus}
+              logs={props.linkerLogs}
+              onStart={props.onLinkerStart}
+              onStop={props.onLinkerStop}
+              onPauseToggle={props.onLinkerPauseToggle}
+              onResolve={props.onLinkerResolve}
+            />,
+            'right',
+          )}
+        </div>
+        {iconButton('toolbar.board3dZoomIn', <IconZoomIn />, props.onBoardZoomIn, props.boardZoomDisabled)}
+        {iconButton('toolbar.board3dZoomOut', <IconZoomOut />, props.onBoardZoomOut, props.boardZoomDisabled)}
         {iconButton('toolbar.togglePanel', <IconPanel />, props.onTogglePanel, false, false, 'B')}
         <div className="relative">
           {iconButton(

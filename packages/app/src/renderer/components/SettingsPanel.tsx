@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { normalizeXiangqiStrength, type XiangqiStrengthConfig } from '@super-go/core';
 import type { AppSettings, LanguageCode, ThemeSetting } from '@shared/ipc';
+import {
+  LINKER_SETTINGS_DEFAULT,
+  supportsBackgroundClick,
+  type LinkerSettings,
+} from '@shared/linker';
 import StrengthFields from './StrengthFields';
 import type { TFunction } from '../i18n';
 
@@ -17,9 +22,11 @@ export interface SettingsPanelProps {
  */
 export default function SettingsPanel(props: SettingsPanelProps) {
   const [settings, setSettingsState] = useState<AppSettings | null>(null);
+  const [platform, setPlatform] = useState<string>('');
 
   useEffect(() => {
     void window.superGo.getSettings().then(setSettingsState);
+    void window.superGo.getAppInfo().then((info) => setPlatform(info.platform));
   }, []);
 
   const patch = (partial: Partial<AppSettings>): void => {
@@ -38,23 +45,57 @@ export default function SettingsPanel(props: SettingsPanelProps) {
   const patchStrength = (delta: Partial<XiangqiStrengthConfig>): void => {
     patchXiangqi({ strength: { ...strength, ...delta } });
   };
+  const linker: LinkerSettings = { ...LINKER_SETTINGS_DEFAULT, ...settings?.linker };
+  const patchLinker = (delta: Partial<LinkerSettings>): void => {
+    patch({ linker: { ...linker, ...delta } });
+  };
+  /** 后台落子仅 Windows 有此能力（§6.3 有定论）：其他平台禁用开关并说明原因，而不是藏起来 */
+  const canBackgroundClick = supportsBackgroundClick(platform);
+  const onOff = [
+    { value: 'true', label: props.t('settings.sound.on') },
+    { value: 'false', label: props.t('settings.sound.off') },
+  ] as const;
+  const numberField = (
+    label: string,
+    value: number,
+    min: number,
+    max: number,
+    onCommit: (v: number) => void,
+  ): React.JSX.Element => (
+    <Row label={label}>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        defaultValue={value}
+        key={`${label}-${value}`}
+        onBlur={(e) => {
+          const v = Number(e.target.value);
+          if (Number.isFinite(v)) onCommit(Math.min(max, Math.max(min, Math.round(v))));
+        }}
+        className="w-20 rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums"
+      />
+    </Row>
+  );
 
   const segmented = <T extends string>(
     options: ReadonlyArray<{ value: T; label: string }>,
     value: T | undefined,
     onSelect: (value: T) => void,
+    disabled = false,
   ): React.JSX.Element => (
-    <div className="flex rounded-lg bg-background p-0.5">
+    <div className={`flex rounded-lg bg-background p-0.5 ${disabled ? 'opacity-40' : ''}`}>
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
+          disabled={disabled}
           onClick={() => onSelect(option.value)}
           className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
             value === option.value
               ? 'bg-surface text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
-          }`}
+          } ${disabled ? 'cursor-not-allowed' : ''}`}
         >
           {option.label}
         </button>
@@ -146,9 +187,68 @@ export default function SettingsPanel(props: SettingsPanelProps) {
         <Row label={props.t('settings.ponder')}>
           <span className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">{props.t('settings.ponder.p2')}</span>
-            {/* P2 接通引擎后启用（§5.9），先不做可切换的假开关 */}
+            {/* P3 接通引擎后启用（§5.9），先不做可切换的假开关 */}
             <span className="relative h-4 w-7 rounded-full bg-border opacity-60" />
           </span>
+        </Row>
+      </Section>
+
+      {/* 连线（§6.5 参数） */}
+      <Section title={props.t('settings.linker')}>
+        {numberField(props.t('settings.linker.scanInterval'), linker.scanIntervalMs, 20, 2000, (v) =>
+          patchLinker({ scanIntervalMs: v }),
+        )}
+        {numberField(props.t('settings.linker.holdMs'), linker.clickHoldMs, 0, 500, (v) =>
+          patchLinker({ clickHoldMs: v }),
+        )}
+        {numberField(props.t('settings.linker.betweenMs'), linker.clickBetweenMs, 0, 2000, (v) =>
+          patchLinker({ clickBetweenMs: v }),
+        )}
+        <Row
+          label={props.t('settings.linker.animation')}
+          hint={props.t('settings.linker.animation.hint')}
+        >
+          {segmented(
+            [
+              { value: 'true', label: props.t('settings.sound.on') },
+              { value: 'false', label: props.t('settings.sound.off') },
+            ],
+            linker.animationConfirm ? 'true' : 'false',
+            (value) => patchLinker({ animationConfirm: value === 'true' }),
+          )}
+        </Row>
+        <Row
+          label={props.t('settings.linker.threads')}
+          hint={props.t('settings.linker.threads.hint')}
+        >
+          {segmented(
+            [1, 2, 4].map((n) => ({ value: String(n), label: String(n) })),
+            String(linker.inferThreads),
+            (value) => patchLinker({ inferThreads: Number(value) }),
+          )}
+        </Row>
+        <Row
+          label={props.t('settings.linker.bgCapture')}
+          hint={props.t('settings.linker.bgCapture.hint')}
+        >
+          {segmented(
+            onOff,
+            linker.backgroundCapture ? 'true' : 'false',
+            (value) => patchLinker({ backgroundCapture: value === 'true' }),
+          )}
+        </Row>
+        <Row
+          label={props.t('settings.linker.bgClick')}
+          hint={props.t(
+            canBackgroundClick ? 'settings.linker.bgClick.hint' : 'settings.linker.bgClick.unsupported',
+          )}
+        >
+          {segmented(
+            onOff,
+            canBackgroundClick && linker.backgroundClick ? 'true' : 'false',
+            (value) => patchLinker({ backgroundClick: value === 'true' }),
+            !canBackgroundClick,
+          )}
         </Row>
       </Section>
     </div>

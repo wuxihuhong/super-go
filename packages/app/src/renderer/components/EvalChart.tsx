@@ -10,11 +10,15 @@ export interface EvalChartProps {
   themeTick: number;
   /** 无数据占位文案 */
   emptyText: string;
+  /** 双线图例（红方 / 黑方） */
+  legendRed: string;
+  legendBlack: string;
 }
 
 /**
- * 评估走势折线图（§7.1 克制风）：x = 着法序号，y = 引擎原始整数分
- * （红方视角，正 = 红优；沿用玩家已接受的分数体系，不作换算）。
+ * 评估走势折线图（§7.1 克制风）：x = 着法序号，y = 引擎原始整数分。
+ * **红黑双线**：红线 = 红方得分（redCp，正 = 红优），黑线 = 黑方得分
+ * （-redCp，关于均势线镜像）——双方得分一眼对读。
  * 杀棋钳制到图上下界；0 线虚线为均势基准。
  */
 export default function EvalChart(props: EvalChartProps) {
@@ -34,7 +38,8 @@ export default function EvalChart(props: EvalChartProps) {
     ctx.clearRect(0, 0, width, H);
 
     const c = {
-      accent: cssColor('--accent'),
+      red: cssColor('--piece-red'),
+      black: cssColor('--piece-black'),
       border: cssColor('--border'),
       muted: cssColor('--muted-foreground'),
     };
@@ -92,29 +97,56 @@ export default function EvalChart(props: EvalChartProps) {
     const lastPly = props.moves.length - 1;
     const xOf = (ply: number): number => (lastPly <= 0 ? padX + w / 2 : padX + (ply / lastPly) * w);
 
-    ctx.save();
-    ctx.strokeStyle = c.accent;
-    ctx.lineWidth = 1.5;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    for (let i = 0; i < pts.length; i++) {
-      const pt = pts[i];
-      if (pt === undefined) continue;
-      const x = xOf(pt.ply);
-      const y = yOf(pt.v);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    // 端点：当前评估
-    const last = pts[pts.length - 1];
-    if (last !== undefined) {
-      ctx.fillStyle = c.accent;
+    /** 画一条得分线；sign = +1 红方视角原值，-1 黑方镜像 */
+    const drawLine = (sign: 1 | -1, color: string): void => {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.arc(xOf(last.ply), yOf(last.v), 2.5, 0, Math.PI * 2);
+      for (let i = 0; i < pts.length; i++) {
+        const pt = pts[i];
+        if (pt === undefined) continue;
+        const x = xOf(pt.ply);
+        const y = yOf(pt.v * sign);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      const last = pts[pts.length - 1];
+      if (last !== undefined) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(xOf(last.ply), yOf(last.v * sign), 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    };
+
+    drawLine(1, c.red);
+    drawLine(-1, c.black);
+
+    // 图例（右上角，小号克制）：红 / 黑 双方得分
+    ctx.save();
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    const legendY = padY + 4;
+    let lx = width - padX - 2;
+    const drawLegend = (text: string, color: string): void => {
+      const tw = ctx.measureText(text).width;
+      lx -= tw;
+      ctx.fillStyle = c.muted;
+      ctx.fillText(text, lx, legendY);
+      lx -= 10;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(lx + 3, legendY, 2.5, 0, Math.PI * 2);
       ctx.fill();
-    }
+      lx -= 6;
+    };
+    drawLegend(props.legendBlack, c.black);
+    drawLegend(props.legendRed, c.red);
     ctx.restore();
 
     // 上下界刻度（tabular 语境下的小号数字，原始整数分）
@@ -127,7 +159,7 @@ export default function EvalChart(props: EvalChartProps) {
     ctx.textBaseline = 'bottom';
     ctx.fillText(`${-yScale}`, padX + 2, H - padY + 6);
     ctx.restore();
-  }, [props.moves, props.themeTick, props.emptyText, width]);
+  }, [props.moves, props.themeTick, props.emptyText, props.legendRed, props.legendBlack, width]);
 
   return (
     <div ref={ref} className="w-full" style={{ height: H }}>

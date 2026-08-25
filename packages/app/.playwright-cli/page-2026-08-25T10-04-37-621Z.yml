@@ -1,0 +1,90 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e6]:
+      - button "新对局" [ref=e7]
+      - generic:
+        - generic: 新对局⌘N
+        - generic: 选择执方，开始一盘新对弈
+    - generic [ref=e11]:
+      - button "悔棋" [disabled] [ref=e12]
+      - generic:
+        - generic: 悔棋⌘Z
+        - generic: 撤回你最近一步与引擎的应招
+    - generic [ref=e102]:
+      - button "暂停" [ref=e103]
+      - generic:
+        - generic: 暂停Space
+        - generic: 暂停引擎出招，你的回合仍可走棋；空格同效
+    - generic [ref=e16]:
+      - button "认输" [disabled] [ref=e17]
+      - generic:
+        - text: 认输
+        - generic: 认输，结束当前对局
+    - generic: Super-Go
+    - generic [ref=e20]:
+      - generic [ref=e21]: Mock Engine 1800
+      - generic [ref=e109]:
+        - button "对局" [ref=e110]
+        - generic:
+          - text: 对局
+          - generic: 对局中调整执方与棋力（临时配置，即时生效）
+      - generic [ref=e23]:
+        - button "引擎执红" [active] [ref=e24]
+        - generic:
+          - text: 引擎执红
+          - generic: 引擎托管红方；两个都开 = 引擎互搏，都关 = 无人机（随时可切）
+      - generic [ref=e26]:
+        - button "引擎执黑" [ref=e27]
+        - generic:
+          - text: 引擎执黑
+          - generic: 引擎托管黑方；两个都开 = 引擎互搏，都关 = 无人机（随时可切）
+      - generic [ref=e30]:
+        - button "连线" [ref=e31]
+        - generic:
+          - text: 连线
+          - generic: 连接第三方平台棋盘：识别局面、引擎代走或观战；⌘/Ctrl+Shift+X 紧急停止
+      - generic [ref=e35]:
+        - button "侧栏" [ref=e36]
+        - generic:
+          - generic: 侧栏⌘B
+          - generic: 显示或隐藏右侧着法与引擎面板
+      - generic [ref=e40]:
+        - button "设置" [ref=e41]
+        - generic:
+          - generic: 设置⌘,
+          - generic: 主题、语言、音效与象棋固有配置
+      - generic [ref=e45]:
+        - button "窗口置顶" [ref=e46]
+        - generic:
+          - text: 窗口置顶
+          - generic: 开启后窗口浮在其他应用之上（连线代打盖住棋盘平台），按钮点亮即生效
+  - generic [ref=e49]:
+    - main [ref=e50]:
+      - generic [ref=e55]:
+        - button "放大棋盘" [ref=e56]: +
+        - button "缩小棋盘" [ref=e57]: −
+    - complementary [ref=e58]:
+      - separator [ref=e59]
+      - generic [ref=e60]: 引擎思考中…
+      - generic [ref=e63]:
+        - heading "着法" [level=2] [ref=e64]
+        - paragraph [ref=e66]: 尚无着法
+      - heading "评估走势" [level=2] [ref=e68]
+      - generic [ref=e71]:
+        - heading "引擎" [level=2] [ref=e72]
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - term [ref=e75]: 引擎
+            - definition [ref=e76]: Mock Engine 1800
+          - generic [ref=e77]:
+            - term [ref=e78]: 新对局
+            - definition [ref=e79]: 思考中
+          - generic [ref=e80]:
+            - term [ref=e81]: 强度
+            - definition [ref=e82]: "1800"
+          - generic [ref=e83]:
+            - term [ref=e84]: 深度
+            - definition [ref=e85]: "14"
+          - generic [ref=e86]:
+            - term [ref=e87]: 优势
+            - definition [ref=e88]: "+12"

@@ -9,11 +9,13 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { AppSettings } from '../shared/ipc';
+import { LINKER_SETTINGS_DEFAULT } from '../shared/linker';
 
 const DEFAULTS: AppSettings = {
   theme: 'system',
   view: { board3d: true, alwaysOnTop: false },
   xiangqi: { strength: {}, ponder: false },
+  linker: { ...LINKER_SETTINGS_DEFAULT },
 };
 
 /**
@@ -49,6 +51,7 @@ export class SettingsStore {
     this.data = { ...DEFAULTS, xiangqi: { ...DEFAULTS.xiangqi }, ...this.read() };
     this.data.view = { ...DEFAULTS.view, ...this.data.view };
     this.data.xiangqi = { ...DEFAULTS.xiangqi, ...this.data.xiangqi };
+    this.data.linker = { ...DEFAULTS.linker, ...this.data.linker };
   }
 
   get(): AppSettings {
@@ -61,6 +64,7 @@ export class SettingsStore {
       ...partial,
       view: { ...this.data.view, ...partial.view },
       xiangqi: { ...this.data.xiangqi, ...partial.xiangqi },
+      linker: { ...this.data.linker, ...partial.linker },
     };
     this.write();
     return this.get();
@@ -68,25 +72,8 @@ export class SettingsStore {
 
   private read(): Partial<AppSettings> {
     try {
-      const raw = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<AppSettings> & {
-        /** 旧版字段（已迁移到 xiangqi） */
-        engine?: { path?: string; thinkMs?: number };
-      };
-      if (raw === null || typeof raw !== 'object') return {};
-      const { engine, ...rest } = raw;
-      const migrated: Partial<AppSettings> = rest;
-      if (engine !== undefined) {
-        // 旧版迁移：engine.thinkMs → xiangqi.strength.movetime；engine.path → enginePath
-        migrated.xiangqi = {
-          ...raw.xiangqi,
-          enginePath: raw.xiangqi?.enginePath ?? engine.path,
-          strength: {
-            ...raw.xiangqi?.strength,
-            ...(engine.thinkMs !== undefined ? { movetime: engine.thinkMs } : {}),
-          },
-        };
-      }
-      return migrated;
+      const raw = JSON.parse(readFileSync(this.file, 'utf8')) as unknown;
+      return migrateSettings(raw);
     } catch {
       return {};
     }
@@ -99,4 +86,46 @@ export class SettingsStore {
     writeFileSync(tmp, `${JSON.stringify(this.data, null, 2)}\n`, 'utf8');
     renameSync(tmp, this.file);
   }
+}
+
+/** 旧版配置结构（迁移用；字段都是历史遗留，勿在新代码里引用） */
+type LegacySettings = Omit<Partial<AppSettings>, 'linker'> & {
+  /** 旧版：引擎路径与思考时长曾是顶层字段 */
+  engine?: { path?: string; thinkMs?: number };
+  linker?: Partial<AppSettings['linker']> & {
+    /** 旧版：后台模式合二为一，已拆成 backgroundCapture / backgroundClick */
+    backMode?: boolean;
+  };
+};
+
+/**
+ * 配置迁移（纯函数，可单测）：把历史结构映射到当前结构。
+ * 用户的配置文件是长期资产，迁移一旦悄悄写错，表现是"设置莫名其妙变回默认"，很难查。
+ */
+export function migrateSettings(raw: unknown): Partial<AppSettings> {
+  if (raw === null || typeof raw !== 'object') return {};
+  const { engine, ...rest } = raw as LegacySettings;
+  const migrated: Partial<AppSettings> = rest as Partial<AppSettings>;
+  const legacyLinker = (raw as LegacySettings).linker;
+
+  if (engine !== undefined) {
+    // engine.thinkMs → xiangqi.strength.movetime；engine.path → xiangqi.enginePath
+    const xiangqi = (raw as LegacySettings).xiangqi;
+    migrated.xiangqi = {
+      ...xiangqi,
+      enginePath: xiangqi?.enginePath ?? engine.path,
+      strength: {
+        ...xiangqi?.strength,
+        ...(engine.thinkMs !== undefined ? { movetime: engine.thinkMs } : {}),
+      },
+    };
+  }
+
+  if (legacyLinker?.backMode !== undefined) {
+    // 旧 backMode 名不副实：win32 的截图一直走 PrintWindow 与它无关，它实际只控制点击。
+    // 故只映射到 backgroundClick，backgroundCapture 交给默认值。
+    const { backMode, ...linkerRest } = legacyLinker;
+    migrated.linker = { ...linkerRest, backgroundClick: backMode } as AppSettings['linker'];
+  }
+  return migrated;
 }

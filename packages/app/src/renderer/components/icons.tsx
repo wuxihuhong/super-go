@@ -78,3 +78,29 @@ export const IconPin = base(
     <path d="M12 15v5" />
   </>,
 );
+
+/** 连线（链条：两环相扣） */
+export const IconLink = base(
+  <>
+    <path d="M10 13.5a4.5 4.5 0 0 0 6.4.4l2.8-2.8a4.5 4.5 0 0 0-6.4-6.4l-1.6 1.6" />
+    <path d="M14 10.5a4.5 4.5 0 0 0-6.4-.4l-2.8 2.8a4.5 4.5 0 0 0 6.4 6.4l1.6-1.6" />
+  </>,
+);
+
+/** 放大棋盘（放大镜 + 加号） */
+export const IconZoomIn = base(
+  <>
+    <circle cx="10.5" cy="10.5" r="6.5" />
+    <path d="M15.5 15.5 21 21" />
+    <path d="M10.5 7.8v5.4M7.8 10.5h5.4" />
+  </>,
+);
+
+/** 缩小棋盘（放大镜 − 减号） */
+export const IconZoomOut = base(
+  <>
+    <circle cx="10.5" cy="10.5" r="6.5" />
+    <path d="M15.5 15.5 21 21" />
+    <path d="M7.8 10.5h5.4" />
+  </>,
+);

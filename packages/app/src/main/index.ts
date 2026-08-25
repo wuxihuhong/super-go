@@ -5,6 +5,8 @@ import { normalizeXiangqiStrength } from '@super-go/core';
 import { IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
 import { enginesRootCandidates, findPikafishBinary } from './engine/discover';
 import { registerIpc } from './ipc';
+import { LinkerController } from './linker/linkerController';
+import { findYoloModel } from './linker/modelPath';
 import { MatchService, type MatchEvents } from './match';
 import { SettingsStore } from './settings';
 
@@ -108,6 +110,7 @@ function resolveEnginePath(userPath: string | undefined): string | null {
 void app.whenReady().then(() => {
   installAppMenu();
   const settings = new SettingsStore();
+  const diag = process.env['SUPER_GO_LINKER_DIAG'] !== undefined;
   // 默认跟随系统；用户改过则用持久化的选择（§7.5）
   nativeTheme.themeSource = settings.get().theme;
 
@@ -128,8 +131,82 @@ void app.whenReady().then(() => {
     () => normalizeXiangqiStrength(settings.get().xiangqi?.strength),
   );
 
-  registerIpc(settings, () => mainWindow, match);
+  // 连线（P2）：连线 = 以平台识别局面重开一局，对局本体复用 MatchService
+  // （引擎进程、执方、强度生命周期同源；连线只是眼睛 + 手）
+  const linker = new LinkerController(
+    {
+      status: (status) => {
+        if (diag) console.log(`[diag:status] ${JSON.stringify(status)}`);
+        send(IPC_CHANNELS.linkerStatus, status);
+      },
+      log: (entry) => {
+        if (diag) console.log(`[diag:log] ${entry.level} ${entry.text}`);
+        send(IPC_CHANNELS.linkerLog, entry);
+      },
+    },
+    () => ({ ...settings.get().linker }),
+    match,
+    () =>
+      findYoloModel({
+        appPath: app.getAppPath(),
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+      }),
+  );
+
+  registerIpc(settings, () => mainWindow, match, linker);
+
+  // 连线诊断模式（SUPER_GO_LINKER_DIAG=1 pnpm dev）：自动对标题含"棋盘"的
+  // 窗口启动连线执红，status/log 打到 stdout——定位真机环境问题用
+  if (process.env['SUPER_GO_LINKER_DIAG'] !== undefined) {
+    void (async () => {
+      const windows = await linker.listWindows();
+      console.log(
+        `[diag] windows: ${windows
+          .map((w) => `${w.id}:${w.title} ${w.region.width}x${w.region.height}`)
+          .join(' | ')}`,
+      );
+      const filter = process.env['SUPER_GO_LINKER_DIAG'] ?? '1';
+      const needle = filter === '1' ? '棋盘' : filter;
+      const target = windows.find((w) => w.title.includes(needle)) ?? windows[0];
+      if (target === undefined) {
+        console.log('[diag] no candidate window, quitting');
+        app.quit();
+        return;
+      }
+      console.log(`[diag] target: ${target.id}:${target.title}`);
+      // mac 前台截屏要求目标可见：focus 目标窗口再启动
+      const { getWindows } = await import('@nut-tree/nut-js');
+      for (const w of await getWindows()) {
+        if ((await w.title) === target.title) {
+          await w.focus();
+          console.log('[diag] target focused');
+          break;
+        }
+      }
+      const r = await linker.start({ windowId: target.id });
+      console.log(`[diag] start: ${JSON.stringify(r)}`);
+      // SUPER_GO_LINKER_DIAG_SIDE=first|second：开局后让引擎执该方，
+      // 从而在真机上验证"点击 → 平台走出这一步"的完整闭环（不设则只识别不点击）
+      const side = process.env['SUPER_GO_LINKER_DIAG_SIDE'];
+      if (side === 'first' || side === 'second') {
+        setTimeout(() => {
+          console.log(`[diag] setEngineSide(${side})`);
+          console.log(`[diag] setEngineSide -> ${JSON.stringify(match.setEngineSide(side))}`);
+        }, 8_000);
+      }
+      const runMs = Number(process.env['SUPER_GO_LINKER_DIAG_MS'] ?? '40000');
+      setTimeout(() => {
+        console.log(`[diag] ${runMs}ms elapsed, quitting`);
+        app.quit();
+      }, runMs);
+    })();
+  }
+
   mainWindow = createWindow(settings.get().view?.alwaysOnTop === true);
+  // 诊断模式最小化自身：mac 前台截屏要求目标窗口可见，别让诊断实例自己挡住靶盘
+  // ready-to-show 里的 show() 会覆盖提前调用的 minimize，必须等它之后再最小化
+  if (diag) mainWindow.once('show', () => mainWindow?.minimize());
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -139,6 +216,7 @@ void app.whenReady().then(() => {
 
   app.on('before-quit', () => {
     match.dispose();
+    linker.dispose();
   });
 });
 

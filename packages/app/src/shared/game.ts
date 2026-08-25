@@ -39,10 +39,12 @@ export interface GameSnapshot {
 }
 
 export interface NewGameIntent {
-  /** 引擎执方：'first'/'second' 单方，'both' = 引擎左右互搏（人观战） */
+  /** 引擎执方：'first'/'second' 单方，'both' = 引擎左右互搏（人观战）；null = 无引擎（连线观战/摆谱） */
   engineSide: EngineSide;
   /** 从当前游标局面续弈；缺省从头开新局。棋力走固有配置（settings.xiangqi.strength） */
   fromCursor?: boolean;
+  /** 自定义初始局面 FEN（连线重开一局：局面来自平台识别）；与 fromCursor 互斥 */
+  initialFen?: string;
 }
 
 export interface PlayMoveIntent {

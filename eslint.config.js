@@ -39,11 +39,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'packages/app/scripts/**/*.mjs'],
     languageOptions: {
       globals: {
         console: 'readonly',
         process: 'readonly',
+        performance: 'readonly',
+        URL: 'readonly',
       },
     },
   },

@@ -24,7 +24,15 @@ import {
   type XiangqiMove,
   type XiangqiPosition,
 } from '@super-go/core';
-import type { AppSettings, EngineStatusPayload, SuperGoApi, ThemeSetting } from '@shared/ipc';
+import type {
+  AppSettings,
+  EngineStatusPayload,
+  LinkerLogEntry,
+  LinkerStatus,
+  SuperGoApi,
+  ThemeSetting,
+} from '@shared/ipc';
+import { LINKER_SETTINGS_DEFAULT } from '@shared/linker';
 import type {
   GameSnapshot,
   IntentResult,
@@ -47,6 +55,11 @@ const PIECE_CP: Record<string, number> = {
 
 const SETTINGS_KEY = 'super-go.mock.settings';
 
+const MOCK_WINDOWS = [
+  { id: 101, title: 'Mock 棋盘平台 A', region: { left: 0, top: 40, width: 900, height: 950 } },
+  { id: 102, title: 'Mock 网页浏览器', region: { left: 100, top: 100, width: 1280, height: 800 } },
+];
+
 export function installMockApi(): void {
   (window as { superGo?: SuperGoApi }).superGo = createMockApi();
   console.info('[mock] 浏览器开发模式：window.superGo 为模拟实现（无真实引擎）');
@@ -66,6 +79,30 @@ function createMockApi(): SuperGoApi {
   const statusListeners = new Set<(payload: EngineStatusPayload) => void>();
   const evalListeners = new Set<(evaluation: LiveEval) => void>();
   const themeListeners = new Set<(dark: boolean) => void>();
+
+  // ---- 连线 mock 状态 ----
+  let linkerTimer: number | null = null;
+  let linkerPhase: LinkerStatus['phase'] = 'idle';
+  let linkerWindowTitle = 'Mock 棋盘平台 A';
+  const linkerStatusListeners = new Set<(status: LinkerStatus) => void>();
+  const linkerLogListeners = new Set<(entry: LinkerLogEntry) => void>();
+  const pushLinkerStatus = (): void => {
+    linkerStatusListeners.forEach((cb) =>
+      cb({
+        phase: linkerPhase,
+        windowTitle: linkerWindowTitle,
+        fps: 8 + Math.floor(Math.random() * 4),
+        inferMs: 60 + Math.floor(Math.random() * 40),
+        reversed: false,
+        moves: 0,
+        message: null,
+        reason: null,
+      }),
+    );
+  };
+  const pushLinkerLog = (level: LinkerLogEntry['level'], text: string): void => {
+    linkerLogListeners.forEach((cb) => cb({ time: Date.now(), level, text }));
+  };
 
   // ---- 设置（localStorage 持久化；主题用 class 覆盖，无 nativeTheme）----
   let settings: AppSettings = loadSettings();
@@ -220,7 +257,7 @@ function createMockApi(): SuperGoApi {
     return null;
   };
 
-  return {
+  const api: SuperGoApi = {
     getAppInfo: () =>
       Promise.resolve({
         versions: { app: '0.0.1-mock', electron: '-', node: '-', chrome: chromeVersion() },
@@ -365,7 +402,60 @@ function createMockApi(): SuperGoApi {
       evalListeners.add(cb);
       return () => evalListeners.delete(cb);
     },
+
+    // ---- 连线 mock（浏览器模式 UI 调试：假窗口 + 状态/日志推送；对局走 mock 对弈通路）----
+    linkerListWindows: () => Promise.resolve(MOCK_WINDOWS),
+    linkerActiveWindow: () => Promise.resolve(null),
+    linkerStart: async (intent) => {
+      if (linkerTimer !== null) return Promise.resolve({ ok: false, error: 'mock linker running' });
+      const win = MOCK_WINDOWS.find((w) => w.id === intent.windowId);
+      if (win === undefined) return Promise.resolve({ ok: false, error: '目标窗口不存在' });
+      linkerWindowTitle = win.title;
+      linkerPhase = 'scanning';
+      pushLinkerStatus();
+      pushLinkerLog('info', 'mock linker started (browser dev mode)');
+      // 连线 = 重开一局：走 mock 对弈通路（initialFen 用平台识别局面的模拟）
+      const r = await api.newGame({
+        engineSide: null, // 连线后引擎不控制，执方由工具栏按钮设置
+        initialFen: 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1',
+      });
+      if (!r.ok) return Promise.resolve(r);
+      let tick = 0;
+      linkerTimer = window.setInterval(() => {
+        tick++;
+        linkerPhase = tick % 4 === 0 ? 'thinking' : 'scanning';
+        pushLinkerStatus();
+        if (tick % 8 === 0) pushLinkerLog('info', 'mock recognition frame processed');
+      }, 1200);
+      return Promise.resolve({ ok: true });
+    },
+    linkerStop: () => {
+      if (linkerTimer !== null) {
+        window.clearInterval(linkerTimer);
+        linkerTimer = null;
+      }
+      linkerPhase = 'stopped';
+      pushLinkerLog('info', 'mock linker stopped');
+    },
+    linkerResolve: () => {
+      linkerPhase = 'scanning';
+      pushLinkerStatus();
+    },
+    linkerPauseToggle: () => {
+      pushLinkerLog('info', 'mock pause toggled');
+    },
+    linkerPermissions: () => Promise.resolve([]),
+    linkerAskPermission: () => {},
+    onLinkerStatus: (cb) => {
+      linkerStatusListeners.add(cb);
+      return () => linkerStatusListeners.delete(cb);
+    },
+    onLinkerLog: (cb) => {
+      linkerLogListeners.add(cb);
+      return () => linkerLogListeners.delete(cb);
+    },
   };
+  return api;
 }
 
 /** 模拟引擎选着：材料评估 + 吃子/推进的轻量偏好，随机化避免每局同型 */
@@ -405,6 +495,7 @@ function loadSettings(): AppSettings {
     theme: 'system' satisfies ThemeSetting,
     view: { board3d: true, alwaysOnTop: false },
     xiangqi: { strength: {}, ponder: false },
+    linker: { ...LINKER_SETTINGS_DEFAULT },
   };
 }
 

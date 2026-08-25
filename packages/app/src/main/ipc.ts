@@ -1,5 +1,12 @@
 import { app, dialog, ipcMain, nativeTheme, type BrowserWindow } from 'electron';
-import { IPC_CHANNELS, type AppSettings } from '../shared/ipc';
+import {
+  IPC_CHANNELS,
+  type AppSettings,
+  type LinkerPermissionId,
+  type LinkerResolution,
+  type LinkerStartIntent,
+} from '../shared/ipc';
+import type { LinkerController } from './linker/linkerController';
 import type { MatchService } from './match';
 import type { SettingsStore } from './settings';
 
@@ -11,6 +18,7 @@ export function registerIpc(
   settings: SettingsStore,
   getMainWindow: () => BrowserWindow | null,
   match: MatchService,
+  linker: LinkerController,
 ): void {
   ipcMain.handle(IPC_CHANNELS.appInfo, () => ({
     versions: {
@@ -54,8 +62,12 @@ export function registerIpc(
   });
 
   // ---- 对弈意图（P1）----
-  ipcMain.handle(IPC_CHANNELS.gameNew, (_e, intent: Parameters<MatchService['newGame']>[0]) =>
-    match.newGame(intent),
+  ipcMain.handle(
+    IPC_CHANNELS.gameNew,
+    (_e, intent: Parameters<MatchService['newGame']>[0]) => {
+      if (linker.active) return { ok: false, error: '连线对局进行中，请先停止连线' };
+      return match.newGame(intent);
+    },
   );
   ipcMain.handle(IPC_CHANNELS.gamePlay, (_e, intent: Parameters<MatchService['playMove']>[0]) =>
     match.playMove(intent),
@@ -69,4 +81,20 @@ export function registerIpc(
   ipcMain.handle(IPC_CHANNELS.gamePauseToggle, () => match.togglePause());
   ipcMain.handle(IPC_CHANNELS.gameGoto, (_e, nodeId: number) => match.goto(nodeId));
   ipcMain.handle(IPC_CHANNELS.gameSnapshotGet, () => match.snapshot());
+
+  // ---- 连线（P2，DESIGN §6）----
+  ipcMain.handle(IPC_CHANNELS.linkerListWindows, () => linker.listWindows());
+  ipcMain.handle(IPC_CHANNELS.linkerActiveWindow, () => linker.activeWindow());
+  ipcMain.handle(IPC_CHANNELS.linkerStart, (_e, intent: LinkerStartIntent) => linker.start(intent));
+  // 连线 = 重开一局：LinkerSession.armGame 的 newGame 会自动接管/中止当前对局，
+  // 不做互斥拦截（拦了会让"停止连线后再启动"永远被上一局卡死）
+  ipcMain.on(IPC_CHANNELS.linkerStop, () => linker.stop('user'));
+  ipcMain.on(IPC_CHANNELS.linkerPauseToggle, () => linker.togglePause());
+  ipcMain.on(IPC_CHANNELS.linkerResolve, (_e, resolution: LinkerResolution) => {
+    void linker.resolve(resolution);
+  });
+  ipcMain.handle(IPC_CHANNELS.linkerPermissions, () => linker.permissions());
+  ipcMain.on(IPC_CHANNELS.linkerAskPermission, (_e, id: LinkerPermissionId) =>
+    linker.askPermission(id),
+  );
 }

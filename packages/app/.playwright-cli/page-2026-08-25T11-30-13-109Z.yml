@@ -1,0 +1,49 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - link "Kurnik":
+      - /url: /
+      - img "Kurnik" [ref=e3] [cursor=pointer]
+    - generic [ref=e4]:
+      - link "gry online" [ref=e6] [cursor=pointer]:
+        - /url: /
+      - text: "|"
+      - link "turnieje" [ref=e8] [cursor=pointer]:
+        - /url: /turnieje/
+      - text: 14811 graczy
+  - heading "xiangqi online - zagraj" [level=1] [ref=e9]
+  - generic [ref=e10]:
+    - generic [ref=e12]:
+      - heading [level=2] [ref=e13]:
+        - link "xiangqi gra multiplayer" [ref=e14] [cursor=pointer]:
+          - /url: ""
+      - table [ref=e15]:
+        - rowgroup [ref=e16]:
+          - row [ref=e17]:
+            - cell [ref=e18]:
+              - button "zaloguj ▾" [ref=e19] [cursor=pointer]
+            - cell [ref=e20]
+            - cell [ref=e21]:
+              - button "gość ▸" [ref=e22] [cursor=pointer]
+      - paragraph [ref=e23]: Xiangqi ONLINE, zagraj - Kurnik
+      - insertion [ref=e24]
+      - paragraph [ref=e26]: "Cechy i opcje: granie na żywo, pokoje gier, rankingi, rozbudowane statystyki, profile, kontakty, prywatne wiadomości, zapisy gier"
+      - paragraph [ref=e27]:
+        - link "zasady gry" [ref=e28] [cursor=pointer]:
+          - /url: /xiangqi/zasady.phtml
+    - generic [ref=e29]:
+      - img "xiangqi" [ref=e30]
+      - paragraph [ref=e31]:
+        - link "SŁOWOKU" [ref=e33] [cursor=pointer]:
+          - /url: /slowoku/
+        - link "odgadnij słowo" [ref=e34] [cursor=pointer]:
+          - /url: /slowoku/
+  - separator [ref=e35]
+  - paragraph [ref=e36]:
+    - link "pomoc" [ref=e37] [cursor=pointer]:
+      - /url: /faq.phtml
+    - text: "|"
+    - link "uwagi" [ref=e38] [cursor=pointer]:
+      - /url: /uwagi/
+    - text: "|"
+    - link "kontakt" [ref=e39] [cursor=pointer]:
+      - /url: /kontakt.phtml

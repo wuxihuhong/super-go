@@ -118,6 +118,8 @@ export default function SidePanel(props: SidePanelProps) {
           moves={snapshot?.moves ?? []}
           themeTick={props.themeTick}
           emptyText={props.t('panel.chart.empty')}
+          legendRed={props.t('side.red')}
+          legendBlack={props.t('side.black')}
         />
       </div>
 
