@@ -137,13 +137,21 @@ export default function App() {
 
   const engineSide = snapshot?.engineSide ?? null;
   const spectating = engineSide === 'both'; // 引擎互搏，人观战
+  /** 连线进行中（平台是事实源：本地棋盘只跟盘显示，不接受手动改动） */
+  const linkerActive =
+    linkerStatus !== null &&
+    linkerStatus.phase !== 'idle' &&
+    linkerStatus.phase !== 'stopped' &&
+    linkerStatus.phase !== 'error';
   /** 引擎是否托管某一方（toolbar 两开关；双关 = 人执双方） */
   const engineControls = (side: Player): boolean => engineSide === 'both' || engineSide === side;
-  // 暂停只冻结引擎，用户的回合照常可走（不可跨步：引擎回合 / 观战时 UI 不可落子）
+  // 暂停只冻结引擎，用户的回合照常可走（不可跨步：引擎回合 / 观战时 UI 不可落子）；
+  // 连线中一律不可落子——人工接管走平台，本地手动落子会与平台立刻分叉（§6.7，main 侧同样拦截）
   const interactive =
     snapshot !== null &&
     snapshot.phase === 'playing' &&
     !snapshot.thinking &&
+    !linkerActive &&
     !engineControls(snapshot.turn);
 
   const legalTargets = useMemo(() => {
@@ -237,11 +245,7 @@ export default function App() {
   // 棋盘方位（执方与视角解耦，2026-08-26 定稿）——hooks 区实现：
   // 新对局弹窗选的执方只作开局视角锚定（选中颜色朝下），不设置引擎执方；
   // 连线按平台视角（reversed）持续跟随；切换引擎执方/续弈/悔棋一律不翻盘
-  const linkerActive =
-    linkerStatus !== null &&
-    linkerStatus.phase !== 'idle' &&
-    linkerStatus.phase !== 'stopped' &&
-    linkerStatus.phase !== 'error';
+  // （linkerActive 在上方 interactive 处已算过）
   /** 棋盘朝向：**状态**而非每次渲染现算——现算会在停止连线的瞬间凭空翻一次 */
   const [flip, setFlip] = useState(false);
   /** 待消费的开局视角（新对局弹窗的选择；进入对局那一刻锚定后即清空） */
@@ -314,9 +318,10 @@ export default function App() {
         paused={snapshot?.paused === true}
         canUndo={
           (playing === true || snapshot?.phase === 'ended') &&
-          (snapshot?.moves.length ?? 0) > 0
+          (snapshot?.moves.length ?? 0) > 0 &&
+          !linkerActive
         }
-        canResign={playing === true && !spectating}
+        canResign={playing === true && !spectating && !linkerActive}
         panelOpen={panelOpen}
         alwaysOnTop={alwaysOnTop}
         engineStatus={engineStatus}

@@ -7,9 +7,10 @@
  * - 进程退出对外广播（上层做自动重启 + 重同步，§5.8 设计内行为）；
  * - 启动即设 ScoreType=Raw：厘兵口径（§5.4），避免默认 Elo 归一化污染分数。
  *
- * 仅依赖 node:child_process，不引 Electron——可在 Node 集成测试中直跑。
+ * 仅依赖 node 内置模块（child_process / path / readline），不引 Electron——可在 Node 集成测试中直跑。
  */
 import { spawn, type ChildProcess } from 'node:child_process';
+import { dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 import type {
   EngineAdapter,
@@ -55,7 +56,8 @@ export class UciAdapter implements EngineAdapter {
     }
     this.status = 'launching';
     this.proc = spawn(binaryPath, [], {
-      cwd: this.dirnameOf(binaryPath),
+      // 引擎同目录常放 NNUE / 权重，cwd 必须落在可执行文件旁（Windows 反斜杠路径同样要算对）
+      cwd: dirname(binaryPath),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const proc = this.proc;
@@ -245,10 +247,5 @@ export class UciAdapter implements EngineAdapter {
     if (this.proc === null) {
       throw new Error('引擎未运行（已退出或未 launch）');
     }
-  }
-
-  private dirnameOf(binaryPath: string): string {
-    const idx = binaryPath.lastIndexOf('/');
-    return idx === -1 ? '.' : binaryPath.slice(0, idx);
   }
 }

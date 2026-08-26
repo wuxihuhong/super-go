@@ -2,6 +2,7 @@ import { app, dialog, ipcMain, nativeTheme, type BrowserWindow } from 'electron'
 import {
   IPC_CHANNELS,
   type AppSettings,
+  type IntentResult,
   type LinkerPermissionId,
   type LinkerResolution,
   type LinkerStartIntent,
@@ -62,18 +63,21 @@ export function registerIpc(
   });
 
   // ---- 对弈意图（P1）----
-  ipcMain.handle(
-    IPC_CHANNELS.gameNew,
-    (_e, intent: Parameters<MatchService['newGame']>[0]) => {
-      if (linker.active) return { ok: false, error: '连线对局进行中，请先停止连线' };
-      return match.newGame(intent);
-    },
+  // 连线中平台是事实源（§6.7）：任何从 UI 直接改本地着法树的意图一律拒绝——
+  // 本地一走、平台没动，下一帧 diff 就无法互相解释，直接掉进 boardMismatch / 错误重试点击。
+  // 人工接管的正确做法是**在平台上把这步走掉**，识别到即 playObserved 自动跟上。
+  // 不在此列：gameSetEngineSide（连线的引擎执方正由工具栏按钮设置，见 linkerSession.startGame）、
+  // gameGoto（MatchService 内部对局中本就禁止跳转）。
+  const LINKER_BUSY: IntentResult = { ok: false, error: '连线对局进行中，请先停止连线' };
+
+  ipcMain.handle(IPC_CHANNELS.gameNew, (_e, intent: Parameters<MatchService['newGame']>[0]) =>
+    linker.active ? LINKER_BUSY : match.newGame(intent),
   );
   ipcMain.handle(IPC_CHANNELS.gamePlay, (_e, intent: Parameters<MatchService['playMove']>[0]) =>
-    match.playMove(intent),
+    linker.active ? LINKER_BUSY : match.playMove(intent),
   );
-  ipcMain.handle(IPC_CHANNELS.gameUndo, () => match.undo());
-  ipcMain.handle(IPC_CHANNELS.gameResign, () => match.resign());
+  ipcMain.handle(IPC_CHANNELS.gameUndo, () => (linker.active ? LINKER_BUSY : match.undo()));
+  ipcMain.handle(IPC_CHANNELS.gameResign, () => (linker.active ? LINKER_BUSY : match.resign()));
   ipcMain.handle(
     IPC_CHANNELS.gameSetEngineSide,
     (_e, side: Parameters<MatchService['setEngineSide']>[0]) => match.setEngineSide(side),
