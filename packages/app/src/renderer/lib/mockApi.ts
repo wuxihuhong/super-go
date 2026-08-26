@@ -262,14 +262,28 @@ function createMockApi(): SuperGoApi {
       Promise.resolve({
         versions: { app: '0.0.1-mock', electron: '-', node: '-', chrome: chromeVersion() },
         platform: navigator.platform,
+        cpuThreads: Math.max(1, navigator.hardwareConcurrency || 1),
       }),
     getSettings: () => Promise.resolve({ ...settings }),
     setSettings: (patch) => {
+      const xiangqi = patch.xiangqi
+        ? {
+            ...patch.xiangqi,
+            ...(patch.xiangqi.strength !== undefined
+              ? {
+                  strength: normalizeXiangqiStrength(
+                    patch.xiangqi.strength,
+                    navigator.hardwareConcurrency,
+                  ),
+                }
+              : {}),
+          }
+        : undefined;
       settings = {
         ...settings,
         ...patch,
         view: { board3d: true, alwaysOnTop: false, ...settings.view, ...patch.view },
-        xiangqi: { ponder: false, ...settings.xiangqi, ...patch.xiangqi },
+        xiangqi: { ponder: false, ...settings.xiangqi, ...xiangqi },
       };
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       applyThemeClass();

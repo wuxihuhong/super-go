@@ -224,7 +224,7 @@ export default function Toolbar(props: ToolbarProps) {
   return (
     <header
       style={DRAG}
-      className="relative z-10 flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-3 pl-20"
+      className="relative z-30 flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-3 pl-20"
     >
       <div className="relative flex items-center gap-1" style={NO_DRAG}>
         {iconButton(

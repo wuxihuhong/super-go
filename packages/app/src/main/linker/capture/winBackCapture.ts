@@ -85,7 +85,10 @@ export function captureWindowBack(hwndNum: number): {
   clientOrigin: { x: number; y: number };
 } | null {
   const a = api();
-  const hwnd = koffi.as(hwndNum, 'intptr_t');
+  // hwnd 已是 JS number；签名是 intptr_t（整数），直接传入。
+  // koffi.as() 只能转指针/字符串，as(..., 'intptr_t') 会抛
+  // "Only pointer or string types can be used for casting"。
+  const hwnd = hwndNum;
 
   const rc = koffi.alloc(RECT, 1);
   if (a.GetClientRect(hwnd, rc) === 0) return null;

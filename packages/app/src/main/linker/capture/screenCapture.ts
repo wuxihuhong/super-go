@@ -61,7 +61,7 @@ export async function captureScreenRegion(region: WindowRegion): Promise<Capture
     height: region.height,
   });
   const sf = display.scaleFactor;
-  const diag = process.env['SUPER_GO_LINKER_DIAG'] !== undefined;
+  const diag = process.env['SUPER_GO_LINKER_DIAG_FRAME'] !== undefined;
   if (diag) console.log(`[diag:capture] display=${display.id} sf=${sf} requesting ${Math.round(display.size.width * sf)}x${Math.round(display.size.height * sf)}`);
   const sources = await desktopCapturer.getSources({
     types: ['screen'],

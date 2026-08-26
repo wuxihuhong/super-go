@@ -10,9 +10,6 @@ export interface EvalChartProps {
   themeTick: number;
   /** 无数据占位文案 */
   emptyText: string;
-  /** 双线图例（红方 / 黑方） */
-  legendRed: string;
-  legendBlack: string;
 }
 
 /**
@@ -127,28 +124,6 @@ export default function EvalChart(props: EvalChartProps) {
     drawLine(1, c.red);
     drawLine(-1, c.black);
 
-    // 图例（右上角，小号克制）：红 / 黑 双方得分
-    ctx.save();
-    ctx.font = '9px system-ui, sans-serif';
-    ctx.textBaseline = 'middle';
-    const legendY = padY + 4;
-    let lx = width - padX - 2;
-    const drawLegend = (text: string, color: string): void => {
-      const tw = ctx.measureText(text).width;
-      lx -= tw;
-      ctx.fillStyle = c.muted;
-      ctx.fillText(text, lx, legendY);
-      lx -= 10;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(lx + 3, legendY, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-      lx -= 6;
-    };
-    drawLegend(props.legendBlack, c.black);
-    drawLegend(props.legendRed, c.red);
-    ctx.restore();
-
     // 上下界刻度（tabular 语境下的小号数字，原始整数分）
     ctx.save();
     ctx.fillStyle = c.muted;
@@ -159,7 +134,7 @@ export default function EvalChart(props: EvalChartProps) {
     ctx.textBaseline = 'bottom';
     ctx.fillText(`${-yScale}`, padX + 2, H - padY + 6);
     ctx.restore();
-  }, [props.moves, props.themeTick, props.emptyText, props.legendRed, props.legendBlack, width]);
+  }, [props.moves, props.themeTick, props.emptyText, width]);
 
   return (
     <div ref={ref} className="w-full" style={{ height: H }}>

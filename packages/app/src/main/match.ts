@@ -3,11 +3,12 @@
  *
  * 组合 core 的 Game/MoveTree/GameStateMachine 与 UciAdapter：
  * - 引擎通路：同步局面（快照式全量重发）→ genmove（棋力模式约束：Elo/深度/时长/节点）
- *   → 拟人化随机延迟 → 本地合法性防线 → 落子；engineSide='both' 时引擎左右互搏（人观战）；
+ *   → 拟人化随机延迟 → 本地先落子 → 连线再点平台；engineSide='both' 时引擎左右互搏（人观战）；
  * - 棋力属固有配置（settings.xiangqi.strength）：对局中经 refreshStrength 实时下发；
  *   执方只由工具栏红/黑开关设置（setEngineSide，接管/放手/转互搏）；新开一局缺省
  *   = 引擎不上场（开局的选项只定棋盘朝向，2026-08-26 定稿）；
  * - 强度生命周期（AGENTS.md 粘滞门禁）：Elo 档在 end/abort/reset 转移处一律复位满强度；
+ *   Threads/Hash 是引擎级资源，随配置下发，不随弱化档复位；
  * - 引擎崩溃 → 自动重启 → 重同步 → 补齐被中断的思考（§5.8 设计内行为）。
  */
 import {
@@ -18,6 +19,7 @@ import {
   isInCheck,
   MoveTree,
   moveToIccs,
+  xiangqiThreadCap,
   XiangqiGame,
   type EngineSide,
   type EvalRecord,
@@ -37,6 +39,7 @@ import type {
   NewGameIntent,
   PlayMoveIntent,
 } from '../shared/game';
+import { cpuThreadCount } from './cpuThreads';
 import { UciAdapter } from './engine/uciAdapter';
 
 export interface MatchEvents {
@@ -71,7 +74,7 @@ export class MatchService {
   private recovering = false;
   private lastLiveDepth = -1;
   private strengthTail: Promise<void> = Promise.resolve();
-  /** 引擎着法落子拦截（连线注入点：§6.1 出招 → 点击平台 → 本地落子） */
+  /** 引擎着法落子拦截（连线注入点：§6.1 出招 → 本地先落子 → 再点平台） */
   private engineMoveInterceptor: ((move: XiangqiMove) => Promise<boolean>) | null = null;
 
   constructor(
@@ -274,14 +277,19 @@ export class MatchService {
     return { ok: true };
   }
 
-  /** 固有配置变更（棋力实时生效；引擎路径变化则下次冷启动生效，§5.6） */
+  /** 固有配置变更（棋力/线程/哈希实时生效；引擎路径变化则下次冷启动生效，§5.6） */
   async refreshStrength(): Promise<void> {
-    if (this.state.phase !== 'playing') return;
-    const profile = chessStrengthFromConfig(this.getStrengthConfig());
-    this.state.updateStrength(profile);
-    this.lastStrength = profile;
-    await this.applyStrength(uciSpecOf(profile));
-    this.pushSnapshot();
+    const config = this.getStrengthConfig();
+    if (this.state.phase === 'playing') {
+      const profile = chessStrengthFromConfig(config);
+      this.state.updateStrength(profile);
+      this.lastStrength = profile;
+      await this.applyStrength(uciSpecOf(profile));
+      this.pushSnapshot();
+      return;
+    }
+    // 未在对局：弱化档已复位，仍要把 Threads/Hash 推给已启动的引擎
+    await this.applyStrength(uciSpecOf(this.state.strength));
   }
 
   goto(nodeId: number): IntentResult {
@@ -359,22 +367,23 @@ export class MatchService {
       await sleep(randomBetween(300, 900)); // 拟人化延迟（§6.1 同机制）
       if (gen !== this.generation) return;
 
-      // 引擎着法落子拦截（连线注入：先点击平台、平台渲染确认后再本地落子）
-      if (this.engineMoveInterceptor !== null) {
-        const proceed = await this.engineMoveInterceptor(engineMove);
-        if (gen !== this.generation) return;
-        if (!proceed) {
-          // 外部放弃落子（连线待人工介入/已停止）：本地不落子，保持与平台一致。
-          // thinking 必须复位——否则对局被永久锁死，引擎不走、用户也不能手动接管。
-          this.abortThinking();
-          return;
-        }
-      }
-
+      // 连线顺序：引擎决策 → 本地棋盘先走 → 再点平台。thinking 保持到平台点击结束，
+      // 避免扫描循环把「本地超前」当成 pending-sync 再点一次。
       const node = this.tree.play(engineMove);
       node.evalRecord = this.toEvalRecord(evaluation);
-      this.thinking = false;
       this.finishIfOver();
+      this.pushSnapshot();
+
+      if (this.engineMoveInterceptor !== null) {
+        try {
+          await this.engineMoveInterceptor(engineMove);
+        } catch (err) {
+          console.warn('[match] 平台落子失败（本地着法已留下）', err);
+        }
+        if (gen !== this.generation) return;
+      }
+
+      this.thinking = false;
       this.pushSnapshot();
       if (!this.paused && this.state.phase === 'playing' && this.engineToMoveNow()) {
         void this.engineTurn(); // 互搏：引擎接着走下一手
@@ -478,7 +487,11 @@ export class MatchService {
   private applyStrength(spec: UciStrengthSpec | null): Promise<void> {
     const next = this.strengthTail.then(async () => {
       try {
-        await this.adapter?.setStrength(spec);
+        const { threads, hash } = this.getStrengthConfig();
+        await this.adapter?.setStrength(spec, {
+          threads: Math.min(threads, xiangqiThreadCap(cpuThreadCount())),
+          hash,
+        });
       } catch {
         /* 引擎不在时静默；下次 launch 是干净默认 */
       }

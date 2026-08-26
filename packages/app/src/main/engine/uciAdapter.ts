@@ -18,6 +18,7 @@ import type {
   EngineStatus,
   GenMoveRequest,
   GenMoveResult,
+  UciEngineResources,
   UciStrengthSpec,
 } from '../../shared/engine';
 import { parseUciLine, uciCommands, type UciInfo, type UciOption } from './uciProtocol';
@@ -100,7 +101,7 @@ export class UciAdapter implements EngineAdapter {
     this.send(uciCommands.position(fen, moves));
   }
 
-  async setStrength(spec: UciStrengthSpec | null): Promise<void> {
+  async setStrength(spec: UciStrengthSpec | null, resources?: UciEngineResources): Promise<void> {
     this.assertRunning();
     if (spec === null) {
       // 复位为满强度：只关 LimitStrength，不碰 Skill Level（§5.5）
@@ -108,6 +109,11 @@ export class UciAdapter implements EngineAdapter {
     } else {
       this.send(uciCommands.setOption('UCI_Elo', spec.uciElo));
       this.send(uciCommands.setOption('UCI_LimitStrength', true));
+    }
+    // Threads/Hash 是引擎级资源：与弱化档同行下发，但复位强度时不得清回出厂值（§5.7）
+    if (resources !== undefined) {
+      this.send(uciCommands.setOption('Threads', resources.threads));
+      this.send(uciCommands.setOption('Hash', resources.hash));
     }
     await this.waitFor('readyok', () => this.send(uciCommands.isReady()), READY_TIMEOUT_MS);
   }

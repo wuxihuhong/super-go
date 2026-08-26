@@ -15,7 +15,7 @@ import type { TargetWindow, WindowRegion } from '../../shared/linker';
 import { captureWindowMac } from './capture/macWindowCapture';
 import { captureScreenRegion } from './capture/screenCapture';
 import { captureWindowBack } from './capture/winBackCapture';
-import { clientOriginOf, postClick } from './capture/winPostClick';
+import { clientOriginOf, postClick, resetClickTargetCache } from './capture/winPostClick';
 import {
   activeWindow as nutActiveWindow,
   listWindows as nutListWindows,
@@ -30,10 +30,14 @@ import type { CaptureFrame, ClickAnchor, LinkerClickOptions, LinkerNative } from
  * 表现为面积突然暴涨。窗口被真实拖动/缩放是渐进小变化，不会触碰这个阈值。
  */
 const REGION_AREA_JUMP = 1.8;
+/** 后台两击至少隔这么久：选中棋子后平台要画出合法点，0ms 第二击会被当成空点选中 */
+const MIN_BG_CLICK_GAP_MS = 140;
 
 export class ElectronLinkerNative implements LinkerNative {
   /** 后台捕获取不到内容时只提示一次，避免每帧刷屏 */
   private warnedCaptureFallback = false;
+  /** 上一击结束后的时间戳，用来拉开后台两击间隔 */
+  private lastBgClickAt = 0;
 
   /** 读取连线设置（每次调用现读，改动即时生效） */
   constructor(
@@ -54,9 +58,12 @@ export class ElectronLinkerNative implements LinkerNative {
     if (process.platform === 'win32') {
       const cap = captureWindowBack(win.id);
       if (cap === null) return null;
-      // 客户区图像：前台点击需要客户区屏幕原点，后台点击直接用客户区坐标（scale 1）
-      const origin = clientOriginOf(win.id) ?? { x: 0, y: 0 };
-      return { image: cap.image, anchor: { originX: origin.x, originY: origin.y, scale: 1 } };
+      // 客户区图像：前台点击需要客户区屏幕原点，后台点击直接用客户区坐标（scale 1）。
+      // 原点已在 PrintWindow 同一次调用里算过，勿再走 clientOriginOf（重复 FFI）。
+      return {
+        image: cap.image,
+        anchor: { originX: cap.clientOrigin.x, originY: cap.clientOrigin.y, scale: 1 },
+      };
     }
     const region = await this.currentRegion(win);
     if (this.wantsBackgroundCapture()) {
@@ -82,7 +89,13 @@ export class ElectronLinkerNative implements LinkerNative {
     anchor: ClickAnchor | null,
   ): Promise<boolean> {
     if (process.platform === 'win32' && this.wantsBackgroundClick()) {
-      return postClick(win.id, Math.round(x), Math.round(y), opts.holdMs);
+      const elapsed = Date.now() - this.lastBgClickAt;
+      if (this.lastBgClickAt > 0 && elapsed < MIN_BG_CLICK_GAP_MS) {
+        await new Promise((resolve) => setTimeout(resolve, MIN_BG_CLICK_GAP_MS - elapsed));
+      }
+      const ok = await postClick(win.id, Math.round(x), Math.round(y), opts.holdMs);
+      this.lastBgClickAt = Date.now();
+      return ok;
     }
     const base = anchor ?? (await this.currentAnchor(win));
     if (base === null) return false;
@@ -91,7 +104,8 @@ export class ElectronLinkerNative implements LinkerNative {
   }
 
   dispose(): void {
-    /* nut.js 全局资源随进程释放；当前无持久 hook */
+    this.lastBgClickAt = 0;
+    if (process.platform === 'win32') resetClickTargetCache();
   }
 
   /** 窗口当前外框（拖动过就跟着走；region 突跳视为异常，沿用已知值） */

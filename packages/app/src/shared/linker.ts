@@ -90,7 +90,8 @@ export type LinkerReason =
   | 'boardLost' // 连续识别不到棋盘（窗口被遮挡/最小化）
   | 'boardMismatch' // 本地与平台局面无法互相解释
   | 'engineUnavailable' // 开局失败（引擎缺失/启动失败）
-  | 'crashed'; // 扫描循环未捕获异常
+  | 'crashed' // 扫描循环未捕获异常
+  | 'gameOver'; // 绝杀/困毙，对局结束
 
 /** 连线状态推送（linker:status 事件） */
 export interface LinkerStatus {

@@ -6,6 +6,7 @@ import {
   supportsBackgroundClick,
   type LinkerSettings,
 } from '@shared/linker';
+import { guessCpuThreads, resolveCpuThreads } from '../lib/cpuThreads';
 import StrengthFields from './StrengthFields';
 import type { TFunction } from '../i18n';
 
@@ -23,10 +24,14 @@ export interface SettingsPanelProps {
 export default function SettingsPanel(props: SettingsPanelProps) {
   const [settings, setSettingsState] = useState<AppSettings | null>(null);
   const [platform, setPlatform] = useState<string>('');
+  const [cpuThreads, setCpuThreads] = useState(guessCpuThreads);
 
   useEffect(() => {
     void window.superGo.getSettings().then(setSettingsState);
-    void window.superGo.getAppInfo().then((info) => setPlatform(info.platform));
+    void window.superGo.getAppInfo().then((info) => {
+      setPlatform(info.platform);
+      setCpuThreads(resolveCpuThreads(info.cpuThreads));
+    });
   }, []);
 
   const patch = (partial: Partial<AppSettings>): void => {
@@ -37,7 +42,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
   };
 
   const strength: XiangqiStrengthConfig | null = settings
-    ? normalizeXiangqiStrength(settings.xiangqi?.strength)
+    ? normalizeXiangqiStrength(settings.xiangqi?.strength, cpuThreads)
     : null;
   const patchXiangqi = (delta: Partial<AppSettings['xiangqi']>): void => {
     patch({ xiangqi: { ...settings?.xiangqi, ...delta } as AppSettings['xiangqi'] });
@@ -183,7 +188,12 @@ export default function SettingsPanel(props: SettingsPanelProps) {
             </button>
           </span>
         </Row>
-        <StrengthFields t={props.t} strength={strength} onPatch={patchStrength} />
+        <StrengthFields
+          t={props.t}
+          strength={strength}
+          cpuThreads={cpuThreads}
+          onPatch={patchStrength}
+        />
         <Row label={props.t('settings.ponder')}>
           <span className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">{props.t('settings.ponder.p2')}</span>

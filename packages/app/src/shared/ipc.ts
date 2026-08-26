@@ -79,6 +79,8 @@ export interface AppInfo {
     chrome: string;
   };
   platform: string;
+  /** 本机逻辑核数；搜索线程必须 ≤ 此值 */
+  cpuThreads: number;
 }
 
 /** 象棋独立配置（与围棋分开持久化；主题/语言为公有配置） */

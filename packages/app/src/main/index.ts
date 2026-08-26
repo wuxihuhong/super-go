@@ -3,6 +3,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeXiangqiStrength } from '@super-go/core';
 import { IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
+import { cpuThreadCount } from './cpuThreads';
 import { enginesRootCandidates, findPikafishBinary } from './engine/discover';
 import { registerIpc } from './ipc';
 import { LinkerController } from './linker/linkerController';
@@ -110,7 +111,12 @@ function resolveEnginePath(userPath: string | undefined): string | null {
 void app.whenReady().then(() => {
   installAppMenu();
   const settings = new SettingsStore();
-  const diag = process.env['SUPER_GO_LINKER_DIAG'] !== undefined;
+  const diagLog = process.env['SUPER_GO_LINKER_DIAG'] !== undefined;
+  // =1 只开 stdout 日志；自动连线要显式标题（≠"1"）或 SUPER_GO_LINKER_DIAG_AUTO
+  const diagFilter = process.env['SUPER_GO_LINKER_DIAG'];
+  const diagAuto =
+    process.env['SUPER_GO_LINKER_DIAG_AUTO'] !== undefined ||
+    (diagFilter !== undefined && diagFilter !== '1' && diagFilter.length > 0);
   // 默认跟随系统；用户改过则用持久化的选择（§7.5）
   nativeTheme.themeSource = settings.get().theme;
 
@@ -128,7 +134,7 @@ void app.whenReady().then(() => {
   const match = new MatchService(
     events,
     () => resolveEnginePath(settings.get().xiangqi?.enginePath),
-    () => normalizeXiangqiStrength(settings.get().xiangqi?.strength),
+    () => normalizeXiangqiStrength(settings.get().xiangqi?.strength, cpuThreadCount()),
   );
 
   // 连线（P2）：连线 = 以平台识别局面重开一局，对局本体复用 MatchService
@@ -136,11 +142,11 @@ void app.whenReady().then(() => {
   const linker = new LinkerController(
     {
       status: (status) => {
-        if (diag) console.log(`[diag:status] ${JSON.stringify(status)}`);
+        if (diagLog) console.log(`[diag:status] ${JSON.stringify(status)}`);
         send(IPC_CHANNELS.linkerStatus, status);
       },
       log: (entry) => {
-        if (diag) console.log(`[diag:log] ${entry.level} ${entry.text}`);
+        if (diagLog) console.log(`[diag:log] ${entry.level} ${entry.text}`);
         send(IPC_CHANNELS.linkerLog, entry);
       },
     },
@@ -156,9 +162,9 @@ void app.whenReady().then(() => {
 
   registerIpc(settings, () => mainWindow, match, linker);
 
-  // 连线诊断模式（SUPER_GO_LINKER_DIAG=1 pnpm dev）：自动对标题含"棋盘"的
-  // 窗口启动连线执红，status/log 打到 stdout——定位真机环境问题用
-  if (process.env['SUPER_GO_LINKER_DIAG'] !== undefined) {
+  // 连线诊断自动模式（SUPER_GO_LINKER_DIAG=天天象棋 或 DIAG_AUTO=1）：
+  // 自动选窗口并在限时后退出。SUPER_GO_LINKER_DIAG=1 只开日志，不劫持连线。
+  if (diagAuto) {
     void (async () => {
       const windows = await linker.listWindows();
       console.log(
@@ -166,7 +172,7 @@ void app.whenReady().then(() => {
           .map((w) => `${w.id}:${w.title} ${w.region.width}x${w.region.height}`)
           .join(' | ')}`,
       );
-      const filter = process.env['SUPER_GO_LINKER_DIAG'] ?? '1';
+      const filter = diagFilter ?? '1';
       const needle = filter === '1' ? '棋盘' : filter;
       const target = windows.find((w) => w.title.includes(needle)) ?? windows[0];
       if (target === undefined) {
@@ -206,7 +212,7 @@ void app.whenReady().then(() => {
   mainWindow = createWindow(settings.get().view?.alwaysOnTop === true);
   // 诊断模式最小化自身：mac 前台截屏要求目标窗口可见，别让诊断实例自己挡住靶盘
   // ready-to-show 里的 show() 会覆盖提前调用的 minimize，必须等它之后再最小化
-  if (diag) mainWindow.once('show', () => mainWindow?.minimize());
+  if (diagAuto) mainWindow.once('show', () => mainWindow?.minimize());
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

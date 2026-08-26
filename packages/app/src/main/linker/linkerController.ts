@@ -124,6 +124,7 @@ export class LinkerController {
 
   stop(reason: LinkerReason = 'user'): void {
     this.session?.stop(reason);
+    this.session = null;
     this.unregisterStopShortcut();
   }
 

@@ -232,23 +232,12 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     expect(intercepted[0]).toBe(replied.moves[0]!.iccs); // 拦截到的着法 = 实际落子
     expect(latest().moves[0]!.redCp).not.toBeUndefined(); // 评估照挂
 
-    // 拦截器返回 false（平台点击失败 → 连线转待人工介入）：引擎着法不落子
+    // 拦截器返回 false（平台点击失败）：本地已先落子，不回滚
     match.setEngineMoveInterceptor(async () => false);
     const played = match.playMove({ from: { x: 7, y: 9 }, to: { x: 6, y: 7 } }); // 红马二进三
     expect(played.ok).toBe(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    const after = latest();
-    expect(after.moves).toHaveLength(2); // 用户着法在，引擎应招被拦截吞掉
-
-    // 回归防线：拦截器拒绝后 thinking 必须复位。否则 playMove 的 `|| this.thinking`
-    // 门禁会把用户也挡在外面——引擎不走、人也接管不了，整局死锁。
+    const after = await waitFor((s) => s.moves.length === 3 && !s.thinking);
     expect(after.thinking).toBe(false);
-
-    // 平台是事实源：用户在平台上替引擎走掉这一步，本地必须接受（绕过轮值门禁）
-    const engineTurnMove = { kind: 'xiangqi', from: { x: 7, y: 0 }, to: { x: 6, y: 2 } } as const;
-    expect(match.playMove({ from: engineTurnMove.from, to: engineTurnMove.to }).ok).toBe(false);
-    expect(match.playObserved(engineTurnMove).ok).toBe(true);
-    expect(latest().moves).toHaveLength(3);
 
     // 非法着法照样拒绝（识别防线不因"平台是事实源"而失守）
     expect(

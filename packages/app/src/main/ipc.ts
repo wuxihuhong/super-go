@@ -1,3 +1,4 @@
+import { normalizeXiangqiStrength } from '@super-go/core';
 import { app, dialog, ipcMain, nativeTheme, type BrowserWindow } from 'electron';
 import {
   IPC_CHANNELS,
@@ -7,6 +8,7 @@ import {
   type LinkerResolution,
   type LinkerStartIntent,
 } from '../shared/ipc';
+import { cpuThreadCount } from './cpuThreads';
 import type { LinkerController } from './linker/linkerController';
 import type { MatchService } from './match';
 import type { SettingsStore } from './settings';
@@ -29,11 +31,21 @@ export function registerIpc(
       chrome: process.versions.chrome ?? '',
     },
     platform: process.platform,
+    cpuThreads: cpuThreadCount(),
   }));
 
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => settings.get());
 
   ipcMain.handle(IPC_CHANNELS.settingsSet, (_event, patch: Partial<AppSettings>) => {
+    if (patch.xiangqi?.strength !== undefined) {
+      patch = {
+        ...patch,
+        xiangqi: {
+          ...patch.xiangqi,
+          strength: normalizeXiangqiStrength(patch.xiangqi.strength, cpuThreadCount()),
+        },
+      };
+    }
     const next = settings.patch(patch);
     if (patch.theme !== undefined) {
       // 手动选浅/深即固定；选回 system 恢复跟随（§7.5）
@@ -43,7 +55,7 @@ export function registerIpc(
     if (patch.view?.alwaysOnTop !== undefined) {
       getMainWindow()?.setAlwaysOnTop(next.view?.alwaysOnTop === true);
     }
-    // 棋力属固有配置且对局中可实时调整：设置一变立即下发（深度/时长/节点/不设限即时生效）
+    // 棋力/线程/哈希属固有配置：设置一变立即下发（对局中与空闲均生效）
     void match.refreshStrength();
     return next;
   });

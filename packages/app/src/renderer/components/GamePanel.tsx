@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { normalizeXiangqiStrength, type XiangqiStrengthConfig } from '@super-go/core';
 import type { AppSettings } from '@shared/ipc';
+import { guessCpuThreads, resolveCpuThreads } from '../lib/cpuThreads';
 import StrengthFields from './StrengthFields';
 import type { TFunction } from '../i18n';
 
@@ -16,9 +17,11 @@ export interface GamePanelProps {
  */
 export default function GamePanel(props: GamePanelProps) {
   const [settings, setSettingsState] = useState<AppSettings | null>(null);
+  const [cpuThreads, setCpuThreads] = useState(guessCpuThreads);
 
   useEffect(() => {
     void window.superGo.getSettings().then(setSettingsState);
+    void window.superGo.getAppInfo().then((info) => setCpuThreads(resolveCpuThreads(info.cpuThreads)));
   }, []);
 
   const patchStrength = (delta: Partial<XiangqiStrengthConfig>): void => {
@@ -26,7 +29,10 @@ export default function GamePanel(props: GamePanelProps) {
       .setSettings({
         xiangqi: {
           ...settings?.xiangqi,
-          strength: { ...normalizeXiangqiStrength(settings?.xiangqi?.strength), ...delta },
+          strength: {
+            ...normalizeXiangqiStrength(settings?.xiangqi?.strength, cpuThreads),
+            ...delta,
+          },
         } as AppSettings['xiangqi'],
       })
       .then((next) => {
@@ -35,13 +41,20 @@ export default function GamePanel(props: GamePanelProps) {
       });
   };
 
-  const strength = settings ? normalizeXiangqiStrength(settings.xiangqi?.strength) : null;
+  const strength = settings
+    ? normalizeXiangqiStrength(settings.xiangqi?.strength, cpuThreads)
+    : null;
   if (strength === null) return <div className="w-80" />;
 
   return (
     <div className="w-80 rounded-xl border border-border bg-surface p-3 shadow-xl">
       <div className="rounded-lg border border-border bg-background">
-        <StrengthFields t={props.t} strength={strength} onPatch={patchStrength} />
+        <StrengthFields
+          t={props.t}
+          strength={strength}
+          cpuThreads={cpuThreads}
+          onPatch={patchStrength}
+        />
       </div>
     </div>
   );

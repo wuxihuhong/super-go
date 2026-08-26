@@ -44,6 +44,12 @@ export interface UciStrengthSpec {
   uciElo: number;
 }
 
+/** 引擎级资源（§5.7）：对局结束不随弱化档复位 */
+export interface UciEngineResources {
+  threads: number;
+  hash: number;
+}
+
 export interface GenMoveResult {
   /** ICCS 坐标（如 h2e2）；引擎无着可走时为 null */
   move: string | null;
@@ -59,7 +65,7 @@ export interface EngineAdapter {
   launch(binaryPath: string): Promise<void>;
   syncPosition(fen: string, moves: readonly string[]): void;
   genmove(req: GenMoveRequest): Promise<GenMoveResult>;
-  setStrength(spec: UciStrengthSpec | null): Promise<void>;
+  setStrength(spec: UciStrengthSpec | null, resources?: UciEngineResources): Promise<void>;
   stopSearch(): void;
   quit(): void;
   getStatus(): EngineStatus;

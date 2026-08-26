@@ -4,7 +4,7 @@
  * 连线的本质 = 以平台识别局面**重开一局**（用户模型，2026-08-25 重构）：
  * - 局面、着法树、引擎执方、出招节奏全部由 MatchService 管理——连线只是
  *   平台与对局之间的"眼睛 + 手"：识别对方着法喂给对局（playObserved），
- *   引擎应招经拦截器先点击平台、**平台渲染确认后**再本地落子；
+ *   引擎应招经拦截器：本地棋盘先落子，再点击平台等它跟上；
  * - 连线中可用引擎执红/执黑按钮（setEngineSide）换边，与普通对弈同语义；
  * - 中途接入的轮值由"首步定轮值"解决：等平台走出第一步，按走子方开局。
  *
@@ -16,7 +16,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  applyMove,
   toFen,
   type Player,
   type RecognizedBoard,
@@ -99,7 +98,8 @@ const BOARD_LOST_LIMIT = 20;
 /** 网格跨帧平滑系数（新帧权重）：窗口不动时网格是静态的，平滑掉识别抖动 */
 const GRID_EMA_ALPHA = 0.3;
 
-const DIAG = process.env['SUPER_GO_LINKER_DIAG'] !== undefined;
+/** 逐帧日志极吵，默认关闭；只在 SUPER_GO_LINKER_DIAG_FRAME 时输出 */
+const DIAG = process.env['SUPER_GO_LINKER_DIAG_FRAME'] !== undefined;
 const diag = (text: string): void => {
   if (DIAG) console.log(`[diag:frame] ${text}`);
 };
@@ -162,9 +162,8 @@ export class LinkerSession {
 
   /**
    * 待人工介入（§6.6）：非 null 时连线仍在扫描，但不自动落子。
-   * resolveOnSync 区分两类问题：局面对不上时"两边一致"就算解决；而走子失败时
-   * 本地本就没落这一步、两边天然一致——非得等这一步真的出现在平台上才算解决，
-   * 否则一进 attention 就被 sync 立刻解除，陷入"重试→失败→重试"的空转。
+   * resolveOnSync：两边局面重新一致即解除。boardLost 除外——丢帧时仍会沿用上一张
+   * 好帧（与本地一致），不能因此把「看不见棋盘」误判为已恢复。
    */
   private attention: {
     reason: LinkerReason;
@@ -203,19 +202,26 @@ export class LinkerSession {
 
   /** 停止连线：解除拦截，对局保留（可继续手动/复盘） */
   stop(reason: LinkerReason, message: string | null = null): void {
-    if (!this.running) return;
+    // 幂等：待介入时扫描循环还在跑，点停止后当前帧仍可能 enterAttention。
+    // 若此处因 !running 直接返回，UI 会卡在「待人工介入」，停止按钮看起来无效。
     this.generation++;
     this.running = false;
-    if (this.attention !== null) {
-      // 待介入时冻结过引擎，停止连线要把对局原样还给用户（可继续手动/复盘）
-      this.attention = null;
-      this.opts.match.setPaused(this.paused);
-    }
+    this.attention = null;
+    this.opts.match.setPaused(this.paused);
     this.opts.match.setEngineMoveInterceptor(null);
-    const normal = reason === 'user' || reason === 'shortcut';
+    const normal = reason === 'user' || reason === 'shortcut' || reason === 'gameOver';
     this.reason = reason;
     this.setPhase(normal ? 'stopped' : 'error', message);
     this.log(normal ? 'info' : 'error', `session stop (${reason})${message === null ? '' : `: ${message}`}`);
+  }
+
+  /** 绝杀/困毙：对局已结束，连线立刻停（不再扫、不再点） */
+  private stopIfGameOver(): boolean {
+    const snap = this.opts.match.snapshot();
+    if (snap.phase !== 'ended') return false;
+    const kind = snap.result?.reason === 'stalemate' ? '困毙' : '绝杀';
+    this.stop('gameOver', kind);
+    return true;
   }
 
   /** 暂停/恢复：连线暂停 = 对弈暂停（引擎冻结；恢复时轮引擎自动续走） */
@@ -250,8 +256,8 @@ export class LinkerSession {
 
   /** 自愈耗尽 → 转待介入：冻结引擎，保留扫描，等人工处理或平台自行对齐 */
   private enterAttention(reason: LinkerReason, message: string): void {
-    if (this.attention !== null) return;
-    this.attention = { reason, message, resolveOnSync: reason === 'boardMismatch' };
+    if (!this.running || this.attention !== null) return;
+    this.attention = { reason, message, resolveOnSync: reason !== 'boardLost' };
     this.opts.match.setPaused(true);
     this.reason = reason;
     this.log('error', `needs attention (${reason}): ${message}`);
@@ -259,7 +265,7 @@ export class LinkerSession {
   }
 
   private exitAttention(text: string): void {
-    if (this.attention === null) return;
+    if (!this.running || this.attention === null) return;
     this.attention = null;
     this.reason = null;
     this.opts.match.setPaused(this.paused);
@@ -424,6 +430,7 @@ export class LinkerSession {
     let pendingClicks = 0;
     let lostFrames = 0;
     while (this.alive(gen)) {
+      if (this.stopIfGameOver()) return;
       if (this.paused) {
         await sleep(200);
         continue;
@@ -463,6 +470,7 @@ export class LinkerSession {
           }
           // 人工在平台上替引擎走掉了这一步 → 待介入自动解除
           this.exitAttention('move observed on platform');
+          if (this.stopIfGameOver()) return;
           break;
         }
 
@@ -482,6 +490,7 @@ export class LinkerSession {
           if (re.type === 'opponent-move') {
             pendingClicks = 0;
             this.opts.match.playObserved(re.move);
+            if (this.stopIfGameOver()) return;
             break;
           }
           if (re.type !== 'pending-sync') break; // 变成 unknown：交给下一轮判定
@@ -570,22 +579,22 @@ export class LinkerSession {
   // 引擎应招落到平台
   // -------------------------------------------------------------------------
 
-  /** MatchService 引擎出招后的落子拦截：点击平台并确认，成败决定本地是否落子 */
+  /** 本地已落子之后：点击平台并等它跟上本地局面 */
   private async interceptEngineMove(move: XiangqiMove): Promise<boolean> {
     if (!this.running || this.paused || this.attention !== null) return false;
     const gen = this.generation;
     this.setPhase('clicking', null);
     const ok = await this.playOnPlatform(gen, move);
     if (ok) this.setPhase('scanning', null);
+    this.stopIfGameOver();
     return ok;
   }
 
   /**
-   * 点击平台并等平台把这步渲染出来；失败按退避重试，重试前重新标定网格。
-   * 全部耗尽 → 转待人工介入并返回 false（本地不落子，局面与平台保持一致）。
+   * 点击平台并等它跟上本地（本地已先落子）。失败按退避重试，重试前重新标定网格。
+   * 全部耗尽 → 转待人工介入；本地着法不回滚，由 pending-sync / 人工走子对齐。
    */
   private async playOnPlatform(gen: number, move: XiangqiMove): Promise<boolean> {
-    const before = this.opts.match.currentPosition();
     let channelFailed = false;
     for (let attempt = 1; attempt <= CLICK_ATTEMPTS; attempt++) {
       if (!this.alive(gen) || this.paused) return false;
@@ -593,7 +602,7 @@ export class LinkerSession {
         await sleep(CLICK_BACKOFF_MS * (attempt - 1));
         // 重新标定：网格/基准过期（窗口移动、被遮挡）是最常见的"假失败"
         if ((await this.captureOnce(gen)) === null) continue;
-        if (await this.platformShows(gen, before, move)) return true; // 上一次其实点成了
+        if (await this.platformCaughtUp(gen)) return true; // 上一次其实点成了
       }
       const clicked = await this.clickMove(gen, move);
       if (!clicked) {
@@ -602,7 +611,7 @@ export class LinkerSession {
         continue;
       }
       channelFailed = false;
-      if (await this.awaitPlatformMove(gen, before, move)) return true;
+      if (await this.awaitPlatformCaughtUp(gen)) return true;
       this.log('warn', `platform did not render the move (${attempt}/${CLICK_ATTEMPTS})`);
     }
     if (!this.alive(gen)) return false;
@@ -615,29 +624,21 @@ export class LinkerSession {
     return false;
   }
 
-  /** 等平台把 move 渲染出来（连续抓帧比对；动画期间盘面不等值，天然等到动画结束） */
-  private async awaitPlatformMove(
-    gen: number,
-    before: XiangqiPosition,
-    move: XiangqiMove,
-  ): Promise<boolean> {
+  /** 等平台盘面追上本地（连续抓帧；动画期间不等值，天然等到动画结束） */
+  private async awaitPlatformCaughtUp(gen: number): Promise<boolean> {
     const deadline = Date.now() + Math.max(6 * this.opts.settings().scanIntervalMs, 1200);
     while (this.alive(gen) && Date.now() < deadline) {
       await sleep(this.opts.settings().scanIntervalMs);
-      if (await this.platformShows(gen, before, move)) return true;
+      if (await this.platformCaughtUp(gen)) return true;
     }
     return false;
   }
 
-  /** 抓一帧，判断平台是否已呈现 before + move 的局面 */
-  private async platformShows(
-    gen: number,
-    before: XiangqiPosition,
-    move: XiangqiMove,
-  ): Promise<boolean> {
+  /** 抓一帧，判断平台是否已与本地局面一致 */
+  private async platformCaughtUp(gen: number): Promise<boolean> {
     const frame = await this.captureOnce(gen);
     if (frame === null) return false;
-    return boardsEqual(frame.board, applyMove(before, move).position.board);
+    return boardsEqual(frame.board, this.opts.match.currentPosition().board);
   }
 
   /** 两击落子（起点 → clickBetweenMs → 终点）。返回 false = 注入通道不可用 */
@@ -648,10 +649,9 @@ export class LinkerSession {
     const opts = { holdMs: clickHoldMs };
     const from = this.imagePoint(grid, move.from.x, move.from.y);
     const to = this.imagePoint(grid, move.to.x, move.to.y);
-    diag(
+    this.log(
+      'info',
       `click (${move.from.x},${move.from.y})->(${move.to.x},${move.to.y}) reversed=${this.reversed} ` +
-        `grid=(${grid.originX.toFixed(1)},${grid.originY.toFixed(1)})+` +
-        `${grid.stepX.toFixed(2)}x${grid.stepY.toFixed(2)} ` +
         `img=(${from.x.toFixed(0)},${from.y.toFixed(0)})->(${to.x.toFixed(0)},${to.y.toFixed(0)})`,
     );
     const win = this.opts.window;
@@ -738,6 +738,7 @@ export class LinkerSession {
   }
 
   private setPhase(phase: LinkerPhase, message: string | null): void {
+    if (!this.running && phase !== 'stopped' && phase !== 'error') return;
     this.phase = phase;
     this.message = message;
     this.pushStatus();
@@ -745,7 +746,13 @@ export class LinkerSession {
 
   private pushStatus(): void {
     this.opts.events.status({
-      phase: this.paused ? 'paused' : this.attention !== null ? 'attention' : this.phase,
+      phase: !this.running
+        ? this.phase
+        : this.paused
+          ? 'paused'
+          : this.attention !== null
+            ? 'attention'
+            : this.phase,
       windowTitle: this.opts.window.title,
       fps: Math.round(this.fps),
       inferMs: Math.round(this.inferMs),

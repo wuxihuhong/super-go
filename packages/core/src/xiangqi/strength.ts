@@ -11,11 +11,29 @@
  *
  * Pikafish 官方标尺：UCI_Elo 1280–3133（1280=SL0、3133=SL19）。
  * null / unlimited = 满强度——不下发任何弱化 setoption（粘滞防线：默认即干净）。
+ * Threads / Hash 是引擎级资源（§5.7），跟棋力一起持久化、对局结束不复位。
  */
 import type { StrengthProfile } from '../gameState.js';
 
 export const XIANGQI_ELO_MIN = 1280;
 export const XIANGQI_ELO_MAX = 3133;
+
+/** 搜索线程下限（出厂默认 1） */
+export const XIANGQI_THREADS_MIN = 1;
+/** 引擎协议上限；实际可设上限 = min(此值, 本机 CPU 核数) */
+export const XIANGQI_THREADS_MAX = 1024;
+
+/** 本机可设线程上限：不超过 CPU 核数，至少 1 */
+export function xiangqiThreadCap(cpuThreads?: number): number {
+  if (typeof cpuThreads !== 'number' || !Number.isFinite(cpuThreads)) {
+    return XIANGQI_THREADS_MAX;
+  }
+  return Math.max(XIANGQI_THREADS_MIN, Math.min(XIANGQI_THREADS_MAX, Math.round(cpuThreads)));
+}
+
+/** 置换表 MB（引擎上限极大；UI 钳到 32GB，出厂默认 16） */
+export const XIANGQI_HASH_MIN = 1;
+export const XIANGQI_HASH_MAX = 32_768;
 
 /** Elo 预设档（§5.5）；另加"不设限"与自定义直填 */
 export const XIANGQI_ELO_PRESETS: readonly number[] = [1400, 1800, 2200, 2600, 2900];
@@ -33,6 +51,14 @@ export interface XiangqiStrengthConfig {
   movetime: number;
   /** nodes 模式：思考节点数 */
   nodes: number;
+  /**
+   * 搜索线程（UCI Threads）。引擎级资源，对局结束不随弱化档复位（§5.7）。
+   */
+  threads: number;
+  /**
+   * 置换表大小 MB（UCI Hash）。引擎级资源，对局结束不随弱化档复位（§5.7）。
+   */
+  hash: number;
 }
 
 export const XIANGQI_STRENGTH_DEFAULT: XiangqiStrengthConfig = {
@@ -41,11 +67,14 @@ export const XIANGQI_STRENGTH_DEFAULT: XiangqiStrengthConfig = {
   depth: 12,
   movetime: 1000,
   nodes: 400_000,
+  threads: 1,
+  hash: 16,
 };
 
 /** 兜底修正畸形配置（缺字段/越界钳回默认或边界） */
 export function normalizeXiangqiStrength(
   config: Partial<XiangqiStrengthConfig> | undefined,
+  cpuThreads?: number,
 ): XiangqiStrengthConfig {
   const c = { ...XIANGQI_STRENGTH_DEFAULT, ...config };
   return {
@@ -58,6 +87,13 @@ export function normalizeXiangqiStrength(
     depth: clampInt(c.depth, 1, 30, XIANGQI_STRENGTH_DEFAULT.depth),
     movetime: clampInt(c.movetime, 100, 60_000, XIANGQI_STRENGTH_DEFAULT.movetime),
     nodes: clampInt(c.nodes, 1_000, 100_000_000, XIANGQI_STRENGTH_DEFAULT.nodes),
+    threads: clampInt(
+      c.threads,
+      XIANGQI_THREADS_MIN,
+      xiangqiThreadCap(cpuThreads),
+      XIANGQI_STRENGTH_DEFAULT.threads,
+    ),
+    hash: clampInt(c.hash, XIANGQI_HASH_MIN, XIANGQI_HASH_MAX, XIANGQI_STRENGTH_DEFAULT.hash),
   };
 }
 

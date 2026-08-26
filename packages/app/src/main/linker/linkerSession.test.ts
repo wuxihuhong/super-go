@@ -97,6 +97,7 @@ function makeFakeMatch(engineReplies: string[]) {
   let thinking = false;
   let matchPaused = false;
   let interceptor: ((move: XiangqiMove) => Promise<boolean>) | null = null;
+  let ended = false;
   const queue = [...engineReplies];
   const newGames: NewGameIntent[] = [];
 
@@ -110,17 +111,9 @@ function makeFakeMatch(engineReplies: string[]) {
     const mv = iccsParse(reply);
     if (mv === null || !game.isLegal(pos, mv)) return;
     thinking = true;
-    if (interceptor !== null) {
-      const ok = await interceptor(mv);
-      if (!ok) {
-        // 真实现的 abortThinking：本地不落子、thinking 复位；这一手留在队列里，
-        // 解冻后引擎会重新算出同一步（等价于重新 genmove）
-        thinking = false;
-        return;
-      }
-    }
     queue.shift();
     tree.play(mv);
+    if (interceptor !== null) await interceptor(mv);
     thinking = false;
   };
 
@@ -156,10 +149,10 @@ function makeFakeMatch(engineReplies: string[]) {
     snapshot: () => {
       const pos = tree.current();
       return {
-        phase: 'playing',
+        phase: ended ? 'ended' : 'playing',
         engineSide,
         strengthLabel: null,
-        result: null,
+        result: ended ? { winner: 'first', reason: 'mate' } : null,
         turn: pos.turn,
         fen: toFen(pos),
         moves: tree.moves.map((m, i) => ({
@@ -179,7 +172,14 @@ function makeFakeMatch(engineReplies: string[]) {
       interceptor = fn;
     },
   };
-  return { bridge, newGames, moveCount: () => tree.moves.length };
+  return {
+    bridge,
+    newGames,
+    moveCount: () => tree.moves.length,
+    setEnded: () => {
+      ended = true;
+    },
+  };
 }
 
 /** ICCS（如 b2e2）→ Move */
@@ -207,6 +207,7 @@ interface Harness {
   logs: string[];
   newGames: NewGameIntent[];
   moveCount(): number;
+  setMatchEnded(): void;
 }
 
 function makeHarness(engineReplies: string[]): Harness {
@@ -281,6 +282,7 @@ function makeHarness(engineReplies: string[]): Harness {
     logs,
     newGames: fake.newGames,
     moveCount: fake.moveCount,
+    setMatchEnded: fake.setEnded,
   };
 }
 
@@ -305,16 +307,14 @@ describe('LinkerSession 连线 = 重开一局（执红）', () => {
     await new Promise((r) => setTimeout(r, 150));
     expect(h.clicks).toHaveLength(0); // 未设执方：引擎不动
     h.setEngineSide('first'); // 用户点工具栏"引擎执红"
-    await waitFor(() => h.clicks.length >= 2);
+    await waitFor(() => h.clicks.length >= 2 && h.moveCount() === 1);
     expect(h.clicks[0]).toEqual(point(1, 7));
     expect(h.clicks[1]).toEqual(point(4, 7));
 
-    // 点击后本地尚未落子：等平台渲染确认（消除乐观落子）
-    expect(h.moveCount()).toBe(0);
+    // 本地已先落子；平台跟上后点击确认结束，不应再点
     h.setBoard(AFTER_CANNON);
-    await waitFor(() => h.moveCount() === 1);
     await new Promise((r) => setTimeout(r, 100));
-    expect(h.clicks).toHaveLength(2); // 无多余点击
+    expect(h.clicks).toHaveLength(2);
     h.session.stop('user');
     expect(h.statuses.at(-1)?.phase).toBe('stopped');
   }, 10_000);
@@ -324,16 +324,17 @@ describe('LinkerSession 连线 = 重开一局（执红）', () => {
     h.session.start();
     await waitFor(() => h.newGames.length >= 1);
     h.setEngineSide('first');
-    await waitFor(() => h.clicks.length >= 2); // 引擎先手中炮
+    await waitFor(() => h.clicks.length >= 2 && h.moveCount() === 1); // 引擎先手中炮（本地先走）
     h.setBoard(AFTER_CANNON);
-    await waitFor(() => h.moveCount() === 1);
+    await new Promise((r) => setTimeout(r, 50));
+    const clicksAfterFirst = h.clicks.length;
     // 对方（黑）应马
     const afterKnight = applyMove(AFTER_CANNON, BLACK_KNIGHT).position;
     h.setBoard(afterKnight);
-    await waitFor(() => h.clicks.length >= 4);
+    await waitFor(() => h.clicks.length >= clicksAfterFirst + 2);
     // 红马 (7,9)→(6,7)（h0g2）
-    expect(h.clicks[2]).toEqual(point(7, 9));
-    expect(h.clicks[3]).toEqual(point(6, 7));
+    expect(h.clicks[clicksAfterFirst]).toEqual(point(7, 9));
+    expect(h.clicks[clicksAfterFirst + 1]).toEqual(point(6, 7));
     h.session.stop('user');
   }, 10_000);
 
@@ -409,7 +410,7 @@ describe('LinkerSession 开局基准（局面同步的地基）', () => {
 });
 
 describe('LinkerSession 走子失败（§6.6 先自愈，再请人工介入）', () => {
-  it('平台始终不走这一步 → 重试耗尽转待介入，连线不退出、本地不落子', async () => {
+  it('平台始终不走这一步 → 重试耗尽转待介入，连线不退出、本地着法已留下', async () => {
     const h = makeHarness(['b2e2']);
     h.session.start();
     await waitFor(() => h.newGames.length >= 1);
@@ -420,7 +421,7 @@ describe('LinkerSession 走子失败（§6.6 先自愈，再请人工介入）',
     expect(status.phase).toBe('attention');
     expect(status.reason).toBe('platformUnresponsive');
     expect(h.session.isRunning).toBe(true); // 会话仍在跑，没有被终止
-    expect(h.moveCount()).toBe(0); // 平台没走成，本地也不留这一步
+    expect(h.moveCount()).toBe(1); // 本地已先落子，平台失败不回滚
     expect(h.clicks.length).toBeGreaterThanOrEqual(4); // 至少重试过
     h.session.stop('user');
   }, 30_000);
@@ -435,7 +436,7 @@ describe('LinkerSession 走子失败（§6.6 先自愈，再请人工介入）',
     // 人工在平台上把引擎这步走掉（本该由引擎点击完成）
     h.setBoard(AFTER_CANNON);
     await waitFor(() => h.statuses.at(-1)?.phase === 'scanning', 10_000);
-    expect(h.moveCount()).toBe(1); // 平台是事实源：这一步被喂进本地对局
+    expect(h.moveCount()).toBe(1); // 本地早已落下；平台跟上后解除待介入
     expect(h.statuses.at(-1)?.reason).toBe(null);
     h.session.stop('user');
   }, 30_000);
@@ -488,17 +489,17 @@ describe('LinkerSession 走子失败（§6.6 先自愈，再请人工介入）',
   }, 30_000);
 
   it('走子失败待介入中平台开了新局 → 自动重开且待介入被清除（否则引擎永久冻结）', async () => {
-    const h = makeHarness(['b2e2', 'h0g2']);
+    const h = makeHarness(['b2e2', 'h0g2', 'b2e2']);
     h.session.start();
     await waitFor(() => h.newGames.length >= 1);
     h.setEngineSide('first');
-    await waitFor(() => h.clicks.length >= 2);
+    await waitFor(() => h.clicks.length >= 2 && h.moveCount() === 1);
     h.setBoard(AFTER_CANNON);
-    await waitFor(() => h.moveCount() === 1);
+    await new Promise((r) => setTimeout(r, 50));
     h.setBoard(applyMove(AFTER_CANNON, BLACK_KNIGHT).position);
-    await waitFor(() => h.moveCount() === 2);
+    await waitFor(() => h.moveCount() >= 2);
 
-    // 引擎第二手平台始终不响应 → platformUnresponsive（这类不因"两边一致"而解除）
+    // 引擎第二手平台始终不响应 → platformUnresponsive
     await waitFor(() => h.statuses.some((s) => s.reason === 'platformUnresponsive'), 20_000);
 
     // 平台随后开了新局：本地已有两步，差异无法用单步解释 → 判为新局自动重开
@@ -506,7 +507,7 @@ describe('LinkerSession 走子失败（§6.6 先自愈，再请人工介入）',
     await waitFor(() => h.newGames.length >= 2, 20_000);
     await waitFor(() => h.statuses.at(-1)?.phase !== 'attention', 5000);
     expect(h.statuses.at(-1)?.reason).toBe(null);
-    // 引擎解冻：新局里照常出招点击（未落成的那一手会被重新算出来）
+    // 引擎解冻：新局里照常出招点击
     const clicksBefore = h.clicks.length;
     h.setEngineSide('first');
     await waitFor(() => h.clicks.length >= clicksBefore + 2, 10_000);
@@ -546,6 +547,28 @@ describe('LinkerSession 识别中断', () => {
     expect(h.statuses.at(-1)?.reason).toBe(null);
     h.session.stop('user');
   }, 30_000);
+
+  it('待介入时停止连线必须停住，后续丢帧不得再拉回 attention', async () => {
+    const h = makeHarness([]);
+    h.session.start();
+    await waitFor(() => h.newGames.length >= 1);
+    h.setCaptureOk(false);
+    await waitFor(() => h.statuses.some((s) => s.reason === 'boardLost'), 15_000);
+    expect(h.statuses.at(-1)?.phase).toBe('attention');
+
+    h.session.stop('user');
+    expect(h.session.isRunning).toBe(false);
+    expect(h.statuses.at(-1)?.phase).toBe('stopped');
+    expect(h.statuses.at(-1)?.reason).toBe('user');
+
+    await new Promise((r) => setTimeout(r, 200));
+    expect(h.session.isRunning).toBe(false);
+    expect(h.statuses.at(-1)?.phase).toBe('stopped');
+    expect(h.statuses.at(-1)?.reason).toBe('user');
+
+    h.session.stop('user');
+    expect(h.statuses.at(-1)?.phase).toBe('stopped');
+  }, 30_000);
 });
 
 describe('LinkerSession 未设执方（默认引擎不控制）', () => {
@@ -578,6 +601,19 @@ describe('LinkerSession 翻转视角（黑在下）', () => {
     expect(h.clicks[0]).toEqual(point(8 - 7, 9 - 0));
     expect(h.clicks[1]).toEqual(point(8 - 6, 9 - 2));
     h.session.stop('user');
+  }, 10_000);
+});
+
+describe('LinkerSession 终局', () => {
+  it('绝杀后立即停止连线', async () => {
+    const h = makeHarness([]);
+    h.session.start();
+    await waitFor(() => h.newGames.length >= 1);
+    expect(h.session.isRunning).toBe(true);
+    h.setMatchEnded();
+    await waitFor(() => !h.session.isRunning);
+    expect(h.statuses.at(-1)?.reason).toBe('gameOver');
+    expect(h.statuses.at(-1)?.phase).toBe('stopped');
   }, 10_000);
 });
 

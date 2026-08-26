@@ -1,10 +1,20 @@
-import { XIANGQI_ELO_MAX, XIANGQI_ELO_MIN, type XiangqiStrengthConfig } from '@super-go/core';
+import {
+  xiangqiThreadCap,
+  XIANGQI_ELO_MAX,
+  XIANGQI_ELO_MIN,
+  XIANGQI_HASH_MAX,
+  XIANGQI_HASH_MIN,
+  XIANGQI_THREADS_MIN,
+  type XiangqiStrengthConfig,
+} from '@super-go/core';
 import type { TFunction } from '../i18n';
 
 export interface StrengthFieldsProps {
   t: TFunction;
   strength: XiangqiStrengthConfig;
   onPatch: (delta: Partial<XiangqiStrengthConfig>) => void;
+  /** 本机逻辑核数；搜索线程上限 */
+  cpuThreads: number;
 }
 
 /**
@@ -14,6 +24,7 @@ export interface StrengthFieldsProps {
  */
 export default function StrengthFields(props: StrengthFieldsProps) {
   const { strength } = props;
+  const threadMax = xiangqiThreadCap(props.cpuThreads);
   return (
     <>
       <Row
@@ -95,6 +106,30 @@ export default function StrengthFields(props: StrengthFieldsProps) {
           />
         </Row>
       )}
+      <Row
+        label={props.t('settings.strength.threads')}
+        hint={props.t('settings.strength.threads.hint').replace('{n}', String(threadMax))}
+      >
+        <NumberField
+          ariaLabel={props.t('settings.strength.threads')}
+          value={Math.min(strength.threads, threadMax)}
+          min={XIANGQI_THREADS_MIN}
+          max={threadMax}
+          step={1}
+          onCommit={(threads) => props.onPatch({ threads })}
+        />
+      </Row>
+      <Row label={props.t('settings.strength.hash')} hint={props.t('settings.strength.hash.hint')}>
+        <NumberField
+          ariaLabel={props.t('settings.strength.hash')}
+          value={strength.hash}
+          min={XIANGQI_HASH_MIN}
+          max={XIANGQI_HASH_MAX}
+          step={16}
+          unit="MB"
+          onCommit={(hash) => props.onPatch({ hash })}
+        />
+      </Row>
     </>
   );
 }

@@ -14,7 +14,8 @@ import {
 } from './boardGeometry';
 import type { Detection } from './yolo/postprocess';
 
-const DIAG = process.env['SUPER_GO_LINKER_DIAG'] !== undefined;
+/** 逐帧识别日志默认关闭；SUPER_GO_LINKER_DIAG=1 不会打开 */
+const DIAG = process.env['SUPER_GO_LINKER_DIAG_FRAME'] !== undefined;
 const diag = (text: string): void => {
   if (DIAG) console.log(`[diag:rec] ${text}`);
 };

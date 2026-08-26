@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GameSnapshot } from '@shared/game';
-import type { EngineStatusPayload, LiveEval } from '@shared/ipc';
 import EvalChart from './EvalChart';
-import { evalValueText } from '../lib/eval';
 import type { MessageKey, TFunction } from '../i18n';
 
 const PANEL_MIN = 224;
@@ -12,20 +10,17 @@ const PANEL_DEFAULT = 288;
 export interface SidePanelProps {
   t: TFunction;
   snapshot: GameSnapshot | null;
-  engineStatus: EngineStatusPayload | null;
-  liveEval: LiveEval | null;
   /** 主题切换 tick（驱动折线图重绘） */
   themeTick: number;
   onGoto: (nodeId: number) => void;
   onContinue: () => void;
 }
 
-/** 右侧可折叠面板：状态 + 着法列表 + 评估走势 + 引擎信息；左缘可拖拽调宽（持久化） */
+/** 右侧可折叠面板：对局状态 + 着法列表 + 评估走势；左缘可拖拽调宽（持久化） */
 export default function SidePanel(props: SidePanelProps) {
-  const { snapshot, engineStatus } = props;
+  const { snapshot } = props;
   const browsing = snapshot !== null && snapshot.phase !== 'playing';
   const status = statusOf(props);
-  const evalText = evalTextOf(props);
   const canContinue = snapshot !== null && browsing && snapshot.moves.length > 0;
 
   const [width, setWidth] = useState((): number => {
@@ -109,7 +104,7 @@ export default function SidePanel(props: SidePanelProps) {
         <MoveList t={props.t} snapshot={snapshot} browsing={browsing} onGoto={props.onGoto} />
       </div>
 
-      {/* 评估走势（着法之后、引擎信息之前） */}
+      {/* 评估走势 */}
       <div className="border-t border-border px-4 py-2">
         <h2 className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {props.t('panel.chart')}
@@ -118,47 +113,9 @@ export default function SidePanel(props: SidePanelProps) {
           moves={snapshot?.moves ?? []}
           themeTick={props.themeTick}
           emptyText={props.t('panel.chart.empty')}
-          legendRed={props.t('side.red')}
-          legendBlack={props.t('side.black')}
         />
       </div>
-
-      {/* 引擎信息 */}
-      <div className="border-t border-border px-4 py-3">
-        <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          {props.t('panel.engine')}
-        </h2>
-        <dl className="space-y-1 text-xs">
-          <Row label={props.t('panel.engine')} value={engineStatus?.name ?? '—'} />
-          <Row
-            label={props.t('toolbar.newGame')}
-            value={engineStatusLabel(props.t, engineStatus?.status)}
-          />
-          <Row
-            label={props.t('panel.engine.strength')}
-            value={snapshot?.strengthLabel ?? props.t('panel.engine.unlimited')}
-          />
-          <Row
-            label={props.t('panel.engine.depth')}
-            value={
-              snapshot?.thinking === true && props.liveEval?.depth !== undefined
-                ? String(props.liveEval.depth)
-                : '—'
-            }
-          />
-          <Row label={props.t('panel.engine.eval')} value={evalText} />
-        </dl>
-      </div>
     </aside>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }): React.JSX.Element {
-  return (
-    <div className="flex justify-between gap-3">
-      <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="truncate tabular-nums">{value}</dd>
-    </div>
   );
 }
 
@@ -276,21 +233,3 @@ function statusOf(props: SidePanelProps): {
   };
 }
 
-function engineStatusLabel(
-  t: TFunction,
-  status: EngineStatusPayload['status'] | undefined,
-): string {
-  if (status === undefined) return '—';
-  const key = `panel.engine.status.${status}` as MessageKey;
-  return t(key);
-}
-
-function evalTextOf(props: SidePanelProps): string {
-  const { snapshot, liveEval } = props;
-  // liveEval 是思考中的瞬时帧：引擎停止/悔棋/跳转后不清空，须以 thinking 门控，
-  // 否则最后一帧（如"#3 绝杀"）一直遮蔽 snapshot 里的当前局面评估
-  const live = snapshot?.thinking === true ? liveEval : null;
-  const cp = live?.redCp ?? snapshot?.redCp;
-  const mate = live?.redMate ?? snapshot?.redMate;
-  return evalValueText(props.t, cp, mate).text;
-}
