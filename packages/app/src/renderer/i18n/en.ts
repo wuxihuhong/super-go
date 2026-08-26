@@ -166,6 +166,10 @@ export default {
   'settings.linker.scanInterval': 'Scan interval (ms)',
   'settings.linker.holdMs': 'Click hold (ms)',
   'settings.linker.betweenMs': 'Click gap (ms)',
+  'settings.linker.moveDelayMin': 'Move delay min (s)',
+  'settings.linker.moveDelayMax': 'Move delay max (s)',
+  'settings.linker.moveDelay.hint':
+    'After the engine finishes, wait a random time in this range before playing. 0–15 s; both 0 = play immediately',
   'settings.linker.animation': 'Animation confirm',
   'settings.linker.animation.hint': 'Must be on when the platform animates moves; waits for the animation to settle',
   'settings.linker.threads': 'Inference threads',

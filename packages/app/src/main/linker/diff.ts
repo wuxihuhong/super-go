@@ -7,7 +7,9 @@
  */
 import {
   applyMove,
+  INITIAL_FEN,
   isLegalMove,
+  parseFen,
   pieceSide,
   pointOfIndex,
   type RecognizedBoard,
@@ -109,4 +111,21 @@ export function boardsEqual(
 /** 识别盘转 position（halfmove/fullmove 未知，填 0/1；turn 由调用方给） */
 export function toPosition(board: RecognizedBoard, turn: XiangqiPosition['turn']): XiangqiPosition {
   return { kind: 'xiangqi', turn, board, halfmove: 0, fullmove: 1 };
+}
+
+const INITIAL_BOARD = parseFen(INITIAL_FEN).board;
+
+/**
+ * 从静态识别盘推断轮值（执黑连线最常见：红已走一步、平台在等黑）。
+ * 标准初始 → 红走；相对初始恰好多一步红/黑 → 另一方走；否则无法判定。
+ */
+export function inferTurnFromBoard(board: RecognizedBoard): XiangqiPosition['turn'] | null {
+  if (boardsEqual(board, INITIAL_BOARD)) return 'first';
+  if (diffBoards(board, toPosition(INITIAL_BOARD, 'first')).type === 'opponent-move') {
+    return 'second';
+  }
+  if (diffBoards(board, toPosition(INITIAL_BOARD, 'second')).type === 'opponent-move') {
+    return 'first';
+  }
+  return null;
 }

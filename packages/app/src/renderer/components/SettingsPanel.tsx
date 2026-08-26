@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { normalizeXiangqiStrength, type XiangqiStrengthConfig } from '@super-go/core';
 import type { AppSettings, LanguageCode, ThemeSetting } from '@shared/ipc';
 import {
+  LINKER_MOVE_DELAY_MAX_SEC,
   LINKER_SETTINGS_DEFAULT,
+  normalizeLinkerMoveDelay,
   supportsBackgroundClick,
   type LinkerSettings,
 } from '@shared/linker';
@@ -54,6 +56,12 @@ export default function SettingsPanel(props: SettingsPanelProps) {
   const patchLinker = (delta: Partial<LinkerSettings>): void => {
     patch({ linker: { ...linker, ...delta } });
   };
+  const patchMoveDelay = (
+    delta: Partial<Pick<LinkerSettings, 'moveDelayMinSec' | 'moveDelayMaxSec'>>,
+  ): void => {
+    const next = normalizeLinkerMoveDelay({ ...linker, ...delta });
+    patchLinker({ moveDelayMinSec: next.minSec, moveDelayMaxSec: next.maxSec });
+  };
   /** 后台落子仅 Windows 有此能力（§6.3 有定论）：其他平台禁用开关并说明原因，而不是藏起来 */
   const canBackgroundClick = supportsBackgroundClick(platform);
   const onOff = [
@@ -66,17 +74,22 @@ export default function SettingsPanel(props: SettingsPanelProps) {
     min: number,
     max: number,
     onCommit: (v: number) => void,
+    step = 1,
+    hint?: string,
   ): React.JSX.Element => (
-    <Row label={label}>
+    <Row label={label} hint={hint}>
       <input
         type="number"
         min={min}
         max={max}
+        step={step}
         defaultValue={value}
         key={`${label}-${value}`}
         onBlur={(e) => {
           const v = Number(e.target.value);
-          if (Number.isFinite(v)) onCommit(Math.min(max, Math.max(min, Math.round(v))));
+          if (!Number.isFinite(v)) return;
+          const snapped = step < 1 ? Math.round(v / step) * step : Math.round(v);
+          onCommit(Math.min(max, Math.max(min, snapped)));
         }}
         className="w-20 rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums"
       />
@@ -213,6 +226,23 @@ export default function SettingsPanel(props: SettingsPanelProps) {
         )}
         {numberField(props.t('settings.linker.betweenMs'), linker.clickBetweenMs, 0, 2000, (v) =>
           patchLinker({ clickBetweenMs: v }),
+        )}
+        {numberField(
+          props.t('settings.linker.moveDelayMin'),
+          linker.moveDelayMinSec,
+          0,
+          LINKER_MOVE_DELAY_MAX_SEC,
+          (v) => patchMoveDelay({ moveDelayMinSec: v }),
+          0.1,
+          props.t('settings.linker.moveDelay.hint'),
+        )}
+        {numberField(
+          props.t('settings.linker.moveDelayMax'),
+          linker.moveDelayMaxSec,
+          0,
+          LINKER_MOVE_DELAY_MAX_SEC,
+          (v) => patchMoveDelay({ moveDelayMaxSec: v }),
+          0.1,
         )}
         <Row
           label={props.t('settings.linker.animation')}

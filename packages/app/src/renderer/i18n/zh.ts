@@ -166,6 +166,10 @@ export default {
   'settings.linker.scanInterval': '扫描间隔 (ms)',
   'settings.linker.holdMs': '点击按住 (ms)',
   'settings.linker.betweenMs': '两击间隔 (ms)',
+  'settings.linker.moveDelayMin': '行棋延迟最短 (s)',
+  'settings.linker.moveDelayMax': '行棋延迟最长 (s)',
+  'settings.linker.moveDelay.hint':
+    '引擎算完后，在此范围内随机等待再落子。0–15 秒；两端都为 0 则算完立即走',
   'settings.linker.animation': '动画确认',
   'settings.linker.animation.hint': '平台走子有动画时必须开，等动画播完再识别（防中途帧误判）',
   'settings.linker.threads': '识别线程数',

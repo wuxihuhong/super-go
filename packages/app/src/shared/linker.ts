@@ -48,12 +48,21 @@ export interface LinkerSettings {
    * macOS 不存在这种能力，开了也无效（§6.3 有定论与证据链）。
    */
   backgroundClick: boolean;
+  /**
+   * 引擎算完后、落子前的随机等待下限（秒，0–15）。
+   * 只在连线出招时生效；与思考时长无关。
+   */
+  moveDelayMinSec: number;
+  /** 同上，随机等待上限（秒，0–15；小于下限时两者对调） */
+  moveDelayMaxSec: number;
 }
 
 /** 本平台是否支持后台落子（UI 据此禁用开关并给出说明） */
 export function supportsBackgroundClick(platform: string): boolean {
   return platform === 'win32';
 }
+
+export const LINKER_MOVE_DELAY_MAX_SEC = 15;
 
 export const LINKER_SETTINGS_DEFAULT: LinkerSettings = {
   scanIntervalMs: 100,
@@ -63,7 +72,34 @@ export const LINKER_SETTINGS_DEFAULT: LinkerSettings = {
   inferThreads: 2,
   backgroundCapture: true,
   backgroundClick: false,
+  moveDelayMinSec: 0,
+  moveDelayMaxSec: 0,
 };
+
+function clampDelaySec(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(LINKER_MOVE_DELAY_MAX_SEC, Math.round(value * 10) / 10));
+}
+
+/** 钳制到 0–15；两端各自保存，出招时再取较小/较大值 */
+export function normalizeLinkerMoveDelay(
+  settings: Partial<Pick<LinkerSettings, 'moveDelayMinSec' | 'moveDelayMaxSec'>>,
+): { minSec: number; maxSec: number } {
+  return {
+    minSec: clampDelaySec(settings.moveDelayMinSec),
+    maxSec: clampDelaySec(settings.moveDelayMaxSec),
+  };
+}
+
+/** 连线出招延迟（毫秒），供 MatchService 在 genmove 结束后、落子前使用 */
+export function linkerMoveDelayMs(
+  settings: Partial<Pick<LinkerSettings, 'moveDelayMinSec' | 'moveDelayMaxSec'>>,
+): { min: number; max: number } {
+  const { minSec, maxSec } = normalizeLinkerMoveDelay(settings);
+  const a = Math.round(minSec * 1000);
+  const b = Math.round(maxSec * 1000);
+  return { min: Math.min(a, b), max: Math.max(a, b) };
+}
 
 /** 连线会话阶段 */
 export type LinkerPhase =

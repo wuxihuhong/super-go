@@ -162,6 +162,10 @@ export default {
   'settings.linker.scanInterval': 'スキャン間隔 (ms)',
   'settings.linker.holdMs': 'クリック長さ (ms)',
   'settings.linker.betweenMs': '2 回クリック間隔 (ms)',
+  'settings.linker.moveDelayMin': '着手遅延 最短 (s)',
+  'settings.linker.moveDelayMax': '着手遅延 最長 (s)',
+  'settings.linker.moveDelay.hint':
+    'エンジン計算後、この範囲でランダムに待ってから着手。0–15 秒；両方 0 なら即着手',
   'settings.linker.animation': 'アニメ確認',
   'settings.linker.animation.hint': 'アニメ付きプラットフォームでは必須（途中フレーム誤認防止）',
   'settings.linker.threads': '推論スレッド',

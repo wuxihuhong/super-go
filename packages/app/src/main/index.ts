@@ -3,6 +3,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeXiangqiStrength } from '@super-go/core';
 import { IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
+import { linkerMoveDelayMs } from '../shared/linker';
 import { cpuThreadCount } from './cpuThreads';
 import { enginesRootCandidates, findPikafishBinary } from './engine/discover';
 import { registerIpc } from './ipc';
@@ -135,6 +136,7 @@ void app.whenReady().then(() => {
     events,
     () => resolveEnginePath(settings.get().xiangqi?.enginePath),
     () => normalizeXiangqiStrength(settings.get().xiangqi?.strength, cpuThreadCount()),
+    () => linkerMoveDelayMs(settings.get().linker),
   );
 
   // 连线（P2）：连线 = 以平台识别局面重开一局，对局本体复用 MatchService

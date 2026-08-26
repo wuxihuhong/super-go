@@ -3,7 +3,8 @@
  *
  * 组合 core 的 Game/MoveTree/GameStateMachine 与 UciAdapter：
  * - 引擎通路：同步局面（快照式全量重发）→ genmove（棋力模式约束：Elo/深度/时长/节点）
- *   → 拟人化随机延迟 → 本地先落子 → 连线再点平台；engineSide='both' 时引擎左右互搏（人观战）；
+ *   → 拟人化随机延迟（连线用设置的秒数范围，本机人机 300–900ms）
+ *   → 本地先落子 → 连线再点平台；engineSide='both' 时引擎左右互搏（人观战）；
  * - 棋力属固有配置（settings.xiangqi.strength）：对局中经 refreshStrength 实时下发；
  *   执方只由工具栏红/黑开关设置（setEngineSide，接管/放手/转互搏）；新开一局缺省
  *   = 引擎不上场（开局的选项只定棋盘朝向，2026-08-26 定稿）；
@@ -81,6 +82,8 @@ export class MatchService {
     private readonly events: MatchEvents,
     private readonly getEnginePath: () => string | null,
     private readonly getStrengthConfig: () => XiangqiStrengthConfig,
+    /** 连线出招延迟（拦截器存在时用）；本机人机仍走 300–900ms */
+    private readonly getLinkerPlayDelayMs?: () => { min: number; max: number },
   ) {}
 
   /** 连线会话注入/移除落子拦截（null = 移除） */
@@ -325,6 +328,18 @@ export class MatchService {
     return side === 'both' || side === this.turnNow();
   }
 
+  /** 引擎算完后、落子前：连线用设置里的随机秒数，本机人机保持 300–900ms */
+  private sleepPlayDelay(): Promise<void> {
+    const range =
+      this.engineMoveInterceptor !== null && this.getLinkerPlayDelayMs !== undefined
+        ? this.getLinkerPlayDelayMs()
+        : { min: 300, max: 900 };
+    const lo = Math.min(range.min, range.max);
+    const hi = Math.max(range.min, range.max);
+    const wait = hi <= 0 ? 0 : randomBetween(lo, hi);
+    return wait > 0 ? sleep(wait) : Promise.resolve();
+  }
+
   private async engineTurn(): Promise<void> {
     const gen = ++this.generation;
     this.thinking = true;
@@ -364,7 +379,7 @@ export class MatchService {
         return;
       }
 
-      await sleep(randomBetween(300, 900)); // 拟人化延迟（§6.1 同机制）
+      await this.sleepPlayDelay();
       if (gen !== this.generation) return;
 
       // 连线顺序：引擎决策 → 本地棋盘先走 → 再点平台。thinking 保持到平台点击结束，

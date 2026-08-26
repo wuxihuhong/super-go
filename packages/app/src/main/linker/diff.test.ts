@@ -7,7 +7,7 @@ import {
   type XiangqiMove,
   type XiangqiPosition,
 } from '@super-go/core';
-import { diffBoards } from './diff';
+import { diffBoards, inferTurnFromBoard } from './diff';
 
 const initial = parseFen(INITIAL_FEN);
 
@@ -63,6 +63,14 @@ describe('diffBoards', () => {
     board[0] = null; // 黑车消失
     board[40] = 'R'; // 河界中央凭空多红车
     expect(diffBoards(board as never, initial).type).toBe('unknown');
+  });
+
+  it('从静态盘推断轮值：初始红走、红已进一步则黑走', () => {
+    expect(inferTurnFromBoard(initial.board)).toBe('first');
+    const afterRed = applyMove({ ...initial, turn: 'first' }, move(1, 7, 4, 7)).position;
+    expect(inferTurnFromBoard(afterRed.board)).toBe('second');
+    const afterBlack = applyMove({ ...afterRed, turn: 'second' }, move(1, 0, 2, 2)).position;
+    expect(inferTurnFromBoard(afterBlack.board)).toBe(null);
   });
 
   it('黑方着法也能解释（观战）', () => {

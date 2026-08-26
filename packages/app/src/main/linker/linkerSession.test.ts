@@ -2,7 +2,7 @@
  * LinkerSession 状态机测试（连线 = 重开一局的用户模型 + §6.6 失败恢复）：
  * fake native/infer + fake match（迷你 MatchService：newGame/playObserved/setPaused/
  * interceptor 语义与真实现一致），覆盖开局灌入、首步定轮值、对方着法喂入、
- * 点击坐标镜像、点击后确认、待人工介入的进入与自动/手动退出、观战、暂停。
+ * 点击坐标镜像、执黑轮值推断、点击后确认、待人工介入的进入与自动/手动退出、观战、暂停。
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -37,6 +37,8 @@ const SETTINGS: LinkerSettings = {
   inferThreads: 2,
   backgroundCapture: true,
   backgroundClick: false,
+  moveDelayMinSec: 0,
+  moveDelayMaxSec: 0,
 };
 
 const WINDOW: TargetWindow = {
@@ -338,24 +340,21 @@ describe('LinkerSession 连线 = 重开一局（执红）', () => {
     h.session.stop('user');
   }, 10_000);
 
-  it('中途接入：等首步定轮值后 newGame + 补喂首步 + 引擎应招', async () => {
+  it('中途接入：红已走一步 → 当场判黑走；再观黑应马后引擎执红出招', async () => {
     const h = makeHarness(['h0g2']);
-    // 平台显示红已走中炮（非初始）→ armed 等待首步
     h.setBoard(AFTER_CANNON);
     h.session.start();
-    await new Promise((r) => setTimeout(r, 150));
-    expect(h.newGames).toHaveLength(0); // 未开局：等首步
-    // 黑走出首步 → 走子方=黑 → 根局面轮值=黑
-    h.setBoard(applyMove(AFTER_CANNON, BLACK_KNIGHT).position);
     await waitFor(() => h.newGames.length >= 1);
     const intent = h.newGames[0]!;
-    expect(intent.engineSide).toBe(null); // 引擎不控制，等工具栏设置
-    h.setEngineSide('first'); // 设执红 → 轮红出招
-    // 局面前四段一致（halfmove/fullmove 由识别重建，不参与比对）
+    expect(intent.engineSide).toBe(null);
     expect(intent.initialFen!.split(' ').slice(0, 4).join(' ')).toBe(
-      toFen(AFTER_CANNON).split(' ').slice(0, 4).join(' '),
+      toFen({ ...AFTER_CANNON, turn: 'second' }).split(' ').slice(0, 4).join(' '),
     );
-    await waitFor(() => h.clicks.length >= 2); // 补喂后轮红，引擎出招 h0g2
+    h.setEngineSide('first'); // 轮黑，引擎执红应等待
+    await new Promise((r) => setTimeout(r, 80));
+    expect(h.clicks).toHaveLength(0);
+    h.setBoard(applyMove(AFTER_CANNON, BLACK_KNIGHT).position);
+    await waitFor(() => h.clicks.length >= 2);
     expect(h.clicks[0]).toEqual(point(7, 9));
     h.session.stop('user');
   }, 10_000);
@@ -585,6 +584,51 @@ describe('LinkerSession 未设执方（默认引擎不控制）', () => {
     expect(h.clicks).toHaveLength(0);
     h.session.stop('user');
   }, 10_000);
+});
+
+describe('LinkerSession 引擎执黑', () => {
+  it('红已走中炮 → 判黑走 → 点引擎执黑即出招', async () => {
+    const h = makeHarness(['h9g7']);
+    h.setBoard(AFTER_CANNON);
+    h.session.start();
+    await waitFor(() => h.newGames.length >= 1);
+    expect(h.newGames[0]!.initialFen!.split(' ')[1]).toBe('b');
+    h.setEngineSide('second');
+    await waitFor(() => h.clicks.length >= 2);
+    expect(h.clicks[0]).toEqual(point(7, 0));
+    expect(h.clicks[1]).toEqual(point(6, 2));
+    h.session.stop('user');
+  }, 10_000);
+
+  it('翻转视角下红已走中炮 → 引擎执黑出招且点击镜像', async () => {
+    const h = makeHarness(['h9g7']);
+    h.setReversedSource(true);
+    h.setBoard(AFTER_CANNON);
+    h.session.start();
+    await waitFor(() => h.newGames.length >= 1);
+    h.setEngineSide('second');
+    await waitFor(() => h.clicks.length >= 2);
+    expect(h.clicks[0]).toEqual(point(8 - 7, 9 - 0));
+    expect(h.clicks[1]).toEqual(point(8 - 6, 9 - 2));
+    h.session.stop('user');
+  }, 10_000);
+
+  it('无法一步还原的中局：超时后点引擎执黑，按黑方纠正轮值并出招', async () => {
+    const afterBoth = applyMove(AFTER_CANNON, BLACK_KNIGHT).position;
+    // 再让红走一步，盘面距初始两步以上，inferTurn 无法判定
+    const mid = applyMove(afterBoth, { kind: 'xiangqi', from: { x: 7, y: 9 }, to: { x: 6, y: 7 } })
+      .position;
+    const h = makeHarness(['h9g7']);
+    h.setBoard(mid);
+    h.session.start();
+    await waitFor(() => h.newGames.length >= 1, 7000);
+    expect(h.newGames[0]!.initialFen!.split(' ')[1]).toBe('w'); // 超时默认红先
+    h.setEngineSide('second');
+    await waitFor(() => h.newGames.length >= 2);
+    expect(h.newGames.at(-1)!.initialFen!.split(' ')[1]).toBe('b');
+    await waitFor(() => h.clicks.length >= 2);
+    h.session.stop('user');
+  }, 15_000);
 });
 
 describe('LinkerSession 翻转视角（黑在下）', () => {

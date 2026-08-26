@@ -6,7 +6,8 @@
  *   平台与对局之间的"眼睛 + 手"：识别对方着法喂给对局（playObserved），
  *   引擎应招经拦截器：本地棋盘先落子，再点击平台等它跟上；
  * - 连线中可用引擎执红/执黑按钮（setEngineSide）换边，与普通对弈同语义；
- * - 中途接入的轮值由"首步定轮值"解决：等平台走出第一步，按走子方开局。
+ * - 轮值：能从初始局面一步解释的（含执黑时红已走中炮）当场判定；
+ *   否则等平台走出一步；超时仍判不了则先开局，用户点引擎执方时按该方走。
  *
  * 失败处理（§6.6，2026-08-25 重构）：走子失败**先自愈**——重新标定网格、退避重点、
  * 重新确认；自愈耗尽才转入 `attention`（待人工介入）。attention 下连线不退出：
@@ -33,7 +34,7 @@ import type {
 } from '../../shared/linker';
 import type { GameSnapshot, IntentResult, NewGameIntent } from '../../shared/game';
 import { flipPoint, gridPoint, type BoardGrid } from './boardGeometry';
-import { boardsEqual, diffBoards, toPosition } from './diff';
+import { boardsEqual, diffBoards, inferTurnFromBoard, toPosition } from './diff';
 import { isInitialBoard, recognizeFrame, type RecognizedFrame } from './recognition';
 import type { ClickAnchor, LinkerNative } from './types';
 import type { Detection } from './yolo/postprocess';
@@ -180,6 +181,13 @@ export class LinkerSession {
   private lastAscii = '';
   /** 开局基准对不上时已自动重开的次数（见 MAX_EMPTY_REARMS；一旦同步成功即清零） */
   private emptyReArms = 0;
+  /** 本会话是否已经向 MatchService 开过一局（再开局时保留用户已选的引擎执方） */
+  private gameArmed = false;
+  /**
+   * 中局无法从盘面判定轮值、超时按红先兜底。用户点引擎执红/执黑且盘面仍同步时，
+   * 按该方纠正轮值（执黑连线：红已走、平台在等黑，最常见死锁）。
+   */
+  private turnUncertain = false;
 
   constructor(private readonly opts: LinkerSessionOptions) {}
 
@@ -195,6 +203,8 @@ export class LinkerSession {
   start(): void {
     if (this.running) return;
     this.running = true;
+    this.gameArmed = false;
+    this.turnUncertain = false;
     this.opts.match.setEngineMoveInterceptor((move) => this.interceptEngineMove(move));
     this.log('info', `session start: window="${this.opts.window.title}"`);
     void this.outerLoop(++this.generation);
@@ -351,21 +361,27 @@ export class LinkerSession {
 
   /**
    * 以平台局面重开一局（连线 = 重开一局的核心）：
-   * - 平台是初始局面 → 直接开局（红先）；
-   * - 中途接入 → 保持待命，等平台走出第一步，按走子方定轮值后开局并补喂该步。
+   * - 能从初始局面解释轮值（标准开局，或红/黑已多走恰一步）→ 当场开局；
+   * - 否则等平台再走一步定轮值；超时仍判不了则先开局并标记 turnUncertain。
    */
   private async armGame(gen: number, base: RecognizedFrame): Promise<void> {
     // 重开一局作废一切旧分歧：残留的 attention 会让引擎被永久冻结在新局里
     this.exitAttention('new game supersedes the pending issue');
     this.setPhase('initializing', null);
-    if (isInitialBoard(base.board)) {
-      if (!(await this.startGame(toPosition(base.board, 'first')))) return;
-      this.log('info', 'new game from platform (initial board)');
+    this.turnUncertain = false;
+    const inferred = inferTurnFromBoard(base.board);
+    if (inferred !== null) {
+      if (!(await this.startGame(toPosition(base.board, inferred)))) return;
+      this.log(
+        'info',
+        isInitialBoard(base.board)
+          ? 'new game from platform (initial board)'
+          : `new game from platform (inferred turn=${inferred})`,
+      );
       return;
     }
-    // 中途接入：以 base 为参照等首步（走子方 = 首步前的轮值方）；
-    // 超时兜底：识别盘与标准初始的少量误差会让新局被误当中途接入而永远等首步，
-    // 等待 ARM_TIMEOUT_MS 仍无走子时按当前识别盘直接开局（新局默认红先）
+    // 中途接入且无法一步还原：以 base 为参照等首步（走子方 = 首步前的轮值方）；
+    // 超时兜底：识别误差会让新局被误当中途接入而永远等首步
     this.setPhase('scanning', null);
     this.log('info', 'joined mid-game; waiting for first move to determine turn');
     const armDeadline = Date.now() + ARM_TIMEOUT_MS;
@@ -378,14 +394,16 @@ export class LinkerSession {
       const stepped = this.explainStepFrom(frame.board, base.board);
       if (stepped !== null) {
         const { move, mover } = stepped;
+        this.turnUncertain = false;
         if (!(await this.startGame(toPosition(base.board, mover)))) return;
         this.opts.match.playObserved(move);
         this.log('info', `game armed: first move by ${mover} determines turn`);
         return;
       }
       if (Date.now() > armDeadline) {
+        this.turnUncertain = true;
         if (!(await this.startGame(toPosition(frame.board, 'first')))) return;
-        this.log('info', 'no first move observed; starting as fresh game (red first)');
+        this.log('info', 'no first move observed; starting with uncertain turn (default red)');
         return;
       }
       await sleep(this.opts.settings().scanIntervalMs);
@@ -398,16 +416,44 @@ export class LinkerSession {
    * 都无从谈起，转"待人工介入"没有意义，只能明确报错让用户去修引擎设置。
    */
   private async startGame(position: XiangqiPosition): Promise<boolean> {
+    // 首次开局引擎不上场（§6.1）；本会话再开局（纠轮值 / 空树重开）保留已选执方
+    const keepSide = this.gameArmed ? (this.opts.match.snapshot().engineSide ?? null) : null;
     const result = await this.opts.match.newGame({
-      engineSide: null, // 连线 = 重开一局，引擎默认不控制；执方由工具栏按钮设置
+      engineSide: keepSide,
       initialFen: toFen(position),
     });
     if (!result.ok) {
       this.stop('engineUnavailable', result.error);
       return false;
     }
+    this.gameArmed = true;
     diag(`game armed with ${toFen(position)}`);
     return true;
+  }
+
+  /**
+   * 轮值不确定时：用户点了引擎执红/执黑，且平台与本地同步、尚无本地着法，
+   * 把根局面改成该方行棋并保留执方——否则执黑会永远等一个已经走过的红方。
+   */
+  private async adoptEngineTurnIfNeeded(): Promise<void> {
+    if (!this.turnUncertain) return;
+    const snap = this.opts.match.snapshot();
+    if (snap.phase !== 'playing' || snap.thinking || snap.moves.length > 0) return;
+    const side = snap.engineSide;
+    if (side !== 'first' && side !== 'second') return;
+    const local = this.opts.match.currentPosition();
+    if (isInitialBoard(local.board)) {
+      this.turnUncertain = false;
+      return;
+    }
+    if (local.turn === side) {
+      this.turnUncertain = false;
+      return;
+    }
+    this.turnUncertain = false;
+    if (await this.startGame(toPosition(local.board, side))) {
+      this.log('info', `turn adopted from engine side (${side})`);
+    }
   }
 
   /** recognized 是否为 base + 一步；返回该步与走子方（颜色判据天然唯一） */
@@ -451,6 +497,7 @@ export class LinkerSession {
           if (this.attention?.resolveOnSync === true) {
             this.exitAttention('platform back in sync');
           }
+          await this.adoptEngineTurnIfNeeded();
           break;
 
         case 'opponent-move': {
