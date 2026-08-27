@@ -7,6 +7,11 @@ import { linkerMoveDelayMs } from '../shared/linker';
 import { cpuThreadCount } from './cpuThreads';
 import { enginesRootCandidates, findPikafishBinary } from './engine/discover';
 import { registerIpc } from './ipc';
+import {
+  handleFromNativeBuffer,
+  setSelfIdentity,
+  windowIdFromMediaSource,
+} from './linker/capture/selfWindow';
 import { LinkerController } from './linker/linkerController';
 import { findYoloModel } from './linker/modelPath';
 import { MatchService, type MatchEvents } from './match';
@@ -95,6 +100,29 @@ function createWindow(alwaysOnTop: boolean): BrowserWindow {
   return win;
 }
 
+/** 连线窗口列表排除本应用：记原生句柄 + 本进程 pid，不用标题 */
+function trackSelfWindow(win: BrowserWindow): void {
+  const refresh = (): void => {
+    const handles: number[] = [];
+    try {
+      const n = handleFromNativeBuffer(win.getNativeWindowHandle());
+      if (n > 0) handles.push(n);
+    } catch {
+      /* 窗口尚未映射 */
+    }
+    try {
+      const id = windowIdFromMediaSource(win.getMediaSourceId());
+      if (id !== null) handles.push(id);
+    } catch {
+      /* mac 未 show 时可能拿不到 CGWindowID */
+    }
+    setSelfIdentity({ handles, pids: [process.pid] });
+  };
+  refresh();
+  win.once('ready-to-show', refresh);
+  win.on('show', refresh);
+}
+
 /** 引擎路径解析：用户设置优先（§5.6），否则按平台探测 engines/chess */
 function resolveEnginePath(userPath: string | undefined): string | null {
   if (userPath !== undefined && userPath !== '' && existsSync(userPath)) return userPath;
@@ -164,61 +192,63 @@ void app.whenReady().then(() => {
 
   registerIpc(settings, () => mainWindow, match, linker);
 
-  // 连线诊断自动模式（SUPER_GO_LINKER_DIAG=天天象棋 或 DIAG_AUTO=1）：
-  // 自动选窗口并在限时后退出。SUPER_GO_LINKER_DIAG=1 只开日志，不劫持连线。
-  if (diagAuto) {
-    void (async () => {
-      const windows = await linker.listWindows();
-      console.log(
-        `[diag] windows: ${windows
-          .map((w) => `${w.id}:${w.title} ${w.region.width}x${w.region.height}`)
-          .join(' | ')}`,
-      );
-      const filter = diagFilter ?? '1';
-      const needle = filter === '1' ? '棋盘' : filter;
-      const target = windows.find((w) => w.title.includes(needle)) ?? windows[0];
-      if (target === undefined) {
-        console.log('[diag] no candidate window, quitting');
-        app.quit();
-        return;
+  const runLinkerDiag = async (): Promise<void> => {
+    const windows = await linker.listWindows();
+    console.log(
+      `[diag] windows: ${windows
+        .map((w) => `${w.id}:${w.title} ${w.region.width}x${w.region.height}`)
+        .join(' | ')}`,
+    );
+    const filter = diagFilter ?? '1';
+    const needle = filter === '1' ? '棋盘' : filter;
+    const target = windows.find((w) => w.title.includes(needle)) ?? windows[0];
+    if (target === undefined) {
+      console.log('[diag] no candidate window, quitting');
+      app.quit();
+      return;
+    }
+    console.log(`[diag] target: ${target.id}:${target.title}`);
+    // mac 前台截屏要求目标可见：focus 目标窗口再启动
+    const { getWindows } = await import('@nut-tree/nut-js');
+    for (const w of await getWindows()) {
+      if ((await w.title) === target.title) {
+        await w.focus();
+        console.log('[diag] target focused');
+        break;
       }
-      console.log(`[diag] target: ${target.id}:${target.title}`);
-      // mac 前台截屏要求目标可见：focus 目标窗口再启动
-      const { getWindows } = await import('@nut-tree/nut-js');
-      for (const w of await getWindows()) {
-        if ((await w.title) === target.title) {
-          await w.focus();
-          console.log('[diag] target focused');
-          break;
-        }
-      }
-      const r = await linker.start({ windowId: target.id });
-      console.log(`[diag] start: ${JSON.stringify(r)}`);
-      // SUPER_GO_LINKER_DIAG_SIDE=first|second：开局后让引擎执该方，
-      // 从而在真机上验证"点击 → 平台走出这一步"的完整闭环（不设则只识别不点击）
-      const side = process.env['SUPER_GO_LINKER_DIAG_SIDE'];
-      if (side === 'first' || side === 'second') {
-        setTimeout(() => {
-          console.log(`[diag] setEngineSide(${side})`);
-          console.log(`[diag] setEngineSide -> ${JSON.stringify(match.setEngineSide(side))}`);
-        }, 8_000);
-      }
-      const runMs = Number(process.env['SUPER_GO_LINKER_DIAG_MS'] ?? '40000');
+    }
+    const r = await linker.start({ windowId: target.id });
+    console.log(`[diag] start: ${JSON.stringify(r)}`);
+    // SUPER_GO_LINKER_DIAG_SIDE=first|second：开局后让引擎执该方，
+    // 从而在真机上验证"点击 → 平台走出这一步"的完整闭环（不设则只识别不点击）
+    const side = process.env['SUPER_GO_LINKER_DIAG_SIDE'];
+    if (side === 'first' || side === 'second') {
       setTimeout(() => {
-        console.log(`[diag] ${runMs}ms elapsed, quitting`);
-        app.quit();
-      }, runMs);
-    })();
-  }
+        console.log(`[diag] setEngineSide(${side})`);
+        console.log(`[diag] setEngineSide -> ${JSON.stringify(match.setEngineSide(side))}`);
+      }, 8_000);
+    }
+    const runMs = Number(process.env['SUPER_GO_LINKER_DIAG_MS'] ?? '40000');
+    setTimeout(() => {
+      console.log(`[diag] ${runMs}ms elapsed, quitting`);
+      app.quit();
+    }, runMs);
+  };
 
   mainWindow = createWindow(settings.get().view?.alwaysOnTop === true);
-  // 诊断模式最小化自身：mac 前台截屏要求目标窗口可见，别让诊断实例自己挡住靶盘
-  // ready-to-show 里的 show() 会覆盖提前调用的 minimize，必须等它之后再最小化
-  if (diagAuto) mainWindow.once('show', () => mainWindow?.minimize());
+  trackSelfWindow(mainWindow);
+  // 诊断模式：等本窗 show 并登记句柄后再枚举，避免把默认标题 Electron 写进自窗口表
+  if (diagAuto) {
+    mainWindow.once('show', () => {
+      mainWindow?.minimize();
+      void runLinkerDiag();
+    });
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow(settings.get().view?.alwaysOnTop === true);
+      trackSelfWindow(mainWindow);
     }
   });
 

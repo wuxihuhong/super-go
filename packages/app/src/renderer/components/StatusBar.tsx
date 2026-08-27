@@ -14,15 +14,14 @@ export interface StatusBarProps {
 /** 窗口底栏：引擎 / 状态 / 强度 / 深度 / 优势（侧栏不再竖排这些字段） */
 export default function StatusBar(props: StatusBarProps): React.JSX.Element {
   const { t, snapshot, engineStatus } = props;
-  const live = snapshot?.thinking === true ? props.liveEval : null;
+  const live = props.liveEval;
   const evalText = evalValueText(
     t,
     live?.redCp ?? snapshot?.redCp,
     live?.redMate ?? snapshot?.redMate,
     props.boardFlipped,
   );
-  const depth =
-    snapshot?.thinking === true && live?.depth !== undefined ? String(live.depth) : '—';
+  const depth = live?.depth !== undefined ? String(live.depth) : '—';
   const statusKey =
     engineStatus === undefined || engineStatus === null
       ? null

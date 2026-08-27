@@ -204,6 +204,8 @@ interface Harness {
   setGlitchFrames(n: number, board: readonly (XiangqiPiece | null)[]): void;
   /** false = 识别不出棋盘（目标窗口被遮挡/最小化） */
   setCaptureOk(ok: boolean): void;
+  /** true = captureWindow 返回 null（最小化 / 未授权录屏） */
+  setCaptureNull(ok: boolean): void;
   clicks: Array<[number, number]>;
   statuses: LinkerStatus[];
   logs: string[];
@@ -219,14 +221,15 @@ function makeHarness(engineReplies: string[]): Harness {
   let clickOk = true;
   let glitch: { board: readonly (XiangqiPiece | null)[]; remaining: number } | null = null;
   let captureOk = true;
+  let captureNull = false;
   const clicks: Array<[number, number]> = [];
   const statuses: LinkerStatus[] = [];
   const logs: string[] = [];
 
   const native: LinkerNative = {
     listWindows: async () => [WINDOW],
-    activeWindow: async () => WINDOW,
-    captureWindow: async () => DUMMY_CAPTURE,
+    activeWindow: async () => ({ ok: true, window: WINDOW }),
+    captureWindow: async () => (captureNull ? null : DUMMY_CAPTURE),
     click: async (_win, x, y) => {
       if (!clickOk) return false;
       clicks.push([x, y]);
@@ -279,6 +282,9 @@ function makeHarness(engineReplies: string[]): Harness {
     setCaptureOk: (ok) => {
       captureOk = ok;
     },
+    setCaptureNull: (fail) => {
+      captureNull = fail;
+    },
     clicks,
     statuses,
     logs,
@@ -318,7 +324,7 @@ describe('LinkerSession 连线 = 重开一局（执红）', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(h.clicks).toHaveLength(2);
     h.session.stop('user');
-    expect(h.statuses.at(-1)?.phase).toBe('stopped');
+    expect(h.statuses.at(-1)?.phase).toBe('idle');
   }, 10_000);
 
   it('对方走棋 → playObserved 喂入 → 引擎应招再点击', async () => {
@@ -531,6 +537,36 @@ describe('LinkerSession 走子失败（§6.6 先自愈，再请人工介入）',
   }, 30_000);
 });
 
+describe('LinkerSession 开局定位提示', () => {
+  it('首帧识别失败立刻带 locateHint，成功后清除且不进 attention', async () => {
+    const h = makeHarness([]);
+    h.setCaptureOk(false);
+    h.session.start();
+    await waitFor(() => h.statuses.some((s) => s.locateHint === 'noBoard'));
+    expect(h.statuses.at(-1)?.phase).toBe('locating');
+    expect(h.statuses.at(-1)?.reason).toBe(null);
+    expect(h.session.isRunning).toBe(true);
+    expect(h.session.needsAttention).toBe(false);
+
+    h.setCaptureOk(true);
+    await waitFor(() => h.newGames.length >= 1);
+    expect(h.statuses.at(-1)?.reason).toBe(null);
+    expect(h.statuses.at(-1)?.locateHint).toBe(null);
+    expect(h.statuses.at(-1)?.phase).not.toBe('attention');
+    h.session.stop('user');
+  }, 15_000);
+
+  it('截图失败报 captureFailed，不冒充选错窗口', async () => {
+    const h = makeHarness([]);
+    h.setCaptureNull(true);
+    h.session.start();
+    await waitFor(() => h.statuses.some((s) => s.locateHint === 'captureFailed'));
+    expect(h.statuses.at(-1)?.reason).toBe(null);
+    expect(h.statuses.at(-1)?.phase).toBe('locating');
+    h.session.stop('user');
+  }, 15_000);
+});
+
 describe('LinkerSession 识别中断', () => {
   it('连续识别不到棋盘 → 转待介入（而不是沿用旧帧静默卡住）；恢复后自动继续', async () => {
     const h = makeHarness([]);
@@ -557,16 +593,16 @@ describe('LinkerSession 识别中断', () => {
 
     h.session.stop('user');
     expect(h.session.isRunning).toBe(false);
-    expect(h.statuses.at(-1)?.phase).toBe('stopped');
-    expect(h.statuses.at(-1)?.reason).toBe('user');
+    expect(h.statuses.at(-1)?.phase).toBe('idle');
+    expect(h.statuses.at(-1)?.reason).toBe(null);
 
     await new Promise((r) => setTimeout(r, 200));
     expect(h.session.isRunning).toBe(false);
-    expect(h.statuses.at(-1)?.phase).toBe('stopped');
-    expect(h.statuses.at(-1)?.reason).toBe('user');
+    expect(h.statuses.at(-1)?.phase).toBe('idle');
+    expect(h.statuses.at(-1)?.reason).toBe(null);
 
     h.session.stop('user');
-    expect(h.statuses.at(-1)?.phase).toBe('stopped');
+    expect(h.statuses.at(-1)?.phase).toBe('idle');
   }, 30_000);
 });
 

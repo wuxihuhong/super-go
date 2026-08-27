@@ -46,7 +46,7 @@ import { UciAdapter } from './engine/uciAdapter';
 export interface MatchEvents {
   snapshot(snap: GameSnapshot): void;
   engineStatus(status: EngineStatus, name: string | null): void;
-  liveEval(evaluation: LiveEval): void;
+  liveEval(evaluation: LiveEval | null): void;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -113,7 +113,7 @@ export class MatchService {
     // 平台已经走了，引擎正在算的那一步就此作废
     this.generation++;
     this.adapter?.stopSearch();
-    this.thinking = false;
+    this.setThinking(false);
     this.tree.play(move);
     this.finishIfOver();
     this.pushSnapshot();
@@ -143,8 +143,14 @@ export class MatchService {
   private abortThinking(): void {
     this.generation++;
     this.adapter?.stopSearch();
-    this.thinking = false;
+    this.setThinking(false);
     this.pushSnapshot();
+  }
+
+  /** 思考位与 liveEval 同源：开/停思考都清空残留评估，避免上一手杀棋画到新 ply */
+  private setThinking(value: boolean): void {
+    this.thinking = value;
+    this.events.liveEval(null);
   }
 
   // -------------------------------------------------------------------------
@@ -154,7 +160,7 @@ export class MatchService {
   async newGame(intent: NewGameIntent): Promise<IntentResult> {
     this.generation++;
     this.adapter?.stopSearch();
-    this.thinking = false;
+    this.setThinking(false);
     this.paused = false;
 
     if (this.state.phase === 'playing') {
@@ -227,7 +233,7 @@ export class MatchService {
     }
     this.generation++; // 进行中的思考结果作废
     this.adapter?.stopSearch();
-    this.thinking = false;
+    this.setThinking(false);
     this.tree.undo();
     if (this.state.engineSide === 'both') {
       // 互搏观战：回退一着后暂停（不自动重下，避免循环）；可再续弈/接管
@@ -252,7 +258,7 @@ export class MatchService {
     }
     this.generation++;
     this.adapter?.stopSearch();
-    this.thinking = false;
+    this.setThinking(false);
     const engineSide = (this.state.engineSide ?? 'first') as Player;
     this.state.end({ winner: engineSide, reason: 'resign' });
     await this.resetStrength();
@@ -272,7 +278,7 @@ export class MatchService {
     }
     this.generation++; // 进行中的思考按新执方重新决定
     this.adapter?.stopSearch();
-    this.thinking = false;
+    this.setThinking(false);
     this.state.setEngineSide(engineSide);
     this.lastEngineSide = engineSide;
     this.pushSnapshot();
@@ -342,7 +348,7 @@ export class MatchService {
 
   private async engineTurn(): Promise<void> {
     const gen = ++this.generation;
-    this.thinking = true;
+    this.setThinking(true);
     this.lastLiveDepth = -1;
     this.pushEngineStatus('thinking');
     this.pushSnapshot();
@@ -398,13 +404,13 @@ export class MatchService {
         if (gen !== this.generation) return;
       }
 
-      this.thinking = false;
+      this.setThinking(false);
       this.pushSnapshot();
       if (!this.paused && this.state.phase === 'playing' && this.engineToMoveNow()) {
         void this.engineTurn(); // 互搏：引擎接着走下一手
       }
     } catch (err) {
-      this.thinking = false;
+      this.setThinking(false);
       console.error('[match] 引擎回合异常', err);
       if (gen === this.generation) void this.recoverEngine();
     }
@@ -484,7 +490,7 @@ export class MatchService {
     try {
       this.pushEngineStatus('crashed');
       this.adapter = null;
-      this.thinking = false;
+      this.setThinking(false);
       const fail = await this.ensureEngine();
       if (fail !== null) {
         this.pushSnapshot();

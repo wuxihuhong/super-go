@@ -30,12 +30,18 @@ import type {
   LinkerResolution,
   LinkerSettings,
   LinkerStatus,
+  LocateHint,
   TargetWindow,
 } from '../../shared/linker';
 import type { GameSnapshot, IntentResult, NewGameIntent } from '../../shared/game';
 import { flipPoint, gridPoint, type BoardGrid } from './boardGeometry';
 import { boardsEqual, diffBoards, inferTurnFromBoard, toPosition } from './diff';
-import { isInitialBoard, recognizeFrame, type RecognizedFrame } from './recognition';
+import {
+  isInitialBoard,
+  recognizeFrame,
+  refineLocateHint,
+  type RecognizedFrame,
+} from './recognition';
 import type { ClickAnchor, LinkerNative } from './types';
 import type { Detection } from './yolo/postprocess';
 import type { RawImage } from './types';
@@ -55,7 +61,7 @@ export interface LinkerMatchBridge {
 
 /** 识别推理端口（YoloSession 实现；单测注入） */
 export interface LinkerInfer {
-  detect(img: RawImage): Promise<{ detections: Detection[]; inferMs: number }>;
+  detect(img: RawImage): Promise<{ detections: Detection[]; inferMs: number; peakScore?: number }>;
 }
 
 export interface LinkerSessionEvents {
@@ -156,6 +162,8 @@ export class LinkerSession {
 
   private phase: LinkerPhase = 'idle';
   private reason: LinkerReason | null = null;
+  private locateHint: LocateHint | null = null;
+  private lastPushed: LinkerStatus | null = null;
   private reversed = false;
   private fps = 0;
   private inferMs = 0;
@@ -188,6 +196,8 @@ export class LinkerSession {
    * 按该方纠正轮值（执黑连线：红已走、平台在等黑，最常见死锁）。
    */
   private turnUncertain = false;
+  /** 开局定位首次失败已提示过（成功识别后清掉 locateHint，不再重复刷） */
+  private locateMissReported = false;
 
   constructor(private readonly opts: LinkerSessionOptions) {}
 
@@ -205,6 +215,10 @@ export class LinkerSession {
     this.running = true;
     this.gameArmed = false;
     this.turnUncertain = false;
+    this.reason = null;
+    this.locateHint = null;
+    this.message = null;
+    this.lastPushed = null;
     this.opts.match.setEngineMoveInterceptor((move) => this.interceptEngineMove(move));
     this.log('info', `session start: window="${this.opts.window.title}"`);
     void this.outerLoop(++this.generation);
@@ -219,10 +233,22 @@ export class LinkerSession {
     this.attention = null;
     this.opts.match.setPaused(this.paused);
     this.opts.match.setEngineMoveInterceptor(null);
-    const normal = reason === 'user' || reason === 'shortcut' || reason === 'gameOver';
-    this.reason = reason;
-    this.setPhase(normal ? 'stopped' : 'error', message);
-    this.log(normal ? 'info' : 'error', `session stop (${reason})${message === null ? '' : `: ${message}`}`);
+    this.locateHint = null;
+    this.locateMissReported = false;
+    if (reason === 'user' || reason === 'shortcut') {
+      this.reason = null;
+      this.message = null;
+      this.phase = 'idle';
+      this.pushStatus();
+    } else {
+      const normal = reason === 'gameOver';
+      this.reason = reason;
+      this.setPhase(normal ? 'stopped' : 'error', message);
+    }
+    this.log(
+      reason === 'crashed' || reason === 'engineUnavailable' ? 'error' : 'info',
+      `session stop (${reason})${message === null ? '' : `: ${message}`}`,
+    );
   }
 
   /** 绝杀/困毙：对局已结束，连线立刻停（不再扫、不再点） */
@@ -312,6 +338,7 @@ export class LinkerSession {
     try {
       while (this.alive(gen)) {
         this.setPhase('locating', null);
+        this.locateMissReported = false;
         const base = await this.locateBoard(gen);
         if (base === null || !this.alive(gen)) continue;
         await this.armGame(gen, base);
@@ -718,26 +745,47 @@ export class LinkerSession {
   // 识别帧
   // -------------------------------------------------------------------------
 
+  private reportLocateMiss(gen: number, hint: LocateHint, extra: string): void {
+    if (!this.alive(gen)) return;
+    if (this.phase !== 'locating' || this.locateMissReported) return;
+    this.locateMissReported = true;
+    this.locateHint = hint;
+    this.log('warn', `locate miss (${hint})${extra}`);
+    this.pushStatus();
+  }
+
+  private clearLocateHint(): void {
+    if (this.locateHint === null) return;
+    this.locateHint = null;
+  }
+
   private async captureOnce(gen: number): Promise<RecognizedFrame | null> {
     const cap = await this.opts.native.captureWindow(this.opts.window);
+    if (!this.alive(gen)) return null;
     if (cap === null) {
-      if (this.alive(gen)) this.log('warn', 'capture failed (window minimized / permission?)');
+      this.log('warn', 'capture failed (window minimized / permission?)');
+      this.reportLocateMiss(gen, 'captureFailed', '');
       this.invalidateCalibration();
       return null;
     }
     diag(`capture ${cap.image.width}x${cap.image.height}`);
-    const { detections, inferMs } = await this.opts.infer.detect(cap.image);
+    const { detections, inferMs, peakScore = 0 } = await this.opts.infer.detect(cap.image);
+    if (!this.alive(gen)) return null;
     this.inferMs = inferMs;
     const fpsNow = 1000 / Math.max(1, inferMs);
     this.fps = this.fps === 0 ? fpsNow : this.fps * 0.8 + fpsNow * 0.2;
     diag(`infer -> ${detections.length} dets in ${inferMs.toFixed(0)}ms`);
 
-    const frame = recognizeFrame(detections);
-    if (frame === null) {
-      diag('recognize -> null');
+    const rec = recognizeFrame(detections);
+    if (!rec.ok) {
+      diag(`recognize -> ${rec.kind}`);
+      const hint = refineLocateHint(rec.kind, peakScore);
+      this.reportLocateMiss(gen, hint, ` peak=${peakScore.toFixed(3)} dets=${detections.length}`);
       dumpFrame(cap.image, detections, null);
       return null;
     }
+    const frame = rec.frame;
+    this.clearLocateHint();
     diag(`recognize -> ok reversed=${frame.reversed} refined=${frame.gridRefined}`);
     if (DIAG) {
       const ascii = boardAscii(frame.board);
@@ -785,14 +833,21 @@ export class LinkerSession {
   }
 
   private setPhase(phase: LinkerPhase, message: string | null): void {
-    if (!this.running && phase !== 'stopped' && phase !== 'error') return;
+    if (!this.running && phase !== 'stopped' && phase !== 'error' && phase !== 'idle') return;
     this.phase = phase;
     this.message = message;
+    if (phase !== 'locating') {
+      this.locateHint = null;
+      this.locateMissReported = false;
+    }
+    if (phase !== 'attention' && phase !== 'error' && phase !== 'stopped' && this.attention === null) {
+      this.reason = null;
+    }
     this.pushStatus();
   }
 
   private pushStatus(): void {
-    this.opts.events.status({
+    const status: LinkerStatus = {
       phase: !this.running
         ? this.phase
         : this.paused
@@ -807,7 +862,25 @@ export class LinkerSession {
       moves: this.opts.match.snapshot().moves.length,
       message: this.attention?.message ?? this.message,
       reason: this.attention?.reason ?? this.reason,
-    });
+      locateHint: this.phase === 'locating' ? this.locateHint : null,
+    };
+    const prev = this.lastPushed;
+    if (
+      prev !== null &&
+      prev.phase === status.phase &&
+      prev.reason === status.reason &&
+      prev.locateHint === status.locateHint &&
+      prev.fps === status.fps &&
+      prev.inferMs === status.inferMs &&
+      prev.moves === status.moves &&
+      prev.reversed === status.reversed &&
+      prev.message === status.message &&
+      prev.windowTitle === status.windowTitle
+    ) {
+      return;
+    }
+    this.lastPushed = status;
+    this.opts.events.status(status);
   }
 
   private log(level: LinkerLogEntry['level'], text: string): void {

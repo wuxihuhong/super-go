@@ -81,8 +81,9 @@ describe.skipIf(!existsSync(MODEL_PATH))('点击几何端到端（真模型 + �
     it(`${kase.name}：点击点落在棋子中心 ${MAX_CLICK_ERROR_CELLS} 格以内`, { timeout: 60_000 }, async () => {
       if (!existsSync(join(FIXTURES_DIR, kase.name))) return;
       const detections = await detectFixture(kase.name);
-      const frame = recognizeFrame(detections);
-      if (frame === null) throw new Error(`${kase.name}: recognizeFrame 返回 null`);
+      const rec = recognizeFrame(detections);
+      if (!rec.ok) throw new Error(`${kase.name}: recognizeFrame ${rec.kind}`);
+      const frame = rec.frame;
 
       const { maxCells, cells } = clickError(detections, frame.grid);
       console.log(
@@ -100,8 +101,9 @@ describe.skipIf(!existsSync(MODEL_PATH))('点击几何端到端（真模型 + �
   it(`${OVERLAY_CASE.name}：棋子被走子箭头/选中角标压住时不漏子`, { timeout: 60_000 }, async () => {
     if (!existsSync(join(FIXTURES_DIR, OVERLAY_CASE.name))) return;
     const detections = await detectFixture(OVERLAY_CASE.name, false);
-    const frame = recognizeFrame(detections);
-    if (frame === null) throw new Error(`${OVERLAY_CASE.name}: recognizeFrame 返回 null`);
+    const rec = recognizeFrame(detections);
+    if (!rec.ok) throw new Error(`${OVERLAY_CASE.name}: recognizeFrame ${rec.kind}`);
+    const frame = rec.frame;
 
     const { maxCells, cells } = clickError(detections, frame.grid);
     console.log(

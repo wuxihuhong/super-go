@@ -50,6 +50,12 @@ export interface Detection {
  * @param output ONNX 输出数据（dims = [1, 4+nc, anchors] 展平）
  * @param numAnchors anchor 数（640 输入时 8400）
  */
+export interface DecodeResult {
+  detections: Detection[];
+  /** 阈值前的最大类分（用于「看到了东西但不够自信」的定位提示） */
+  peakScore: number;
+}
+
 export function decodeDetections(
   output: Float32Array,
   numAnchors: number,
@@ -58,11 +64,12 @@ export function decodeDetections(
   srcH: number,
   /** 覆盖阈值（两档统一用同一个值；不传则棋盘框与棋子各用各的） */
   confThreshold?: number,
-): Detection[] {
+): DecodeResult {
   const nc = YOLO_LABELS.length;
   const stride = 4 + nc;
   const anchors = Math.min(numAnchors, Math.floor(output.length / stride));
   const list: Detection[] = [];
+  let peakScore = 0;
   for (let a = 0; a < anchors; a++) {
     let best = 0;
     let bestC = -1;
@@ -73,6 +80,7 @@ export function decodeDetections(
         bestC = c;
       }
     }
+    if (best > peakScore) peakScore = best;
     if (bestC < 0) continue;
     const label = YOLO_LABELS[bestC]!;
     const threshold =
@@ -90,7 +98,7 @@ export function decodeDetections(
     if (cx < 0 || cy < 0 || cx >= srcW || cy >= srcH) continue;
     list.push({ label, score: best, cx, cy, w, h });
   }
-  return list;
+  return { detections: list, peakScore };
 }
 
 /** 按类分别做贪心 NMS（同类 IoU 超阈值被抑制）。 */

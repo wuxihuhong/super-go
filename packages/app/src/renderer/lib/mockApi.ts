@@ -32,7 +32,7 @@ import type {
   SuperGoApi,
   ThemeSetting,
 } from '@shared/ipc';
-import { LINKER_SETTINGS_DEFAULT } from '@shared/linker';
+import { LINKER_SETTINGS_DEFAULT, type ActiveWindowPick } from '@shared/linker';
 import type {
   GameSnapshot,
   IntentResult,
@@ -58,6 +58,8 @@ const SETTINGS_KEY = 'super-go.mock.settings';
 const MOCK_WINDOWS = [
   { id: 101, title: 'Mock 棋盘平台 A', region: { left: 0, top: 40, width: 900, height: 950 } },
   { id: 102, title: 'Mock 网页浏览器', region: { left: 100, top: 100, width: 1280, height: 800 } },
+  { id: 103, title: '天天象棋', region: { left: 80, top: 60, width: 1100, height: 860 } },
+  { id: 104, title: 'JJ象棋', region: { left: 200, top: 80, width: 1024, height: 768 } },
 ];
 
 export function installMockApi(): void {
@@ -77,7 +79,10 @@ function createMockApi(): SuperGoApi {
 
   const snapshotListeners = new Set<(snap: GameSnapshot) => void>();
   const statusListeners = new Set<(payload: EngineStatusPayload) => void>();
-  const evalListeners = new Set<(evaluation: LiveEval) => void>();
+  const evalListeners = new Set<(evaluation: LiveEval | null) => void>();
+  const pushLiveEval = (evaluation: LiveEval | null): void => {
+    for (const cb of evalListeners) cb(evaluation);
+  };
   const themeListeners = new Set<(dark: boolean) => void>();
 
   // ---- 连线 mock 状态 ----
@@ -97,6 +102,7 @@ function createMockApi(): SuperGoApi {
         moves: 0,
         message: null,
         reason: null,
+        locateHint: null,
       }),
     );
   };
@@ -195,12 +201,14 @@ function createMockApi(): SuperGoApi {
   const fakeEngineTurn = (): void => {
     const gen = ++generation;
     thinking = true;
+    pushLiveEval(null);
     pushStatus('thinking');
     pushSnapshot();
     const pos = positionNow();
     const moves = game.legalMoves(pos);
     if (moves.length === 0) {
       thinking = false;
+      pushLiveEval(null);
       finishIfOver();
       pushSnapshot();
       return;
@@ -211,9 +219,7 @@ function createMockApi(): SuperGoApi {
       setTimeout(
         () => {
           if (gen !== generation) return;
-          for (const cb of evalListeners) {
-            cb({ redCp: materialRedCp(pos) + (i % 2 === 0 ? 12 : -8), depth: 8 + i * 3 });
-          }
+          pushLiveEval({ redCp: materialRedCp(pos) + (i % 2 === 0 ? 12 : -8), depth: 8 + i * 3 });
         },
         (600 / frames) * i,
       );
@@ -230,6 +236,7 @@ function createMockApi(): SuperGoApi {
           source: 'Mock Engine',
         };
         thinking = false;
+        pushLiveEval(null);
         finishIfOver();
         pushStatus('ready');
         pushSnapshot();
@@ -298,6 +305,7 @@ function createMockApi(): SuperGoApi {
     newGame: (intent: NewGameIntent) => {
       generation++;
       thinking = false;
+      pushLiveEval(null);
       paused = false;
       if (state.phase === 'playing') state.abort();
       if (!intent.fromCursor) tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
@@ -422,7 +430,20 @@ function createMockApi(): SuperGoApi {
 
     // ---- 连线 mock（浏览器模式 UI 调试：假窗口 + 状态/日志推送；对局走 mock 对弈通路）----
     linkerListWindows: () => Promise.resolve(MOCK_WINDOWS),
-    linkerActiveWindow: () => Promise.resolve(null),
+    linkerActiveWindow: (): Promise<ActiveWindowPick> => {
+      const q = new URLSearchParams(window.location.search).get('pick');
+      if (
+        q === 'self' ||
+        q === 'tooSmall' ||
+        q === 'emptyTitle' ||
+        q === 'noHandle' ||
+        q === 'error'
+      ) {
+        return Promise.resolve({ ok: false, reason: q });
+      }
+      const win = MOCK_WINDOWS[2] ?? MOCK_WINDOWS[0]!;
+      return Promise.resolve({ ok: true, window: win });
+    },
     linkerStart: async (intent) => {
       if (linkerTimer !== null) return Promise.resolve({ ok: false, error: 'mock linker running' });
       const win = MOCK_WINDOWS.find((w) => w.id === intent.windowId);
@@ -451,7 +472,8 @@ function createMockApi(): SuperGoApi {
         window.clearInterval(linkerTimer);
         linkerTimer = null;
       }
-      linkerPhase = 'stopped';
+      linkerPhase = 'idle';
+      pushLinkerStatus();
       pushLinkerLog('info', 'mock linker stopped');
     },
     linkerResolve: () => {

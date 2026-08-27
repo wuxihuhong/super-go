@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import type { LinkerResolution, LinkerStatus, LiveEval } from '@shared/ipc';
 import type { GameSnapshot } from '@shared/game';
 import EvalChart from './EvalChart';
+import LinkerLiveStatus, { linkerLiveVisible } from './LinkerLiveStatus';
 import type { MessageKey, TFunction } from '../i18n';
 
 const PANEL_MIN = 224;
@@ -14,6 +16,12 @@ export interface SidePanelProps {
   themeTick: number;
   onGoto: (nodeId: number) => void;
   onContinue: () => void;
+  liveEval: LiveEval | null;
+  linkerStatus: LinkerStatus | null;
+  onLinkerStop: () => void;
+  onLinkerPauseToggle: () => void;
+  onLinkerResolve: (resolution: LinkerResolution) => void;
+  onLinkerDismiss: () => void;
 }
 
 /** 右侧可折叠面板：对局状态 + 着法列表 + 评估走势；左缘可拖拽调宽（持久化） */
@@ -102,6 +110,18 @@ export default function SidePanel(props: SidePanelProps) {
           {props.t('panel.moves')}
         </h2>
         <MoveList t={props.t} snapshot={snapshot} browsing={browsing} onGoto={props.onGoto} />
+        {linkerLiveVisible(props.linkerStatus) && props.linkerStatus !== null && (
+          <div className="border-t border-border px-3 py-2">
+            <LinkerLiveStatus
+              t={props.t}
+              status={props.linkerStatus}
+              onStop={props.onLinkerStop}
+              onPauseToggle={props.onLinkerPauseToggle}
+              onResolve={props.onLinkerResolve}
+              onDismiss={props.onLinkerDismiss}
+            />
+          </div>
+        )}
       </div>
 
       {/* 评估走势 */}
@@ -111,6 +131,7 @@ export default function SidePanel(props: SidePanelProps) {
         </h2>
         <EvalChart
           moves={snapshot?.moves ?? []}
+          liveEval={props.liveEval}
           themeTick={props.themeTick}
           emptyText={props.t('panel.chart.empty')}
         />

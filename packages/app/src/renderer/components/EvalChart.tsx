@@ -1,11 +1,14 @@
 import { useEffect, useRef } from 'react';
-import type { MainlineItem } from '@shared/game';
+import type { LiveEval, MainlineItem } from '@shared/game';
+import { buildEvalChartSeries } from '../lib/evalChartSeries';
 import { cssColor } from '../lib/theme';
 import { useElementSize } from '../lib/useElementSize';
 
 export interface EvalChartProps {
   /** 根 → 当前游标的着法（含每步 redCp/redMate 评估，红方视角） */
   moves: MainlineItem[];
+  /** 实时评估（§7.4）；非思考时由 main 发 null，杀棋也画进当前 ply */
+  liveEval?: LiveEval | null;
   /** 主题切换时触发重绘 */
   themeTick: number;
   /** 无数据占位文案 */
@@ -45,22 +48,9 @@ export default function EvalChart(props: EvalChartProps) {
     const w = width - padX * 2;
     const h = H - padY * 2;
 
-    // 序列：cp 直取；mate 钳制为满幅（N 步杀就是压倒性优势）。
-    // x 轴 = 着法序号（手数）：引擎只在应招节点挂 evalRecord，人走的着法无值——
-    // 按有值点的下标排布会把点均匀铺满全宽、与着法列表错位，故记录原始 ply。
-    const pts: { ply: number; v: number }[] = [];
-    for (let i = 0; i < props.moves.length; i++) {
-      const m = props.moves[i];
-      if (m === undefined) continue;
-      if (m.redMate !== undefined) {
-        pts.push({
-          ply: i,
-          v: m.redMate > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY,
-        });
-      } else if (m.redCp !== undefined) {
-        pts.push({ ply: i, v: m.redCp });
-      }
-    }
+    // 序列：cp 直取；mate 钳制为满幅。刻度只看有限分——杀棋若进 maxAbs，
+    // yScale 变成 Infinity，历史点 y 全是 NaN，图上只剩「+Infinity」空轴。
+    const { pts, yScale } = buildEvalChartSeries(props.moves, props.liveEval ?? null);
 
     // 均势基准线
     ctx.save();
@@ -82,8 +72,6 @@ export default function EvalChart(props: EvalChartProps) {
       return;
     }
 
-    const maxAbs = Math.max(200, ...pts.map((p) => Math.abs(p.v)));
-    const yScale = Math.ceil(maxAbs / 100) * 100;
     const yOf = (v: number): number => {
       const clamped = Math.max(
         -yScale,
@@ -91,7 +79,7 @@ export default function EvalChart(props: EvalChartProps) {
       );
       return padY + (1 - (clamped + yScale) / (yScale * 2)) * h;
     };
-    const lastPly = props.moves.length - 1;
+    const lastPly = Math.max(props.moves.length - 1, pts[pts.length - 1]?.ply ?? 0);
     const xOf = (ply: number): number => (lastPly <= 0 ? padX + w / 2 : padX + (ply / lastPly) * w);
 
     /** 画一条得分线；sign = +1 红方视角原值，-1 黑方镜像 */
@@ -134,7 +122,7 @@ export default function EvalChart(props: EvalChartProps) {
     ctx.textBaseline = 'bottom';
     ctx.fillText(`${-yScale}`, padX + 2, H - padY + 6);
     ctx.restore();
-  }, [props.moves, props.themeTick, props.emptyText, width]);
+  }, [props.moves, props.liveEval, props.themeTick, props.emptyText, width]);
 
   return (
     <div ref={ref} className="w-full" style={{ height: H }}>

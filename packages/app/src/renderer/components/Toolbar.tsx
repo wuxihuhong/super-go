@@ -7,6 +7,7 @@ import type {
   LinkerStartIntent,
   LinkerStatus,
 } from '@shared/ipc';
+import { BOARD3D_SCALE, isLinkerActivePhase } from '@shared/ipc';
 import type { GameSnapshot } from '@shared/game';
 import type { MessageKey, TFunction } from '../i18n';
 import GamePanel from './GamePanel';
@@ -25,10 +26,9 @@ import {
   IconPlus,
   IconUndo,
   IconZoomIn,
-  IconZoomOut,
 } from './icons';
 
-export type Popover = 'none' | 'setup' | 'settings' | 'game' | 'linker';
+export type Popover = 'none' | 'setup' | 'settings' | 'game' | 'linker' | 'zoom';
 
 export interface ToolbarProps {
   t: TFunction;
@@ -58,8 +58,10 @@ export interface ToolbarProps {
   onSettingsChanged: (next: AppSettings) => void;
   /** 3D 棋盘缩放（仅 3D 可用；2D/回退时禁用） */
   boardZoomDisabled: boolean;
+  board3dScale: number;
   onBoardZoomIn: () => void;
   onBoardZoomOut: () => void;
+  onBoardZoomReset: () => void;
   /** 连线（P2） */
   linkerStatus: LinkerStatus | null;
   linkerLogs: LinkerLogEntry[];
@@ -315,8 +317,7 @@ export default function Toolbar(props: ToolbarProps) {
             <IconLink />,
             () => props.onPopoverChange(props.popover === 'linker' ? 'none' : 'linker'),
             false,
-            props.linkerStatus !== null &&
-              !['idle', 'stopped', 'error'].includes(props.linkerStatus.phase),
+            props.linkerStatus !== null && isLinkerActivePhase(props.linkerStatus.phase),
           )}
           {popoverLayer(
             'linker',
@@ -332,8 +333,29 @@ export default function Toolbar(props: ToolbarProps) {
             'right',
           )}
         </div>
-        {iconButton('toolbar.board3dZoomIn', <IconZoomIn />, props.onBoardZoomIn, props.boardZoomDisabled)}
-        {iconButton('toolbar.board3dZoomOut', <IconZoomOut />, props.onBoardZoomOut, props.boardZoomDisabled)}
+        <div className="relative">
+          {iconButton(
+            'toolbar.boardZoom',
+            <IconZoomIn />,
+            () => {
+              if (props.boardZoomDisabled) return;
+              props.onPopoverChange(props.popover === 'zoom' ? 'none' : 'zoom');
+            },
+            props.boardZoomDisabled,
+          )}
+          {popoverLayer(
+            'zoom',
+            <ZoomBar
+              t={props.t}
+              scale={props.board3dScale}
+              disabled={props.boardZoomDisabled}
+              onZoomIn={props.onBoardZoomIn}
+              onZoomOut={props.onBoardZoomOut}
+              onReset={props.onBoardZoomReset}
+            />,
+            'right',
+          )}
+        </div>
         {iconButton('toolbar.togglePanel', <IconPanel />, props.onTogglePanel, false, false, 'B')}
         <div className="relative">
           {iconButton(
@@ -360,5 +382,47 @@ export default function Toolbar(props: ToolbarProps) {
         )}
       </div>
     </header>
+  );
+}
+
+function ZoomBar(props: {
+  t: TFunction;
+  scale: number;
+  disabled: boolean;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onReset: () => void;
+}): React.JSX.Element {
+  const pct = Math.round(props.scale * 100);
+  return (
+    <div className="flex items-center gap-1 rounded-lg border border-border bg-surface px-2 py-1.5 text-foreground shadow-xl">
+      <button
+        type="button"
+        aria-label={props.t('toolbar.boardZoom.out')}
+        disabled={props.disabled || props.scale <= BOARD3D_SCALE.min}
+        onClick={props.onZoomOut}
+        className="flex h-7 w-7 items-center justify-center rounded-md text-base leading-none text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
+      >
+        −
+      </button>
+      <span className="w-10 text-center text-xs tabular-nums">{pct}%</span>
+      <button
+        type="button"
+        aria-label={props.t('toolbar.boardZoom.in')}
+        disabled={props.disabled || props.scale >= BOARD3D_SCALE.max}
+        onClick={props.onZoomIn}
+        className="flex h-7 w-7 items-center justify-center rounded-md text-base leading-none text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
+      >
+        +
+      </button>
+      <button
+        type="button"
+        disabled={props.disabled}
+        onClick={props.onReset}
+        className="ml-1 shrink-0 whitespace-nowrap rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
+      >
+        {props.t('toolbar.boardZoom.reset')}
+      </button>
+    </div>
   );
 }

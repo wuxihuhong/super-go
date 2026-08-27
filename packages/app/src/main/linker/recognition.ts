@@ -12,6 +12,7 @@ import {
   type BoardBox,
   type BoardGrid,
 } from './boardGeometry';
+import type { LocateHint } from '../../shared/linker';
 import type { Detection } from './yolo/postprocess';
 
 /** 逐帧识别日志默认关闭；SUPER_GO_LINKER_DIAG=1 不会打开 */
@@ -33,12 +34,20 @@ export interface RecognizedFrame {
   gridRefined: boolean;
 }
 
-/** 找不到棋盘框 / 找不到将 / 静态校验不过 → null */
-export function recognizeFrame(detections: readonly Detection[]): RecognizedFrame | null {
+export type RecognizeOk = { ok: true; frame: RecognizedFrame };
+export type RecognizeFail = { ok: false; kind: Exclude<LocateHint, 'captureFailed'> };
+export type RecognizeResult = RecognizeOk | RecognizeFail;
+
+/** 找不到棋盘框 / 找不到将 / 静态校验不过 → 带 kind 的失败 */
+export function recognizeFrame(detections: readonly Detection[]): RecognizeResult {
+  if (detections.length === 0) {
+    diag('empty detections');
+    return { ok: false, kind: 'noBoard' };
+  }
   const box = findBoardBox(detections);
   if (box === null) {
     diag('no board box');
-    return null;
+    return { ok: false, kind: 'invalidBoard' };
   }
   // 粗网格吸附 → 棋子中心拟合精修 → 用精修网格再吸附一遍（框有系统偏差时救回边缘棋子）
   const coarse = gridFromBox(box);
@@ -49,7 +58,7 @@ export function recognizeFrame(detections: readonly Detection[]): RecognizedFram
   const reversed = isReversed(board);
   if (reversed === null) {
     diag('no king found');
-    return null; // 两个将都识别不到：无法判定视角，丢帧
+    return { ok: false, kind: 'noKing' };
   }
   const normalized = reversed === true ? flipBoard(board) : board;
   const issues = validateRecognizedBoard(normalized);
@@ -62,9 +71,21 @@ export function recognizeFrame(detections: readonly Detection[]): RecognizedFram
         diag('  ' + Array.from({ length: 9 }, (_, x) => normalized[y * 9 + x] ?? '.').join(''));
       }
     }
-    return null;
+    return { ok: false, kind: 'invalidBoard' };
   }
-  return { board: normalized, reversed, box, grid, gridRefined: refined !== null };
+  return { ok: true, frame: { board: normalized, reversed, box, grid, gridRefined: refined !== null } };
+}
+
+/** 低于此峰值视为几乎空帧（噪声），否则是「看到了但不够自信」 */
+const LOCATE_EMPTY_PEAK = 0.08;
+
+/** 空帧 + 可见峰值 → lowConfidence；其余 kind 原样返回 */
+export function refineLocateHint(
+  kind: Exclude<LocateHint, 'captureFailed'>,
+  peakScore: number,
+): LocateHint {
+  if (kind === 'noBoard' && peakScore > LOCATE_EMPTY_PEAK) return 'lowConfidence';
+  return kind;
 }
 
 /**

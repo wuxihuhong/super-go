@@ -17,6 +17,7 @@ import type {
   LinkerStatus,
   LiveEval,
 } from '@shared/ipc';
+import { BOARD3D_SCALE, clampBoard3dScale, isLinkerActivePhase } from '@shared/ipc';
 import type { GameSnapshot } from '@shared/game';
 import Board from './components/Board';
 import Board3D from './components/Board3D';
@@ -46,8 +47,10 @@ export default function App() {
   const [board3d, setBoard3d] = useState(true);
   const [glFailed, setGlFailed] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
-  // 3D 棋盘在容器内的占比（仅 3D 生效；0.5–1，持久化 view.board3dScale）
+  // 3D 棋盘在容器内的占比（仅 3D 生效；0.5–2，持久化 view.board3dScale）
   const [board3dScale, setBoard3dScale] = useState(1);
+  const userClosedPanel = useRef(false);
+  const prevLinkerPhase = useRef<LinkerStatus['phase'] | undefined>(undefined);
   const board3dScaleTimer = useRef<number | null>(null);
   // 连线（P2）：状态/日志（对局快照走 game:snapshot——连线 = 重开一局）
   const [linkerStatus, setLinkerStatus] = useState<LinkerStatus | null>(null);
@@ -133,11 +136,7 @@ export default function App() {
   const engineSide = snapshot?.engineSide ?? null;
   const spectating = engineSide === 'both'; // 引擎互搏，人观战
   /** 连线进行中（平台是事实源：本地棋盘只跟盘显示，不接受手动改动） */
-  const linkerActive =
-    linkerStatus !== null &&
-    linkerStatus.phase !== 'idle' &&
-    linkerStatus.phase !== 'stopped' &&
-    linkerStatus.phase !== 'error';
+  const linkerActive = linkerStatus !== null && isLinkerActivePhase(linkerStatus.phase);
   /** 引擎是否托管某一方（toolbar 两开关；双关 = 人执双方） */
   const engineControls = (side: Player): boolean => engineSide === 'both' || engineSide === side;
   // 暂停只冻结引擎，用户的回合照常可走（不可跨步：引擎回合 / 观战时 UI 不可落子）；
@@ -227,7 +226,11 @@ export default function App() {
         setPopover((cur) => (cur === 'settings' ? 'none' : 'settings'));
       } else if (mod && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        setPanelOpen((v) => !v);
+        setPanelOpen((v) => {
+          const next = !v;
+          userClosedPanel.current = !next;
+          return next;
+        });
       } else if (e.key === ' ' && !mod) {
         e.preventDefault();
         runIntent(() => window.superGo.togglePause());
@@ -268,6 +271,28 @@ export default function App() {
     setFlip((cur) => nextBoardFlip(cur, { type: 'platformView', reversed: linkerStatus.reversed }));
   }, [linkerActive, linkerStatus]);
 
+  // 只在首次进入待介入/出错时打开侧栏；定位中不抢焦点，尊重用户关掉
+  useEffect(() => {
+    const phase = linkerStatus?.phase;
+    const prev = prevLinkerPhase.current;
+    prevLinkerPhase.current = phase;
+    const entered =
+      (phase === 'attention' && prev !== 'attention') ||
+      (phase === 'error' && prev !== 'error');
+    if (entered) {
+      userClosedPanel.current = false;
+      setPanelOpen(true);
+    }
+  }, [linkerStatus?.phase]);
+
+  // 新对局后清掉已停止连线的残留横幅（error 留给用户点关闭）
+  useEffect(() => {
+    if (snapshot?.phase !== 'playing' || linkerStatus === null) return;
+    if (linkerStatus.phase === 'stopped' || linkerStatus.phase === 'idle') {
+      setLinkerStatus(null);
+    }
+  }, [snapshot?.phase, linkerStatus]);
+
   if (lang === null) return null;
   const t = createT(lang);
 
@@ -286,7 +311,7 @@ export default function App() {
 
   /** 3D 棋盘缩放（+/- 步进 10%）：本地即时生效，持久化防抖 400ms */
   const handleBoard3dScale = (scale: number): void => {
-    const clamped = Math.round(Math.min(2, Math.max(0.5, scale)) * 10) / 10;
+    const clamped = clampBoard3dScale(scale);
     setBoard3dScale(clamped);
     if (board3dScaleTimer.current !== null) window.clearTimeout(board3dScaleTimer.current);
     board3dScaleTimer.current = window.setTimeout(() => {
@@ -334,9 +359,17 @@ export default function App() {
         onToggleEngineSide={handleToggleEngineSide}
         onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
         boardZoomDisabled={!board3d || glFailed}
-        onBoardZoomIn={() => handleBoard3dScale(board3dScale + 0.1)}
-        onBoardZoomOut={() => handleBoard3dScale(board3dScale - 0.1)}
-        onTogglePanel={() => setPanelOpen((v) => !v)}
+        board3dScale={board3dScale}
+        onBoardZoomIn={() => handleBoard3dScale(board3dScale + BOARD3D_SCALE.step)}
+        onBoardZoomOut={() => handleBoard3dScale(board3dScale - BOARD3D_SCALE.step)}
+        onBoardZoomReset={() => handleBoard3dScale(1)}
+        onTogglePanel={() => {
+          setPanelOpen((v) => {
+            const next = !v;
+            userClosedPanel.current = !next;
+            return next;
+          });
+        }}
         onSettingsChanged={handleSettingsChanged}
         linkerStatus={linkerStatus}
         linkerLogs={linkerLogs}
@@ -398,9 +431,15 @@ export default function App() {
           <SidePanel
             t={t}
             snapshot={snapshot}
+            liveEval={liveEval}
             themeTick={themeTick}
             onGoto={(nodeId) => runIntent(() => window.superGo.gotoNode(nodeId))}
             onContinue={() => runIntent(() => window.superGo.newGame({ fromCursor: true }))}
+            linkerStatus={linkerStatus}
+            onLinkerStop={() => window.superGo.linkerStop()}
+            onLinkerPauseToggle={() => window.superGo.linkerPauseToggle()}
+            onLinkerResolve={(r) => window.superGo.linkerResolve(r)}
+            onLinkerDismiss={() => setLinkerStatus(null)}
           />
         )}
       </div>

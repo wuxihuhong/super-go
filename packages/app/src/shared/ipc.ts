@@ -6,6 +6,7 @@ import type { EngineSide as EngineSideT, XiangqiStrengthConfig } from '@super-go
 import type { EngineStatus } from './engine';
 import type { GameSnapshot, IntentResult, LiveEval, NewGameIntent, PlayMoveIntent } from './game';
 import type {
+  ActiveWindowPick,
   LinkerLogEntry,
   LinkerPermissionId,
   LinkerPermissionState,
@@ -25,6 +26,8 @@ export type {
   PlayMoveIntent,
 } from './game';
 export type {
+  ActiveWindowPick,
+  ActiveWindowPickReason,
   LinkerLogEntry,
   LinkerPermissionId,
   LinkerPermissionState,
@@ -34,8 +37,18 @@ export type {
   LinkerSettings,
   LinkerStartIntent,
   LinkerStatus,
+  LocateHint,
   TargetWindow,
 } from './linker';
+export { isLinkerActivePhase } from './linker';
+
+/** 3D 棋盘缩放（中央区占比；仅 3D 生效） */
+export const BOARD3D_SCALE = { min: 0.5, max: 2, step: 0.1 } as const;
+
+export function clampBoard3dScale(scale: number): number {
+  const { min, max, step } = BOARD3D_SCALE;
+  return Math.round(Math.min(max, Math.max(min, scale)) / step) * step;
+}
 
 export const IPC_CHANNELS = {
   appInfo: 'app:info',
@@ -106,7 +119,7 @@ export interface AppSettings {
     board3d?: boolean;
     /** 窗口始终保持在其他应用之上（连线代打等场景） */
     alwaysOnTop?: boolean;
-    /** 3D 棋盘在中央区的占比（0.5–1，仅 3D 生效；2D 恒满高） */
+    /** 3D 棋盘在中央区的占比（0.5–2，仅 3D 生效；2D 恒满高） */
     board3dScale?: number;
   };
   /** 象棋独立配置 */
@@ -144,12 +157,12 @@ export interface SuperGoApi {
   getSnapshot(): Promise<GameSnapshot>;
   onSnapshot(cb: (snap: GameSnapshot) => void): () => void;
   onEngineStatus(cb: (payload: EngineStatusPayload) => void): () => void;
-  onLiveEval(cb: (evaluation: LiveEval) => void): () => void;
+  onLiveEval(cb: (evaluation: LiveEval | null) => void): () => void;
 
   // 连线（P2）
   linkerListWindows(): Promise<TargetWindow[]>;
   /** 当前前台窗口（"切换到目标窗口后确认"选择模式） */
-  linkerActiveWindow(): Promise<TargetWindow | null>;
+  linkerActiveWindow(): Promise<ActiveWindowPick>;
   linkerStart(intent: LinkerStartIntent): Promise<IntentResult>;
   linkerStop(): void;
   linkerPauseToggle(): void;

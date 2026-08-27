@@ -114,9 +114,26 @@ export type LinkerPhase =
   | 'error' // 出错停止（权限/窗口消失/开局失败）
   | 'stopped'; // 正常停止（含新棋局重定位中的瞬态由 phase 变化表达）
 
+const LINKER_ACTIVE_PHASES = [
+  'locating',
+  'initializing',
+  'scanning',
+  'thinking',
+  'clicking',
+  'paused',
+  'attention',
+] as const satisfies readonly LinkerPhase[];
+
+export type LinkerActivePhase = (typeof LINKER_ACTIVE_PHASES)[number];
+
+/** 连线进行中（含暂停 / 待介入）；idle / stopped / error 不算 */
+export function isLinkerActivePhase(phase: LinkerPhase): phase is LinkerActivePhase {
+  return (LINKER_ACTIVE_PHASES as readonly LinkerPhase[]).includes(phase);
+}
+
 /**
  * 连线状态的结构化原因码（§6.6）。
- * 自由文本只进日志；UI 的提示与建议一律按原因码走 i18n，便于三语与后续扩展。
+ * 只在 attention / error / stopped 有值；定位期临时提示走 locateHint。
  */
 export type LinkerReason =
   | 'user' // 用户主动停止
@@ -128,6 +145,24 @@ export type LinkerReason =
   | 'engineUnavailable' // 开局失败（引擎缺失/启动失败）
   | 'crashed' // 扫描循环未捕获异常
   | 'gameOver'; // 绝杀/困毙，对局结束
+
+/**
+ * 开局定位期提示（只在 locating 有值，离开定位即清空）。
+ * 与 LinkerReason 分开：不是会话终止/待介入，UI 用弱样式，不要套 crashed 红框。
+ */
+export type LocateHint =
+  | 'captureFailed' // 截图失败（最小化 / 未授权录屏）
+  | 'noBoard' // 空帧，几乎看不到棋盘
+  | 'lowConfidence' // 有检测但构不成可靠棋盘
+  | 'noKing' // 两个将都找不到
+  | 'invalidBoard'; // 有框/子但静态校验不过
+
+/** 前台拾取失败原因（不要一律说成「本应用」） */
+export type ActiveWindowPickReason = 'self' | 'tooSmall' | 'emptyTitle' | 'noHandle' | 'error';
+
+export type ActiveWindowPick =
+  | { ok: true; window: TargetWindow }
+  | { ok: false; reason: ActiveWindowPickReason };
 
 /** 连线状态推送（linker:status 事件） */
 export interface LinkerStatus {
@@ -145,6 +180,8 @@ export interface LinkerStatus {
   message: string | null;
   /** 当前状态的结构化原因码（attention / error / stopped 时有值） */
   reason: LinkerReason | null;
+  /** 定位期临时提示（仅 locating；与 reason 互斥） */
+  locateHint: LocateHint | null;
 }
 
 /** 连线日志行（linker:log 事件，UI 滚动显示最近若干条） */

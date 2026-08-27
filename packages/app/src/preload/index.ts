@@ -7,6 +7,7 @@ import {
 } from '../shared/ipc';
 import type { GameSnapshot, LiveEval, NewGameIntent, PlayMoveIntent } from '../shared/game';
 import type {
+  ActiveWindowPick,
   LinkerLogEntry,
   LinkerPermissionId,
   LinkerResolution,
@@ -46,13 +47,13 @@ const api: SuperGoApi = {
     subscribe<GameSnapshot>(IPC_CHANNELS.gameSnapshot, cb),
   onEngineStatus: (cb: (payload: EngineStatusPayload) => void) =>
     subscribe<EngineStatusPayload>(IPC_CHANNELS.engineStatus, cb),
-  onLiveEval: (cb: (evaluation: LiveEval) => void) =>
-    subscribe<LiveEval>(IPC_CHANNELS.gameLiveEval, cb),
+  onLiveEval: (cb: (evaluation: LiveEval | null) => void) =>
+    subscribe<LiveEval | null>(IPC_CHANNELS.gameLiveEval, cb),
 
   linkerListWindows: () =>
     ipcRenderer.invoke(IPC_CHANNELS.linkerListWindows) as Promise<TargetWindow[]>,
   linkerActiveWindow: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.linkerActiveWindow) as Promise<TargetWindow | null>,
+    ipcRenderer.invoke(IPC_CHANNELS.linkerActiveWindow) as Promise<ActiveWindowPick>,
   linkerStart: (intent: LinkerStartIntent) => ipcRenderer.invoke(IPC_CHANNELS.linkerStart, intent),
   linkerStop: () => ipcRenderer.send(IPC_CHANNELS.linkerStop),
   linkerPauseToggle: () => ipcRenderer.send(IPC_CHANNELS.linkerPauseToggle),

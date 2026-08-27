@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { linkerMoveDelayMs, normalizeLinkerMoveDelay } from './linker';
+import { isLinkerActivePhase, linkerMoveDelayMs, normalizeLinkerMoveDelay } from './linker';
 
 describe('normalizeLinkerMoveDelay', () => {
   it('缺字段按 0–0', () => {
@@ -15,6 +15,14 @@ describe('normalizeLinkerMoveDelay', () => {
       minSec: 8,
       maxSec: 2,
     });
+  });
+
+  it('isLinkerActivePhase 不含 idle/stopped/error', () => {
+    expect(isLinkerActivePhase('scanning')).toBe(true);
+    expect(isLinkerActivePhase('attention')).toBe(true);
+    expect(isLinkerActivePhase('idle')).toBe(false);
+    expect(isLinkerActivePhase('stopped')).toBe(false);
+    expect(isLinkerActivePhase('error')).toBe(false);
   });
 
   it('转毫秒时按较小/较大取值', () => {

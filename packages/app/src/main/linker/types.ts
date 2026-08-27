@@ -13,7 +13,7 @@
  * **截图与点击必须同源**：抓帧时把该帧的换算基准（ClickAnchor）一并返回，
  * 点击时把它传回来。否则窗口在两次调用之间移动，点击会整体偏掉一个位移量。
  */
-import type { TargetWindow } from '../../shared/linker';
+import type { ActiveWindowPick, TargetWindow } from '../../shared/linker';
 
 /** RGBA8 交错的原始图像（识别输入） */
 export interface RawImage {
@@ -52,7 +52,7 @@ export interface LinkerNative {
   /** 列举可选窗口（过滤菜单/托盘等杂项，排除自身） */
   listWindows(): Promise<TargetWindow[]>;
   /** 当前前台窗口（"切换到目标窗口后确认"的选择模式用） */
-  activeWindow(): Promise<TargetWindow | null>;
+  activeWindow(): Promise<ActiveWindowPick>;
   /**
    * 截取窗口（按窗口**当前**位置抓帧，连同点击基准返回）。失败（权限/
    * 窗口消失/最小化）返回 null，由上层降级或报错。

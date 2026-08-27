@@ -8,6 +8,7 @@
  */
 import { globalShortcut } from 'electron';
 import type {
+  ActiveWindowPick,
   LinkerLogEntry,
   LinkerPermissionId,
   LinkerPermissionState,
@@ -62,7 +63,7 @@ export class LinkerController {
   }
 
   /** "切换到目标窗口后确认"的选择模式：取当前前台窗口 */
-  async activeWindow(): Promise<TargetWindow | null> {
+  async activeWindow(): Promise<ActiveWindowPick> {
     return this.native.activeWindow();
   }
 

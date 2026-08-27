@@ -23,8 +23,9 @@ describe('decodeDetections', () => {
       [7, 3, 20], // h
       [7, 4 + 0, 0.9], // 类 0 = 'n'
     ]);
-    const dets = decodeDetections(out, 8400, lb, 1280, 640);
+    const { detections: dets, peakScore } = decodeDetections(out, 8400, lb, 1280, 640);
     expect(dets).toHaveLength(1);
+    expect(peakScore).toBeCloseTo(0.9);
     const d = dets[0]!;
     expect(d.label).toBe('n');
     expect(d.score).toBeCloseTo(0.9);
@@ -41,9 +42,10 @@ describe('decodeDetections', () => {
       [1, 4 + 13, 0.6], // 类 13 = 'P' 高于类 14
       [1, 4 + 14, 0.4],
     ]);
-    const dets = decodeDetections(out, 8400, lb, 1280, 640);
+    const { detections: dets, peakScore } = decodeDetections(out, 8400, lb, 1280, 640);
     expect(dets).toHaveLength(1);
     expect(dets[0]!.label).toBe('P');
+    expect(peakScore).toBeCloseTo(0.6);
   });
 
   it('中心点落原图外丢弃', () => {
@@ -52,7 +54,9 @@ describe('decodeDetections', () => {
       [2, 1, 0],
       [2, 4, 0.9],
     ]);
-    expect(decodeDetections(out, 8400, lb, 1280, 640)).toHaveLength(0);
+    const decoded = decodeDetections(out, 8400, lb, 1280, 640);
+    expect(decoded.detections).toHaveLength(0);
+    expect(decoded.peakScore).toBeCloseTo(0.9);
   });
 });
 

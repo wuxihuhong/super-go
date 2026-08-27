@@ -11,7 +11,7 @@
  * （ClickAnchor）随帧返回，点击时用回同一个——否则用户拖动平台窗口就会让点击整体偏掉。
  */
 import { screen } from 'electron';
-import type { TargetWindow, WindowRegion } from '../../shared/linker';
+import type { ActiveWindowPick, TargetWindow, WindowRegion } from '../../shared/linker';
 import { captureWindowMac } from './capture/macWindowCapture';
 import { captureScreenRegion } from './capture/screenCapture';
 import { captureWindowBack } from './capture/winBackCapture';
@@ -50,7 +50,7 @@ export class ElectronLinkerNative implements LinkerNative {
     return nutListWindows();
   }
 
-  activeWindow(): Promise<TargetWindow | null> {
+  activeWindow(): Promise<ActiveWindowPick> {
     return nutActiveWindow();
   }
 

@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  ActiveWindowPickReason,
   LinkerLogEntry,
+  LinkerPermissionId,
   LinkerPermissionState,
-  LinkerReason,
   LinkerResolution,
   LinkerStartIntent,
   LinkerStatus,
   TargetWindow,
 } from '@shared/ipc';
-import type { TFunction } from '../i18n';
+import type { MessageKey, TFunction } from '../i18n';
+import { LinkerResolveActions, linkerPhaseActive } from './LinkerLiveStatus';
 
 export interface LinkerPanelProps {
   t: TFunction;
@@ -20,54 +22,46 @@ export interface LinkerPanelProps {
   onResolve: (resolution: LinkerResolution) => void;
 }
 
-const ACTIVE_PHASES: ReadonlySet<string> = new Set([
-  'locating',
-  'initializing',
-  'scanning',
-  'thinking',
-  'clicking',
-  'paused',
-  'attention', // 待人工介入时连线仍在跑（§6.6），面板保持激活形态
-]);
+const PERMISSION_LABEL: Record<LinkerPermissionId, MessageKey> = {
+  screen: 'linker.permission.screen',
+  accessibility: 'linker.permission.accessibility',
+  'input-monitoring': 'linker.permission.inputMonitoring',
+};
 
-/** 待人工介入时给出的决断按钮（顺序 = 推荐顺序） */
-const RESOLUTIONS: readonly LinkerResolution[] = ['retry', 'resync', 'spectate'];
-
-/** 用户主动停止不算"出问题"，不显示告警块 */
-const SILENT_REASONS: ReadonlySet<LinkerReason> = new Set<LinkerReason>(['user', 'shortcut']);
-
-const PHASE_KEY: Record<string, string> = {
-  idle: 'linker.phase.idle',
-  locating: 'linker.phase.locating',
-  initializing: 'linker.phase.initializing',
-  scanning: 'linker.phase.scanning',
-  thinking: 'linker.phase.thinking',
-  clicking: 'linker.phase.clicking',
-  paused: 'linker.phase.paused',
-  attention: 'linker.phase.attention',
-  error: 'linker.phase.error',
-  stopped: 'linker.phase.stopped',
+const PICK_REASON_KEY: Record<ActiveWindowPickReason, MessageKey> = {
+  self: 'linker.window.pick.self',
+  tooSmall: 'linker.window.pick.tooSmall',
+  emptyTitle: 'linker.window.pick.emptyTitle',
+  noHandle: 'linker.window.pick.noHandle',
+  error: 'linker.window.pick.error',
 };
 
 /**
- * 连线面板（§6.1）：选目标窗口 → 选模式（执红/执黑/观战）→ 启动；
- * 激活后显示识别状态与日志，可暂停/停止（全局急停 ⌘/Ctrl+Shift+X 在
- * main 注册）。macOS 权限不足时给授权引导。
+ * 连线面板（§6.1）：选目标窗口 → 启动。
+ * 即时状态与报错在侧栏着法区（LinkerLiveStatus），此处只保留选窗 / 权限 / 启停 / 日志。
  */
 export default function LinkerPanel(props: LinkerPanelProps) {
   const [windows, setWindows] = useState<TargetWindow[] | null>(null);
   const [windowId, setWindowId] = useState<number | null>(null);
+  const [filter, setFilter] = useState('');
   const [permissions, setPermissions] = useState<LinkerPermissionState[]>([]);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [pickReason, setPickReason] = useState<ActiveWindowPickReason | null>(null);
   const countdownTimer = useRef<number | null>(null);
 
-  const active = props.status !== null && ACTIVE_PHASES.has(props.status.phase);
+  const active = linkerPhaseActive(props.status);
   const t = props.t;
+
+  const visible = useMemo(() => {
+    if (windows === null) return null;
+    const q = filter.trim().toLowerCase();
+    if (q === '') return windows;
+    return windows.filter((w) => w.title.toLowerCase().includes(q));
+  }, [windows, filter]);
 
   const refreshWindows = useCallback(() => {
     void window.superGo.linkerListWindows().then((list) => {
       setWindows(list);
-      setWindowId((cur) => (cur !== null && list.some((w) => w.id === cur) ? cur : (list[0]?.id ?? null)));
     });
   }, []);
 
@@ -79,10 +73,22 @@ export default function LinkerPanel(props: LinkerPanelProps) {
     };
   }, [refreshWindows]);
 
+  useEffect(() => {
+    if (windows === null) return;
+    setWindowId((cur) => {
+      if (cur !== null && windows.some((w) => w.id === cur)) return cur;
+      return windows[0]?.id ?? null;
+    });
+  }, [windows]);
+
+  const canStart =
+    windowId !== null && visible !== null && visible.some((w) => w.id === windowId);
+
   /** "切换到目标窗口后确认"：3 秒倒计时后取前台窗口 */
   const pickActiveWindow = (): void => {
     if (countdown !== null) return;
     let remain = 3;
+    setPickReason(null);
     setCountdown(remain);
     countdownTimer.current = window.setInterval(() => {
       remain -= 1;
@@ -90,10 +96,15 @@ export default function LinkerPanel(props: LinkerPanelProps) {
         window.clearInterval(countdownTimer.current!);
         countdownTimer.current = null;
         setCountdown(null);
-        void window.superGo.linkerActiveWindow().then((win) => {
-          if (win !== null) {
+        void window.superGo.linkerActiveWindow().then((pick) => {
+          if (pick.ok) {
+            const win = pick.window;
+            setFilter('');
             setWindows((cur) => [win, ...(cur ?? []).filter((w) => w.id !== win.id)]);
             setWindowId(win.id);
+            setPickReason(null);
+          } else {
+            setPickReason(pick.reason);
           }
         });
         return;
@@ -103,31 +114,41 @@ export default function LinkerPanel(props: LinkerPanelProps) {
   };
 
   const start = (): void => {
-    if (windowId === null) return;
+    if (!canStart || windowId === null) return;
     props.onStart({ windowId });
   };
 
+  const emptyText =
+    windows !== null && windows.length > 0 && visible !== null && visible.length === 0
+      ? t('linker.window.noMatch')
+      : t('linker.window.empty');
+
   return (
     <div className="max-h-[80vh] w-96 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-xl">
-      {/* 目标窗口 */}
       <section className="mb-3">
         <h3 className="mb-1.5 flex items-center justify-between px-1 text-xs font-semibold text-muted-foreground">
           <span>{t('linker.window')}</span>
-          <span className="flex items-center gap-1 font-normal">
-            <button
-              type="button"
-              onClick={refreshWindows}
-              className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-accent"
-            >
-              {t('linker.window.refresh')}
-            </button>
-          </span>
+          <button
+            type="button"
+            onClick={refreshWindows}
+            className="rounded-md px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground transition-colors hover:text-accent"
+          >
+            {t('linker.window.refresh')}
+          </button>
         </h3>
+        <input
+          type="search"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder={t('linker.window.filter')}
+          aria-label={t('linker.window.filter')}
+          className="mb-1.5 w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+        />
         <div className="max-h-40 overflow-y-auto rounded-lg border border-border bg-background">
-          {windows === null ? null : windows.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-muted-foreground">{t('linker.window.empty')}</div>
+          {visible === null ? null : visible.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">{emptyText}</div>
           ) : (
-            windows.map((w) => (
+            visible.map((w) => (
               <button
                 key={w.id}
                 type="button"
@@ -157,9 +178,13 @@ export default function LinkerPanel(props: LinkerPanelProps) {
             ? t('linker.window.pickActive.countdown').replace('{s}', String(countdown))
             : t('linker.window.pickActive')}
         </button>
+        {pickReason !== null && (
+          <p className="mt-1 px-1 text-[11px] leading-snug text-danger">
+            {t(PICK_REASON_KEY[pickReason])}
+          </p>
+        )}
       </section>
 
-      {/* macOS 权限 */}
       {!active && permissions.length > 0 && (
         <section className="mb-3">
           <h3 className="mb-1.5 px-1 text-xs font-semibold text-muted-foreground">
@@ -172,7 +197,7 @@ export default function LinkerPanel(props: LinkerPanelProps) {
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${p.granted ? 'bg-accent' : 'bg-danger'}`}
                   />
-                  {t(`linker.permission.${p.id}` as never)}
+                  {t(PERMISSION_LABEL[p.id])}
                 </span>
                 {p.granted ? (
                   <span className="text-[11px] text-muted-foreground">
@@ -193,91 +218,34 @@ export default function LinkerPanel(props: LinkerPanelProps) {
         </section>
       )}
 
-      {/* 状态与控制 */}
       <section>
-        <h3 className="mb-1.5 flex items-center gap-2 px-1 text-xs font-semibold text-muted-foreground">
-          <span
-            className={`h-2 w-2 rounded-full ${
-              !active
-                ? 'bg-muted-foreground/50'
-                : props.status?.phase === 'attention'
-                  ? 'bg-danger'
-                  : props.status?.phase === 'paused'
-                    ? 'bg-muted-foreground'
-                    : 'animate-pulse bg-accent'
-            }`}
-          />
-          {t((PHASE_KEY[props.status?.phase ?? 'idle'] ?? 'linker.phase.idle') as never)}
-          {active && props.status !== null && (
-            <span className="font-normal text-muted-foreground">
-              ·{' '}
-              {t('linker.status.fps')
-                .replace('{fps}', String(props.status.fps))
-                .replace('{ms}', String(props.status.inferMs))}
-              {props.status.reversed ? ` · ${t('linker.status.reversed')}` : ''}
-            </span>
-          )}
-        </h3>
-        {active && props.status !== null && (
-          <div className="mb-1.5 px-1 text-[11px] text-muted-foreground">
-            {t('linker.status.moves').replace('{n}', String(props.status.moves))} ·{' '}
-            {t('linker.emergency')}
-          </div>
-        )}
-        {/* 出问题时的原因 + 建议 + 决断（§6.6）：连线不再无声终止 */}
-        {props.status !== null &&
-          props.status.reason !== null &&
-          !SILENT_REASONS.has(props.status.reason) && (
-            <div className="mb-2 rounded-lg border border-danger/40 bg-danger/5 p-2.5">
-              <div className="text-xs font-medium text-danger">
-                {t(`linker.reason.${props.status.reason}` as never)}
-              </div>
-              <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                {t(`linker.reason.${props.status.reason}.hint` as never)}
-              </div>
-              {props.status.message !== null && (
-                <div className="mt-1 font-mono text-[10px] break-all text-muted-foreground/70">
-                  {props.status.message}
-                </div>
-              )}
-              {props.status.phase === 'attention' && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {RESOLUTIONS.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => props.onResolve(r)}
-                      className="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground/80 transition-colors hover:border-accent hover:text-accent"
-                    >
-                      {t(`linker.resolve.${r}` as never)}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         {active ? (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={props.onStop}
-              className="flex-1 rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-background"
-            >
-              {t('linker.stop')}
-            </button>
-            <button
-              type="button"
-              onClick={props.onPauseToggle}
-              className="flex-1 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
-            >
-              {props.status?.phase === 'paused' ? t('linker.resume') : t('linker.pause')}
-            </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={props.onStop}
+                className="flex-1 rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-background"
+              >
+                {t('linker.stop')}
+              </button>
+              <button
+                type="button"
+                onClick={props.onPauseToggle}
+                className="flex-1 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+              >
+                {props.status?.phase === 'paused' ? t('linker.resume') : t('linker.pause')}
+              </button>
+            </div>
+            {props.status?.phase === 'attention' && (
+              <LinkerResolveActions t={t} onResolve={props.onResolve} />
+            )}
           </div>
         ) : (
           <button
             type="button"
             onClick={start}
-            disabled={windowId === null}
+            disabled={!canStart}
             className="w-full rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground disabled:opacity-40"
           >
             {t('linker.start')}
@@ -285,7 +253,6 @@ export default function LinkerPanel(props: LinkerPanelProps) {
         )}
       </section>
 
-      {/* 日志 */}
       {props.logs.length > 0 && (
         <section className="mt-3">
           <h3 className="mb-1.5 px-1 text-xs font-semibold text-muted-foreground">
@@ -295,7 +262,13 @@ export default function LinkerPanel(props: LinkerPanelProps) {
             {props.logs.slice(-12).map((entry, i) => (
               <div
                 key={`${entry.time}-${i}`}
-                className={entry.level === 'warn' ? 'text-foreground' : entry.level === 'error' ? 'text-danger' : ''}
+                className={
+                  entry.level === 'warn'
+                    ? 'text-foreground'
+                    : entry.level === 'error'
+                      ? 'text-danger'
+                      : ''
+                }
               >
                 [{new Date(entry.time).toLocaleTimeString()}] {entry.text}
               </div>

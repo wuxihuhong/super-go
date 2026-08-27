@@ -12,6 +12,8 @@ import { guessCpuThreads, resolveCpuThreads } from '../lib/cpuThreads';
 import StrengthFields from './StrengthFields';
 import type { TFunction } from '../i18n';
 
+type SettingsTab = 'common' | 'xiangqi' | 'linker';
+
 export interface SettingsPanelProps {
   t: TFunction;
   /** 语言切换需 App 同步本地 lang 状态（即时生效，§7.5） */
@@ -20,13 +22,13 @@ export interface SettingsPanelProps {
 
 /**
  * 设置（固有配置，§7.5 + 用户定义的配置模型）：
- * 通用（主题/语言，公有）+ 象棋（引擎路径/棋力/闲时思考，与其他棋种独立持久化）。
- * 棋力对局中实时生效（main 侧 settingsSet → match.refreshStrength）。
+ * 三个 Tab：通用 / 象棋 / 象棋连线。棋力对局中实时生效。
  */
 export default function SettingsPanel(props: SettingsPanelProps) {
   const [settings, setSettingsState] = useState<AppSettings | null>(null);
   const [platform, setPlatform] = useState<string>('');
   const [cpuThreads, setCpuThreads] = useState(guessCpuThreads);
+  const [tab, setTab] = useState<SettingsTab>('common');
 
   useEffect(() => {
     void window.superGo.getSettings().then(setSettingsState);
@@ -101,6 +103,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
     value: T | undefined,
     onSelect: (value: T) => void,
     disabled = false,
+    stretch = false,
   ): React.JSX.Element => (
     <div className={`flex rounded-lg bg-background p-0.5 ${disabled ? 'opacity-40' : ''}`}>
       {options.map((option) => (
@@ -109,7 +112,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
           type="button"
           disabled={disabled}
           onClick={() => onSelect(option.value)}
-          className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+          className={`${stretch ? 'min-w-0 flex-1 truncate px-1.5' : 'px-2.5'} rounded-md py-1 text-xs transition-colors ${
             value === option.value
               ? 'bg-surface text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
@@ -123,188 +126,187 @@ export default function SettingsPanel(props: SettingsPanelProps) {
 
   if (strength === null) return <div className="w-96" />;
 
+  const tabs: ReadonlyArray<{ value: SettingsTab; label: string }> = [
+    { value: 'common', label: props.t('settings.common') },
+    { value: 'xiangqi', label: props.t('settings.xiangqi') },
+    { value: 'linker', label: props.t('settings.linker') },
+  ];
+
   return (
     <div className="max-h-[80vh] w-96 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-xl">
-      {/* 通用（公有配置） */}
-      <Section title={props.t('settings.common')}>
-        <Row label={props.t('settings.theme')}>
-          {segmented(
-            [
-              { value: 'system' as ThemeSetting, label: props.t('settings.theme.system') },
-              { value: 'light' as ThemeSetting, label: props.t('settings.theme.light') },
-              { value: 'dark' as ThemeSetting, label: props.t('settings.theme.dark') },
-            ],
-            settings?.theme ?? 'system',
-            (theme) => patch({ theme }),
-          )}
-        </Row>
-        <Row label={props.t('settings.language')}>
-          {segmented(
-            [
-              { value: 'zh' as LanguageCode, label: '中文' },
-              { value: 'en' as LanguageCode, label: 'English' },
-              { value: 'ja' as LanguageCode, label: '日本語' },
-            ],
-            settings?.language,
-            (language) => patch({ language }),
-          )}
-        </Row>
-        <Row label={props.t('settings.sound')}>
-          {segmented(
-            [
-              { value: 'true', label: props.t('settings.sound.on') },
-              { value: 'false', label: props.t('settings.sound.off') },
-            ],
-            (settings?.sound ?? true) ? 'true' : 'false',
-            (value) => patch({ sound: value === 'true' }),
-          )}
-        </Row>
-        <Row label={props.t('settings.view.board3d')} hint={props.t('settings.view.board3d.hint')}>
-          {segmented(
-            [
-              { value: 'true', label: props.t('settings.sound.on') },
-              { value: 'false', label: props.t('settings.sound.off') },
-            ],
-            (settings?.view?.board3d ?? true) ? 'true' : 'false',
-            (value) => patch({ view: { board3d: value === 'true' } }),
-          )}
-        </Row>
-      </Section>
+      <div className="mb-3">
+        {segmented(tabs, tab, setTab, false, true)}
+      </div>
 
-      {/* 象棋（棋种独立配置） */}
-      <Section title={props.t('settings.xiangqi')}>
-        <Row label={props.t('settings.enginePath')} hint={props.t('settings.enginePath.rowHint')}>
-          <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
-            <input
-              type="text"
-              aria-label={props.t('settings.enginePath')}
-              placeholder={props.t('settings.enginePath.hint')}
-              defaultValue={settings?.xiangqi?.enginePath ?? ''}
-              onBlur={(e) => {
-                const value = e.target.value.trim();
-                if (value !== (settings?.xiangqi?.enginePath ?? '')) {
-                  patchXiangqi({ enginePath: value });
-                }
-              }}
-              className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                void window.superGo.pickEnginePath().then((path) => {
-                  if (path !== null && path !== '') patchXiangqi({ enginePath: path });
-                });
-              }}
-              className="shrink-0 whitespace-nowrap rounded-md border border-border bg-surface px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
-            >
-              {props.t('settings.browse')}
-            </button>
-          </span>
-        </Row>
-        <StrengthFields
-          t={props.t}
-          strength={strength}
-          cpuThreads={cpuThreads}
-          onPatch={patchStrength}
-        />
-        <Row label={props.t('settings.ponder')}>
-          <span className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{props.t('settings.ponder.p2')}</span>
-            {/* P3 接通引擎后启用（§5.9），先不做可切换的假开关 */}
-            <span className="relative h-4 w-7 rounded-full bg-border opacity-60" />
-          </span>
-        </Row>
-      </Section>
+      {tab === 'common' && (
+        <Section>
+          <Row label={props.t('settings.theme')}>
+            {segmented(
+              [
+                { value: 'system' as ThemeSetting, label: props.t('settings.theme.system') },
+                { value: 'light' as ThemeSetting, label: props.t('settings.theme.light') },
+                { value: 'dark' as ThemeSetting, label: props.t('settings.theme.dark') },
+              ],
+              settings?.theme ?? 'system',
+              (theme) => patch({ theme }),
+            )}
+          </Row>
+          <Row label={props.t('settings.language')}>
+            {segmented(
+              [
+                { value: 'zh' as LanguageCode, label: '中文' },
+                { value: 'en' as LanguageCode, label: 'English' },
+                { value: 'ja' as LanguageCode, label: '日本語' },
+              ],
+              settings?.language,
+              (language) => patch({ language }),
+            )}
+          </Row>
+          <Row label={props.t('settings.sound')}>
+            {segmented(
+              onOff,
+              (settings?.sound ?? true) ? 'true' : 'false',
+              (value) => patch({ sound: value === 'true' }),
+            )}
+          </Row>
+          <Row label={props.t('settings.view.board3d')} hint={props.t('settings.view.board3d.hint')}>
+            {segmented(
+              onOff,
+              (settings?.view?.board3d ?? true) ? 'true' : 'false',
+              (value) => patch({ view: { board3d: value === 'true' } }),
+            )}
+          </Row>
+        </Section>
+      )}
 
-      {/* 连线（§6.5 参数） */}
-      <Section title={props.t('settings.linker')}>
-        {numberField(props.t('settings.linker.scanInterval'), linker.scanIntervalMs, 20, 2000, (v) =>
-          patchLinker({ scanIntervalMs: v }),
-        )}
-        {numberField(props.t('settings.linker.holdMs'), linker.clickHoldMs, 0, 500, (v) =>
-          patchLinker({ clickHoldMs: v }),
-        )}
-        {numberField(props.t('settings.linker.betweenMs'), linker.clickBetweenMs, 0, 2000, (v) =>
-          patchLinker({ clickBetweenMs: v }),
-        )}
-        {numberField(
-          props.t('settings.linker.moveDelayMin'),
-          linker.moveDelayMinSec,
-          0,
-          LINKER_MOVE_DELAY_MAX_SEC,
-          (v) => patchMoveDelay({ moveDelayMinSec: v }),
-          0.1,
-          props.t('settings.linker.moveDelay.hint'),
-        )}
-        {numberField(
-          props.t('settings.linker.moveDelayMax'),
-          linker.moveDelayMaxSec,
-          0,
-          LINKER_MOVE_DELAY_MAX_SEC,
-          (v) => patchMoveDelay({ moveDelayMaxSec: v }),
-          0.1,
-        )}
-        <Row
-          label={props.t('settings.linker.animation')}
-          hint={props.t('settings.linker.animation.hint')}
-        >
-          {segmented(
-            [
-              { value: 'true', label: props.t('settings.sound.on') },
-              { value: 'false', label: props.t('settings.sound.off') },
-            ],
-            linker.animationConfirm ? 'true' : 'false',
-            (value) => patchLinker({ animationConfirm: value === 'true' }),
+      {tab === 'xiangqi' && (
+        <Section>
+          <Row label={props.t('settings.enginePath')} hint={props.t('settings.enginePath.rowHint')}>
+            <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
+              <input
+                type="text"
+                aria-label={props.t('settings.enginePath')}
+                placeholder={props.t('settings.enginePath.hint')}
+                defaultValue={settings?.xiangqi?.enginePath ?? ''}
+                onBlur={(e) => {
+                  const value = e.target.value.trim();
+                  if (value !== (settings?.xiangqi?.enginePath ?? '')) {
+                    patchXiangqi({ enginePath: value });
+                  }
+                }}
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  void window.superGo.pickEnginePath().then((path) => {
+                    if (path !== null && path !== '') patchXiangqi({ enginePath: path });
+                  });
+                }}
+                className="shrink-0 whitespace-nowrap rounded-md border border-border bg-surface px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+              >
+                {props.t('settings.browse')}
+              </button>
+            </span>
+          </Row>
+          <StrengthFields
+            t={props.t}
+            strength={strength}
+            cpuThreads={cpuThreads}
+            onPatch={patchStrength}
+          />
+          <Row label={props.t('settings.ponder')}>
+            <span className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{props.t('settings.ponder.p2')}</span>
+              {/* P3 接通引擎后启用（§5.9），先不做可切换的假开关 */}
+              <span className="relative h-4 w-7 rounded-full bg-border opacity-60" />
+            </span>
+          </Row>
+        </Section>
+      )}
+
+      {tab === 'linker' && (
+        <Section>
+          {numberField(props.t('settings.linker.scanInterval'), linker.scanIntervalMs, 20, 2000, (v) =>
+            patchLinker({ scanIntervalMs: v }),
           )}
-        </Row>
-        <Row
-          label={props.t('settings.linker.threads')}
-          hint={props.t('settings.linker.threads.hint')}
-        >
-          {segmented(
-            [1, 2, 4].map((n) => ({ value: String(n), label: String(n) })),
-            String(linker.inferThreads),
-            (value) => patchLinker({ inferThreads: Number(value) }),
+          {numberField(props.t('settings.linker.holdMs'), linker.clickHoldMs, 0, 500, (v) =>
+            patchLinker({ clickHoldMs: v }),
           )}
-        </Row>
-        <Row
-          label={props.t('settings.linker.bgCapture')}
-          hint={props.t('settings.linker.bgCapture.hint')}
-        >
-          {segmented(
-            onOff,
-            linker.backgroundCapture ? 'true' : 'false',
-            (value) => patchLinker({ backgroundCapture: value === 'true' }),
+          {numberField(props.t('settings.linker.betweenMs'), linker.clickBetweenMs, 0, 2000, (v) =>
+            patchLinker({ clickBetweenMs: v }),
           )}
-        </Row>
-        <Row
-          label={props.t('settings.linker.bgClick')}
-          hint={props.t(
-            canBackgroundClick ? 'settings.linker.bgClick.hint' : 'settings.linker.bgClick.unsupported',
+          {numberField(
+            props.t('settings.linker.moveDelayMin'),
+            linker.moveDelayMinSec,
+            0,
+            LINKER_MOVE_DELAY_MAX_SEC,
+            (v) => patchMoveDelay({ moveDelayMinSec: v }),
+            0.1,
+            props.t('settings.linker.moveDelay.hint'),
           )}
-        >
-          {segmented(
-            onOff,
-            canBackgroundClick && linker.backgroundClick ? 'true' : 'false',
-            (value) => patchLinker({ backgroundClick: value === 'true' }),
-            !canBackgroundClick,
+          {numberField(
+            props.t('settings.linker.moveDelayMax'),
+            linker.moveDelayMaxSec,
+            0,
+            LINKER_MOVE_DELAY_MAX_SEC,
+            (v) => patchMoveDelay({ moveDelayMaxSec: v }),
+            0.1,
           )}
-        </Row>
-      </Section>
+          <Row
+            label={props.t('settings.linker.animation')}
+            hint={props.t('settings.linker.animation.hint')}
+          >
+            {segmented(
+              onOff,
+              linker.animationConfirm ? 'true' : 'false',
+              (value) => patchLinker({ animationConfirm: value === 'true' }),
+            )}
+          </Row>
+          <Row
+            label={props.t('settings.linker.threads')}
+            hint={props.t('settings.linker.threads.hint')}
+          >
+            {segmented(
+              [1, 2, 4].map((n) => ({ value: String(n), label: String(n) })),
+              String(linker.inferThreads),
+              (value) => patchLinker({ inferThreads: Number(value) }),
+            )}
+          </Row>
+          <Row
+            label={props.t('settings.linker.bgCapture')}
+            hint={props.t('settings.linker.bgCapture.hint')}
+          >
+            {segmented(
+              onOff,
+              linker.backgroundCapture ? 'true' : 'false',
+              (value) => patchLinker({ backgroundCapture: value === 'true' }),
+            )}
+          </Row>
+          <Row
+            label={props.t('settings.linker.bgClick')}
+            hint={props.t(
+              canBackgroundClick
+                ? 'settings.linker.bgClick.hint'
+                : 'settings.linker.bgClick.unsupported',
+            )}
+          >
+            {segmented(
+              onOff,
+              canBackgroundClick && linker.backgroundClick ? 'true' : 'false',
+              (value) => patchLinker({ backgroundClick: value === 'true' }),
+              !canBackgroundClick,
+            )}
+          </Row>
+        </Section>
+      )}
     </div>
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
+function Section({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <section className="mb-3 last:mb-0">
-      <h3 className="mb-1.5 px-1 text-xs font-semibold text-muted-foreground">{title}</h3>
+    <section>
       <div className="divide-y divide-border rounded-lg border border-border bg-background">
         {children}
       </div>
