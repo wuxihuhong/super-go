@@ -13,6 +13,7 @@ export type EngineStatus =
   | 'launching' // 握手中
   | 'ready' // 空闲
   | 'thinking' // 搜索中
+  | 'delaying' // 已算出着法，拟人延迟待落子
   | 'crashed' // 异常退出（等待自动重启）
   | 'quit'; // 正常关闭
 

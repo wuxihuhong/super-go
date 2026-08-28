@@ -104,6 +104,10 @@ export interface XiangqiGameSettings {
   strength: Partial<XiangqiStrengthConfig>;
   /** 闲时思考（§5.9；P2 接通引擎，先持久化配置位） */
   ponder?: boolean;
+  /** 引擎算完后、落子前的随机等待下限（秒，0–15；本机与连线共用） */
+  moveDelayMinSec?: number;
+  /** 同上，随机等待上限（秒，0–15；小于下限时出招按两端对调） */
+  moveDelayMaxSec?: number;
 }
 
 export interface AppSettings {
@@ -131,6 +135,8 @@ export interface AppSettings {
 export interface EngineStatusPayload {
   status: EngineStatus;
   name: string | null;
+  /** status === 'delaying' 时的本次延迟秒数 */
+  delaySec?: number;
 }
 
 /** preload 暴露给 renderer 的 API 形状（window.superGo） */

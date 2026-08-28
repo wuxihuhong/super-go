@@ -42,9 +42,12 @@ const binary = findBinary();
 describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
   it('开局 → 应招 → 悔棋 → 认输 → 复盘续弈 → 互搏观战', { timeout: 120_000 }, async () => {
     const snapshots: GameSnapshot[] = [];
+    const statuses: string[] = [];
     const events: MatchEvents = {
       snapshot: (snap) => snapshots.push(snap),
-      engineStatus: () => {},
+      engineStatus: (status) => {
+        statuses.push(status);
+      },
       liveEval: () => {},
     };
     let strengthOverride: { mode: 'elo' | 'time'; elo?: number; movetime?: number } = {
@@ -85,6 +88,8 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     expect(replied.moves[1]!.notation).not.toBe('');
     expect(replied.turn).toBe('first'); // 又轮到用户
     expect(replied.moves[1]!.redCp).not.toBeUndefined(); // 引擎评估挂在引擎应招上
+    expect(statuses).toContain('delaying');
+    expect(snapshots.some((s) => s.playDelaySec !== undefined)).toBe(true);
 
     // 对局中实时调整棋力（设置联动通路）
     strengthOverride = { mode: 'time', movetime: 300 };

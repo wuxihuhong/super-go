@@ -1,7 +1,8 @@
 import type { GameSnapshot } from '@shared/game';
 import type { EngineStatusPayload, LiveEval } from '@shared/ipc';
-import { evalValueText } from '../lib/eval';
-import type { MessageKey, TFunction } from '../i18n';
+import { engineStatusText } from '../lib/engineStatusText';
+import { evalValueText, resolveDisplayedEval } from '../lib/eval';
+import type { TFunction } from '../i18n';
 
 export interface StatusBarProps {
   t: TFunction;
@@ -14,29 +15,32 @@ export interface StatusBarProps {
 /** 窗口底栏：引擎 / 状态 / 强度 / 深度 / 优势（侧栏不再竖排这些字段） */
 export default function StatusBar(props: StatusBarProps): React.JSX.Element {
   const { t, snapshot, engineStatus } = props;
-  const live = props.liveEval;
-  const evalText = evalValueText(
-    t,
-    live?.redCp ?? snapshot?.redCp,
-    live?.redMate ?? snapshot?.redMate,
-    props.boardFlipped,
-  );
-  const depth = live?.depth !== undefined ? String(live.depth) : '—';
-  const statusKey =
-    engineStatus === undefined || engineStatus === null
-      ? null
-      : (`panel.engine.status.${engineStatus.status}` as MessageKey);
+  const shown = resolveDisplayedEval(props.liveEval, snapshot);
+  const evalText = evalValueText(t, shown.redCp, shown.redMate, props.boardFlipped);
+  const depth = shown.depth !== undefined ? String(shown.depth) : '—';
+
+  const items = [
+    { label: t('panel.engine'), value: engineStatus?.name ?? '—' },
+    {
+      label: t('statusbar.status'),
+      value: engineStatusText(t, engineStatus, snapshot?.playDelaySec),
+    },
+    {
+      label: t('panel.engine.strength'),
+      value: snapshot?.strengthLabel ?? t('panel.engine.unlimited'),
+    },
+    { label: t('panel.engine.depth'), value: depth },
+    { label: t('panel.engine.eval'), value: evalText.text },
+  ];
 
   return (
-    <footer className="flex h-8 shrink-0 items-center gap-x-5 overflow-x-auto border-t border-border bg-surface px-4 text-xs">
-      <Item label={t('panel.engine')} value={engineStatus?.name ?? '—'} />
-      <Item label={t('statusbar.status')} value={statusKey !== null ? t(statusKey) : '—'} />
-      <Item
-        label={t('panel.engine.strength')}
-        value={snapshot?.strengthLabel ?? t('panel.engine.unlimited')}
-      />
-      <Item label={t('panel.engine.depth')} value={depth} />
-      <Item label={t('panel.engine.eval')} value={evalText.text} />
+    <footer className="flex h-8 shrink-0 items-center overflow-x-auto border-t border-border bg-surface px-4 text-xs">
+      {items.map((item, i) => (
+        <span key={item.label} className="flex shrink-0 items-center">
+          {i > 0 && <span className="mx-4 h-3 w-px bg-muted-foreground/35" aria-hidden />}
+          <Item label={item.label} value={item.value} />
+        </span>
+      ))}
     </footer>
   );
 }

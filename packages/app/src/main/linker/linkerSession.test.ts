@@ -37,8 +37,6 @@ const SETTINGS: LinkerSettings = {
   inferThreads: 2,
   backgroundCapture: true,
   backgroundClick: false,
-  moveDelayMinSec: 0,
-  moveDelayMaxSec: 0,
 };
 
 const WINDOW: TargetWindow = {

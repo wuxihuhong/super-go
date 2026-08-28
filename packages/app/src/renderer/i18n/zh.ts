@@ -24,6 +24,7 @@ export default {
   'status.turn.red': '红方行棋',
   'status.turn.black': '黑方行棋',
   'status.thinking': '引擎思考中…',
+  'status.delaying': '延迟{n}秒',
   'status.check': '将军！',
   'status.result.redWin': '红方胜',
   'status.result.blackWin': '黑方胜',
@@ -46,6 +47,7 @@ export default {
   'panel.engine.status.launching': '启动中',
   'panel.engine.status.ready': '就绪',
   'panel.engine.status.thinking': '思考中',
+  'panel.engine.status.delaying': '延迟{n}秒',
   'panel.engine.status.crashed': '崩溃重启中',
   'panel.engine.status.quit': '已退出',
   'panel.empty': '尚无着法',
@@ -85,6 +87,11 @@ export default {
   'settings.strength.hash.hint': '置换表 MB（1–32768）。越大长考越稳，占内存。对局结束不复位',
   'settings.enginePath.rowHint':
     '本地 Pikafish 可执行文件；留空自动探测 engines/chess，修改后下一局生效',
+  'settings.moveDelay': '行棋延迟 (s)',
+  'settings.moveDelay.min': '最短',
+  'settings.moveDelay.max': '最长',
+  'settings.moveDelay.hint':
+    '引擎算完后随机等待再落子（本机与连线共用）。0–15 秒；两端都为 0 则立即走',
   'settings.ponder': '闲时思考',
   'settings.ponder.p2': '即将支持（P3 接通引擎）',
   'toolbar.pause': '暂停',
@@ -187,10 +194,6 @@ export default {
   'settings.linker.scanInterval': '扫描间隔 (ms)',
   'settings.linker.holdMs': '点击按住 (ms)',
   'settings.linker.betweenMs': '两击间隔 (ms)',
-  'settings.linker.moveDelayMin': '行棋延迟最短 (s)',
-  'settings.linker.moveDelayMax': '行棋延迟最长 (s)',
-  'settings.linker.moveDelay.hint':
-    '引擎算完后，在此范围内随机等待再落子。0–15 秒；两端都为 0 则算完立即走',
   'settings.linker.animation': '动画确认',
   'settings.linker.animation.hint': '平台走子有动画时必须开，等动画播完再识别（防中途帧误判）',
   'settings.linker.threads': '识别线程数',

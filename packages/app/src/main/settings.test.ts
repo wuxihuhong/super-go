@@ -51,4 +51,34 @@ describe('migrateSettings', () => {
     expect(out.linker).toBeUndefined();
     expect(out.xiangqi).toBeUndefined();
   });
+
+  it('连线里显式设过的行棋延迟迁到 xiangqi，并从 linker 去掉', () => {
+    const out = migrateSettings({
+      linker: { scanIntervalMs: 80, moveDelayMinSec: 1, moveDelayMaxSec: 8 },
+    });
+    expect(out.xiangqi?.moveDelayMinSec).toBe(1);
+    expect(out.xiangqi?.moveDelayMaxSec).toBe(8);
+    expect(out.linker?.scanIntervalMs).toBe(80);
+    expect(out.linker).not.toHaveProperty('moveDelayMinSec');
+    expect(out.linker).not.toHaveProperty('moveDelayMaxSec');
+  });
+
+  it('连线延迟为默认 0–0 不覆盖：旧文件一律写出过 0–0，无法与「显式立即走」区分，本机仍走 0.3–0.9', () => {
+    const out = migrateSettings({
+      linker: { moveDelayMinSec: 0, moveDelayMaxSec: 0 },
+    });
+    expect(out.xiangqi?.moveDelayMinSec).toBeUndefined();
+    expect(out.xiangqi?.moveDelayMaxSec).toBeUndefined();
+    expect(out.linker).not.toHaveProperty('moveDelayMinSec');
+  });
+
+  it('已有 xiangqi 延迟时不被旧连线字段覆盖', () => {
+    const out = migrateSettings({
+      xiangqi: { strength: {}, moveDelayMinSec: 0.3, moveDelayMaxSec: 0.9 },
+      linker: { moveDelayMinSec: 2, moveDelayMaxSec: 5 },
+    });
+    expect(out.xiangqi?.moveDelayMinSec).toBe(0.3);
+    expect(out.xiangqi?.moveDelayMaxSec).toBe(0.9);
+    expect(out.linker).not.toHaveProperty('moveDelayMinSec');
+  });
 });

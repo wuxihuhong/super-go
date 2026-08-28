@@ -21,6 +21,7 @@ export default {
   'status.turn.red': '赤の手番',
   'status.turn.black': '黒の手番',
   'status.thinking': 'エンジン思考中…',
+  'status.delaying': '遅延{n}秒',
   'status.check': '王手！',
   'status.result.redWin': '赤の勝ち',
   'status.result.blackWin': '黒の勝ち',
@@ -43,6 +44,7 @@ export default {
   'panel.engine.status.launching': '起動中',
   'panel.engine.status.ready': '待機中',
   'panel.engine.status.thinking': '思考中',
+  'panel.engine.status.delaying': '遅延{n}秒',
   'panel.engine.status.crashed': '異常終了、再起動中',
   'panel.engine.status.quit': '終了',
   'panel.empty': 'まだ着手がありません',
@@ -82,6 +84,11 @@ export default {
   'settings.strength.hash.hint':
     '置換表 MB（1–32768）。大きいほど長考が安定。対局終了後も保持',
   'settings.enginePath.rowHint': 'ローカルの Pikafish 実行ファイル。空欄で自動検出、次局から反映',
+  'settings.moveDelay': '着手遅延 (s)',
+  'settings.moveDelay.min': '最短',
+  'settings.moveDelay.max': '最長',
+  'settings.moveDelay.hint':
+    'エンジン計算後、この範囲でランダムに待ってから着手（ローカル・連線共通）。0–15 秒；両方 0 なら即着手',
   'settings.ponder': '考慮（Ponder）',
   'settings.ponder.p2': 'P3 で対応予定',
   'toolbar.pause': '一時停止',
@@ -183,10 +190,6 @@ export default {
   'settings.linker.scanInterval': 'スキャン間隔 (ms)',
   'settings.linker.holdMs': 'クリック長さ (ms)',
   'settings.linker.betweenMs': '2 回クリック間隔 (ms)',
-  'settings.linker.moveDelayMin': '着手遅延 最短 (s)',
-  'settings.linker.moveDelayMax': '着手遅延 最長 (s)',
-  'settings.linker.moveDelay.hint':
-    'エンジン計算後、この範囲でランダムに待ってから着手。0–15 秒；両方 0 なら即着手',
   'settings.linker.animation': 'アニメ確認',
   'settings.linker.animation.hint': 'アニメ付きプラットフォームでは必須（途中フレーム誤認防止）',
   'settings.linker.threads': '推論スレッド',

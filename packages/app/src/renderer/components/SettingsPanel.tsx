@@ -1,14 +1,10 @@
 import { useEffect, useState } from 'react';
 import { normalizeXiangqiStrength, type XiangqiStrengthConfig } from '@super-go/core';
 import type { AppSettings, LanguageCode, ThemeSetting } from '@shared/ipc';
-import {
-  LINKER_MOVE_DELAY_MAX_SEC,
-  LINKER_SETTINGS_DEFAULT,
-  normalizeLinkerMoveDelay,
-  supportsBackgroundClick,
-  type LinkerSettings,
-} from '@shared/linker';
+import { LINKER_SETTINGS_DEFAULT, supportsBackgroundClick, type LinkerSettings } from '@shared/linker';
+import { MOVE_DELAY_MAX_SEC, normalizeMoveDelay } from '@shared/moveDelay';
 import { guessCpuThreads, resolveCpuThreads } from '../lib/cpuThreads';
+import { commitNumberInput } from '../lib/numberInput';
 import StrengthFields from './StrengthFields';
 import type { TFunction } from '../i18n';
 
@@ -58,11 +54,13 @@ export default function SettingsPanel(props: SettingsPanelProps) {
   const patchLinker = (delta: Partial<LinkerSettings>): void => {
     patch({ linker: { ...linker, ...delta } });
   };
-  const patchMoveDelay = (
-    delta: Partial<Pick<LinkerSettings, 'moveDelayMinSec' | 'moveDelayMaxSec'>>,
-  ): void => {
-    const next = normalizeLinkerMoveDelay({ ...linker, ...delta });
-    patchLinker({ moveDelayMinSec: next.minSec, moveDelayMaxSec: next.maxSec });
+  const delay = normalizeMoveDelay(settings?.xiangqi ?? {});
+  const patchMoveDelay = (delta: { moveDelayMinSec?: number; moveDelayMaxSec?: number }): void => {
+    const next = normalizeMoveDelay({
+      moveDelayMinSec: delta.moveDelayMinSec ?? delay.minSec,
+      moveDelayMaxSec: delta.moveDelayMaxSec ?? delay.maxSec,
+    });
+    patchXiangqi({ moveDelayMinSec: next.minSec, moveDelayMaxSec: next.maxSec });
   };
   /** 后台落子仅 Windows 有此能力（§6.3 有定论）：其他平台禁用开关并说明原因，而不是藏起来 */
   const canBackgroundClick = supportsBackgroundClick(platform);
@@ -70,6 +68,33 @@ export default function SettingsPanel(props: SettingsPanelProps) {
     { value: 'true', label: props.t('settings.sound.on') },
     { value: 'false', label: props.t('settings.sound.off') },
   ] as const;
+  const numberInput = (
+    value: number,
+    min: number,
+    max: number,
+    onCommit: (v: number) => void,
+    opts: { step?: number; widthClass?: string; ariaLabel?: string; inputKey: string },
+  ): React.JSX.Element => {
+    const step = opts.step ?? 1;
+    return (
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        defaultValue={value}
+        key={opts.inputKey}
+        aria-label={opts.ariaLabel}
+        onBlur={(e) => {
+          const next = commitNumberInput(e.target.value, value, min, max, step);
+          e.target.value = String(next);
+          if (next !== value) onCommit(next);
+        }}
+        className={`${opts.widthClass ?? 'w-20'} rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums`}
+      />
+    );
+  };
+
   const numberField = (
     label: string,
     value: number,
@@ -80,21 +105,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
     hint?: string,
   ): React.JSX.Element => (
     <Row label={label} hint={hint}>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        defaultValue={value}
-        key={`${label}-${value}`}
-        onBlur={(e) => {
-          const v = Number(e.target.value);
-          if (!Number.isFinite(v)) return;
-          const snapped = step < 1 ? Math.round(v / step) * step : Math.round(v);
-          onCommit(Math.min(max, Math.max(min, snapped)));
-        }}
-        className="w-20 rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums"
-      />
+      {numberInput(value, min, max, onCommit, { step, inputKey: `${label}-${value}` })}
     </Row>
   );
 
@@ -215,6 +226,27 @@ export default function SettingsPanel(props: SettingsPanelProps) {
             cpuThreads={cpuThreads}
             onPatch={patchStrength}
           />
+          <Row label={props.t('settings.moveDelay')} hint={props.t('settings.moveDelay.hint')}>
+            <span className="flex items-center gap-1">
+              {numberInput(delay.minSec, 0, MOVE_DELAY_MAX_SEC, (v) => {
+                patchMoveDelay({ moveDelayMinSec: v });
+              }, {
+                step: 0.1,
+                widthClass: 'w-14',
+                ariaLabel: props.t('settings.moveDelay.min'),
+                inputKey: `delay-min-${delay.minSec}`,
+              })}
+              <span className="text-muted-foreground">–</span>
+              {numberInput(delay.maxSec, 0, MOVE_DELAY_MAX_SEC, (v) => {
+                patchMoveDelay({ moveDelayMaxSec: v });
+              }, {
+                step: 0.1,
+                widthClass: 'w-14',
+                ariaLabel: props.t('settings.moveDelay.max'),
+                inputKey: `delay-max-${delay.maxSec}`,
+              })}
+            </span>
+          </Row>
           <Row label={props.t('settings.ponder')}>
             <span className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">{props.t('settings.ponder.p2')}</span>
@@ -235,23 +267,6 @@ export default function SettingsPanel(props: SettingsPanelProps) {
           )}
           {numberField(props.t('settings.linker.betweenMs'), linker.clickBetweenMs, 0, 2000, (v) =>
             patchLinker({ clickBetweenMs: v }),
-          )}
-          {numberField(
-            props.t('settings.linker.moveDelayMin'),
-            linker.moveDelayMinSec,
-            0,
-            LINKER_MOVE_DELAY_MAX_SEC,
-            (v) => patchMoveDelay({ moveDelayMinSec: v }),
-            0.1,
-            props.t('settings.linker.moveDelay.hint'),
-          )}
-          {numberField(
-            props.t('settings.linker.moveDelayMax'),
-            linker.moveDelayMaxSec,
-            0,
-            LINKER_MOVE_DELAY_MAX_SEC,
-            (v) => patchMoveDelay({ moveDelayMaxSec: v }),
-            0.1,
           )}
           <Row
             label={props.t('settings.linker.animation')}

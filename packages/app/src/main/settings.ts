@@ -10,11 +10,17 @@ import {
 import { dirname, join } from 'node:path';
 import type { AppSettings } from '../shared/ipc';
 import { LINKER_SETTINGS_DEFAULT } from '../shared/linker';
+import { MOVE_DELAY_DEFAULT } from '../shared/moveDelay';
 
 const DEFAULTS: AppSettings = {
   theme: 'system',
   view: { board3d: true, alwaysOnTop: false },
-  xiangqi: { strength: {}, ponder: false },
+  xiangqi: {
+    strength: {},
+    ponder: false,
+    moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
+    moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
+  },
   linker: { ...LINKER_SETTINGS_DEFAULT },
 };
 
@@ -95,6 +101,9 @@ type LegacySettings = Omit<Partial<AppSettings>, 'linker'> & {
   linker?: Partial<AppSettings['linker']> & {
     /** 旧版：后台模式合二为一，已拆成 backgroundCapture / backgroundClick */
     backMode?: boolean;
+    /** 旧版：行棋延迟挂在连线下，已迁到 xiangqi */
+    moveDelayMinSec?: number;
+    moveDelayMaxSec?: number;
   };
 };
 
@@ -127,5 +136,37 @@ export function migrateSettings(raw: unknown): Partial<AppSettings> {
     const { backMode, ...linkerRest } = legacyLinker;
     migrated.linker = { ...linkerRest, backgroundClick: backMode } as AppSettings['linker'];
   }
+
+  const linkerNow = migrated.linker as
+    | (Partial<AppSettings['linker']> & {
+        moveDelayMinSec?: number;
+        moveDelayMaxSec?: number;
+      })
+    | undefined;
+  const minFromLinker = linkerNow?.moveDelayMinSec;
+  const maxFromLinker = linkerNow?.moveDelayMaxSec;
+  const xiangqiDelayUnset =
+    migrated.xiangqi?.moveDelayMinSec === undefined &&
+    migrated.xiangqi?.moveDelayMaxSec === undefined;
+  // 只迁「显式非 0」的旧连线延迟。每个旧 settings 文件都写过 LINKER 默认 0–0，
+  // 无法与「用户故意立即走」区分；迁 0–0 会让全员本机延迟被清零。未迁的走
+  // xiangqi 默认 0.3–0.9（本机与连线共用）。
+  if (
+    xiangqiDelayUnset &&
+    ((typeof minFromLinker === 'number' && minFromLinker > 0) ||
+      (typeof maxFromLinker === 'number' && maxFromLinker > 0))
+  ) {
+    migrated.xiangqi = {
+      ...migrated.xiangqi,
+      strength: migrated.xiangqi?.strength ?? {},
+      moveDelayMinSec: minFromLinker ?? 0,
+      moveDelayMaxSec: maxFromLinker ?? 0,
+    };
+  }
+  if (linkerNow !== undefined && ('moveDelayMinSec' in linkerNow || 'moveDelayMaxSec' in linkerNow)) {
+    const { moveDelayMinSec: _min, moveDelayMaxSec: _max, ...linkerRest } = linkerNow;
+    migrated.linker = linkerRest as AppSettings['linker'];
+  }
+
   return migrated;
 }

@@ -22,6 +22,7 @@ export default {
   'status.turn.red': 'Red to move',
   'status.turn.black': 'Black to move',
   'status.thinking': 'Engine thinking…',
+  'status.delaying': 'Delay {n}s',
   'status.check': 'Check!',
   'status.result.redWin': 'Red wins',
   'status.result.blackWin': 'Black wins',
@@ -44,6 +45,7 @@ export default {
   'panel.engine.status.launching': 'Launching',
   'panel.engine.status.ready': 'Ready',
   'panel.engine.status.thinking': 'Thinking',
+  'panel.engine.status.delaying': 'Delay {n}s',
   'panel.engine.status.crashed': 'Crashed, restarting',
   'panel.engine.status.quit': 'Quit',
   'panel.empty': 'No moves yet',
@@ -86,6 +88,11 @@ export default {
     'Transposition table in MB (1–32768). Larger helps long searches; uses RAM. Not reset when a game ends',
   'settings.enginePath.rowHint':
     'Local Pikafish executable; empty = auto-detect engines/chess; applies next game',
+  'settings.moveDelay': 'Move delay (s)',
+  'settings.moveDelay.min': 'Min',
+  'settings.moveDelay.max': 'Max',
+  'settings.moveDelay.hint':
+    'After the engine finishes, wait a random time in this range before playing (local and linked). 0–15 s; both 0 = play immediately',
   'settings.ponder': 'Pondering',
   'settings.ponder.p2': 'Coming in P3',
   'toolbar.pause': 'Pause',
@@ -187,10 +194,6 @@ export default {
   'settings.linker.scanInterval': 'Scan interval (ms)',
   'settings.linker.holdMs': 'Click hold (ms)',
   'settings.linker.betweenMs': 'Click gap (ms)',
-  'settings.linker.moveDelayMin': 'Move delay min (s)',
-  'settings.linker.moveDelayMax': 'Move delay max (s)',
-  'settings.linker.moveDelay.hint':
-    'After the engine finishes, wait a random time in this range before playing. 0–15 s; both 0 = play immediately',
   'settings.linker.animation': 'Animation confirm',
   'settings.linker.animation.hint': 'Must be on when the platform animates moves; waits for the animation to settle',
   'settings.linker.threads': 'Inference threads',

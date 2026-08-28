@@ -28,6 +28,8 @@ export interface GameSnapshot {
   moves: MainlineItem[];
   cursorNodeId: number;
   thinking: boolean;
+  /** 引擎已算出着法、拟人延迟中（秒）；无延迟则为 undefined */
+  playDelaySec?: number;
   /** 暂停中（引擎不出招；互搏观战的主要控制） */
   paused: boolean;
   /** 当前行棋方被将 */
@@ -36,6 +38,8 @@ export interface GameSnapshot {
   /** 最新可用评估（红方视角，驱动胜率条） */
   redCp?: number;
   redMate?: number;
+  /** 最新可用搜索深度；无新帧时底栏沿用，未出现过才是空 */
+  depth?: number;
 }
 
 export interface NewGameIntent {

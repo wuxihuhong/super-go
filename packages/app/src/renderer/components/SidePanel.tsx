@@ -4,6 +4,7 @@ import type { GameSnapshot } from '@shared/game';
 import EvalChart from './EvalChart';
 import LinkerLiveStatus, { linkerLiveVisible } from './LinkerLiveStatus';
 import type { MessageKey, TFunction } from '../i18n';
+import { delayingBannerText } from '../lib/engineStatusText';
 
 const PANEL_MIN = 224;
 const PANEL_MAX = 480;
@@ -243,6 +244,9 @@ function statusOf(props: SidePanelProps): {
   }
   if (snapshot.phase !== 'playing') {
     return { text: t('status.reviewing'), tone: 'neutral' };
+  }
+  if (snapshot.playDelaySec !== undefined) {
+    return { text: delayingBannerText(t, snapshot.playDelaySec), tone: 'busy' };
   }
   if (snapshot.thinking) {
     return { text: t('status.thinking'), tone: 'busy' };

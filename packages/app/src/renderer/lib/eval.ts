@@ -56,6 +56,30 @@ export function evalValueText(
   return { text: `${sign}${Math.abs(rounded)}`, side: null };
 }
 
+/**
+ * 底栏深度与评估必须成对回落：无 score 的 info 行（depth + currmove）
+ * 不能拿新 depth 去配上一手的 snapshot 分数。
+ */
+export function resolveDisplayedEval(
+  live: { redCp?: number; redMate?: number; depth?: number } | null,
+  snapshot: { redCp?: number; redMate?: number; depth?: number } | null | undefined,
+): { redCp?: number; redMate?: number; depth?: number } {
+  const liveHasScore =
+    live !== null && (live.redCp !== undefined || live.redMate !== undefined);
+  if (liveHasScore) {
+    return {
+      redCp: live.redCp,
+      redMate: live.redMate,
+      depth: live.depth ?? snapshot?.depth,
+    };
+  }
+  return {
+    redCp: snapshot?.redCp,
+    redMate: snapshot?.redMate,
+    depth: snapshot?.depth,
+  };
+}
+
 export function evalProportion(redCp?: number, redMate?: number): number {
   if (redMate !== undefined) return redMate > 0 ? 1 : 0;
   if (redCp === undefined) return 0.5;

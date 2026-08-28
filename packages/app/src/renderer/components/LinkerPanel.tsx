@@ -10,6 +10,7 @@ import type {
   TargetWindow,
 } from '@shared/ipc';
 import type { MessageKey, TFunction } from '../i18n';
+import { visibleWindows } from '../lib/windowFilter';
 import { LinkerResolveActions, linkerPhaseActive } from './LinkerLiveStatus';
 
 export interface LinkerPanelProps {
@@ -36,6 +37,9 @@ const PICK_REASON_KEY: Record<ActiveWindowPickReason, MessageKey> = {
   error: 'linker.window.pick.error',
 };
 
+/** 面板随 popover 卸载；筛选字要跨开关保存，只在点「刷新」时清空 */
+let savedWindowFilter = '';
+
 /**
  * 连线面板（§6.1）：选目标窗口 → 启动。
  * 即时状态与报错在侧栏着法区（LinkerLiveStatus），此处只保留选窗 / 权限 / 启停 / 日志。
@@ -43,7 +47,7 @@ const PICK_REASON_KEY: Record<ActiveWindowPickReason, MessageKey> = {
 export default function LinkerPanel(props: LinkerPanelProps) {
   const [windows, setWindows] = useState<TargetWindow[] | null>(null);
   const [windowId, setWindowId] = useState<number | null>(null);
-  const [filter, setFilter] = useState('');
+  const [filter, setFilterState] = useState(savedWindowFilter);
   const [permissions, setPermissions] = useState<LinkerPermissionState[]>([]);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [pickReason, setPickReason] = useState<ActiveWindowPickReason | null>(null);
@@ -52,26 +56,34 @@ export default function LinkerPanel(props: LinkerPanelProps) {
   const active = linkerPhaseActive(props.status);
   const t = props.t;
 
+  const setFilter = (value: string): void => {
+    savedWindowFilter = value;
+    setFilterState(value);
+  };
+
   const visible = useMemo(() => {
     if (windows === null) return null;
-    const q = filter.trim().toLowerCase();
-    if (q === '') return windows;
-    return windows.filter((w) => w.title.toLowerCase().includes(q));
-  }, [windows, filter]);
+    return visibleWindows(windows, filter, windowId);
+  }, [windows, filter, windowId]);
 
-  const refreshWindows = useCallback(() => {
+  const loadWindows = useCallback(() => {
     void window.superGo.linkerListWindows().then((list) => {
       setWindows(list);
     });
   }, []);
 
+  const refreshWindows = (): void => {
+    setFilter('');
+    loadWindows();
+  };
+
   useEffect(() => {
-    refreshWindows();
+    loadWindows();
     void window.superGo.linkerPermissions().then(setPermissions);
     return () => {
       if (countdownTimer.current !== null) window.clearInterval(countdownTimer.current);
     };
-  }, [refreshWindows]);
+  }, [loadWindows]);
 
   useEffect(() => {
     if (windows === null) return;
@@ -99,7 +111,6 @@ export default function LinkerPanel(props: LinkerPanelProps) {
         void window.superGo.linkerActiveWindow().then((pick) => {
           if (pick.ok) {
             const win = pick.window;
-            setFilter('');
             setWindows((cur) => [win, ...(cur ?? []).filter((w) => w.id !== win.id)]);
             setWindowId(win.id);
             setPickReason(null);
@@ -137,7 +148,7 @@ export default function LinkerPanel(props: LinkerPanelProps) {
           </button>
         </h3>
         <input
-          type="search"
+          type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder={t('linker.window.filter')}

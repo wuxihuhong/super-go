@@ -75,8 +75,11 @@ export interface ToolbarProps {
 const DRAG = { WebkitAppRegion: 'drag' } as React.CSSProperties;
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
 
+/** mac 融合标题栏要给红绿灯留位；Windows/Linux 走系统窗框，不能空出这块 */
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+
 /** 快捷键修饰键：mac ⌘ / 其他 Ctrl+ */
-const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+const MOD = IS_MAC ? '⌘' : 'Ctrl+';
 
 /** key → 说明文案键（同 key 加 .hint 后缀） */
 function hintKeyOf(key: MessageKey): MessageKey {
@@ -213,6 +216,8 @@ export default function Toolbar(props: ToolbarProps) {
     switch (props.engineStatus?.status) {
       case 'thinking':
         return 'animate-pulse bg-accent';
+      case 'delaying':
+        return 'bg-accent';
       case 'crashed':
       case 'not-found':
         return 'bg-danger';
@@ -226,7 +231,9 @@ export default function Toolbar(props: ToolbarProps) {
   return (
     <header
       style={DRAG}
-      className="relative z-30 flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-3 pl-20"
+      className={`relative z-30 flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-3 ${
+        IS_MAC ? 'pl-20' : ''
+      }`}
     >
       <div className="relative flex items-center gap-1" style={NO_DRAG}>
         {iconButton(
@@ -264,10 +271,12 @@ export default function Toolbar(props: ToolbarProps) {
         )}
       {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.canResign)}
 
-      {/* 居中标题（mac 惯例） */}
-      <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-sm font-semibold select-none">
-        {props.title}
-      </span>
+      {/* 居中标题仅 mac：hiddenInset 没有系统标题，Win/Linux 窗框已有应用名 */}
+      {IS_MAC && (
+        <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-sm font-semibold select-none">
+          {props.title}
+        </span>
+      )}
 
       {/* 右侧：引擎状态 + 对局临时配置 + 连线 + 侧栏 + 设置 */}
       <div className="ml-auto flex items-center gap-2" style={NO_DRAG}>

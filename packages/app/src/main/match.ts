@@ -3,7 +3,7 @@
  *
  * 组合 core 的 Game/MoveTree/GameStateMachine 与 UciAdapter：
  * - 引擎通路：同步局面（快照式全量重发）→ genmove（棋力模式约束：Elo/深度/时长/节点）
- *   → 拟人化随机延迟（连线用设置的秒数范围，本机人机 300–900ms）
+ *   → 拟人化随机延迟（settings.xiangqi 行棋延迟范围，本机与连线共用）
  *   → 本地先落子 → 连线再点平台；engineSide='both' 时引擎左右互搏（人观战）；
  * - 棋力属固有配置（settings.xiangqi.strength）：对局中经 refreshStrength 实时下发；
  *   执方只由工具栏红/黑开关设置（setEngineSide，接管/放手/转互搏）；新开一局缺省
@@ -31,7 +31,7 @@ import {
   type XiangqiPosition,
   type XiangqiStrengthConfig,
 } from '@super-go/core';
-import type { EngineStatus, UciStrengthSpec } from '../shared/engine';
+import type { EngineAdapter, EngineStatus, UciStrengthSpec } from '../shared/engine';
 import type {
   GameSnapshot,
   IntentResult,
@@ -40,28 +40,32 @@ import type {
   NewGameIntent,
   PlayMoveIntent,
 } from '../shared/game';
+import { moveDelayMs, pickDelayMs } from '../shared/moveDelay';
+import { toRedPerspective } from '../shared/score';
 import { cpuThreadCount } from './cpuThreads';
 import { UciAdapter } from './engine/uciAdapter';
 
 export interface MatchEvents {
   snapshot(snap: GameSnapshot): void;
-  engineStatus(status: EngineStatus, name: string | null): void;
+  engineStatus(status: EngineStatus, name: string | null, extra?: { delaySec?: number }): void;
   liveEval(evaluation: LiveEval | null): void;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** 测试注入：假适配器 + 可推进的 sleep，生产路径不传 */
+export interface MatchServiceDeps {
+  createAdapter?: () => EngineAdapter;
+  sleep?: (ms: number) => Promise<void>;
 }
 
-function randomBetween(min: number, max: number): number {
-  return min + Math.random() * (max - min);
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class MatchService {
   private readonly game = new XiangqiGame();
   private tree = new MoveTree<XiangqiMove, XiangqiPosition>(this.game);
   private readonly state = new GameStateMachine('xiangqi');
-  private adapter: UciAdapter | null = null;
+  private adapter: EngineAdapter | null = null;
   private launchedPath: string | null = null;
   private launching: Promise<void> | null = null;
   private thinking = false;
@@ -74,17 +78,27 @@ export class MatchService {
   private generation = 0;
   private recovering = false;
   private lastLiveDepth = -1;
+  /** 本手已转发给 renderer 的最近一帧（无 score 的 info 行沿用上一帧分数） */
+  private lastForwardedLive: LiveEval | null = null;
+  /** 拟人延迟秒数（思考仍为 true，UI 用这个区分「计算中」与「延迟中」） */
+  private playDelaySec: number | undefined;
   private strengthTail: Promise<void> = Promise.resolve();
   /** 引擎着法落子拦截（连线注入点：§6.1 出招 → 本地先落子 → 再点平台） */
   private engineMoveInterceptor: ((move: XiangqiMove) => Promise<boolean>) | null = null;
+  private readonly createAdapter: () => EngineAdapter;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(
     private readonly events: MatchEvents,
     private readonly getEnginePath: () => string | null,
     private readonly getStrengthConfig: () => XiangqiStrengthConfig,
-    /** 连线出招延迟（拦截器存在时用）；本机人机仍走 300–900ms */
-    private readonly getLinkerPlayDelayMs?: () => { min: number; max: number },
-  ) {}
+    /** 引擎出招延迟（本机与连线共用；缺省 300–900ms） */
+    private readonly getPlayDelayMs?: () => { min: number; max: number },
+    deps?: MatchServiceDeps,
+  ) {
+    this.createAdapter = deps?.createAdapter ?? (() => new UciAdapter());
+    this.sleep = deps?.sleep ?? defaultSleep;
+  }
 
   /** 连线会话注入/移除落子拦截（null = 移除） */
   setEngineMoveInterceptor(fn: ((move: XiangqiMove) => Promise<boolean>) | null): void {
@@ -150,6 +164,16 @@ export class MatchService {
   /** 思考位与 liveEval 同源：开/停思考都清空残留评估，避免上一手杀棋画到新 ply */
   private setThinking(value: boolean): void {
     this.thinking = value;
+    this.lastForwardedLive = null;
+    this.lastLiveDepth = -1;
+    if (!value) {
+      this.playDelaySec = undefined;
+      // 中止延迟时必须撤回 delaying，否则底栏/圆点整个人类回合停在「延迟 n 秒」
+      const status = this.adapter?.getStatus();
+      if (status === 'ready' || status === 'thinking' || status === 'delaying') {
+        this.pushEngineStatus('ready');
+      }
+    }
     this.events.liveEval(null);
   }
 
@@ -334,22 +358,14 @@ export class MatchService {
     return side === 'both' || side === this.turnNow();
   }
 
-  /** 引擎算完后、落子前：连线用设置里的随机秒数，本机人机保持 300–900ms */
-  private sleepPlayDelay(): Promise<void> {
-    const range =
-      this.engineMoveInterceptor !== null && this.getLinkerPlayDelayMs !== undefined
-        ? this.getLinkerPlayDelayMs()
-        : { min: 300, max: 900 };
-    const lo = Math.min(range.min, range.max);
-    const hi = Math.max(range.min, range.max);
-    const wait = hi <= 0 ? 0 : randomBetween(lo, hi);
-    return wait > 0 ? sleep(wait) : Promise.resolve();
+  /** 引擎算完后、落子前：读象棋配置的随机秒数（本机与连线同一条） */
+  private playDelayMs(): number {
+    return pickDelayMs(this.getPlayDelayMs?.() ?? moveDelayMs({}));
   }
 
   private async engineTurn(): Promise<void> {
     const gen = ++this.generation;
     this.setThinking(true);
-    this.lastLiveDepth = -1;
     this.pushEngineStatus('thinking');
     this.pushSnapshot();
     try {
@@ -385,8 +401,16 @@ export class MatchService {
         return;
       }
 
-      await this.sleepPlayDelay();
-      if (gen !== this.generation) return;
+      const wait = this.playDelayMs();
+      if (wait > 0) {
+        this.playDelaySec = wait / 1000;
+        this.pushEngineStatus('delaying', { delaySec: this.playDelaySec });
+        this.pushSnapshot();
+        await this.sleep(wait);
+        if (gen !== this.generation) return; // 先查代数，避免旧睡眠清掉新一代的延迟
+        this.playDelaySec = undefined;
+        this.pushEngineStatus('thinking'); // 落子/点平台期间保持思考，0–0 也走末端 ready
+      }
 
       // 连线顺序：引擎决策 → 本地棋盘先走 → 再点平台。thinking 保持到平台点击结束，
       // 避免扫描循环把「本地超前」当成 pending-sync 再点一次。
@@ -449,7 +473,7 @@ export class MatchService {
       return null;
     }
     this.pushEngineStatus('launching');
-    const adapter = new UciAdapter();
+    const adapter = this.createAdapter();
     this.launching = adapter
       .launch(binaryPath)
       .then(() => {
@@ -475,7 +499,7 @@ export class MatchService {
     }
   }
 
-  private onEngineExit(adapter: UciAdapter, code: number | null): void {
+  private onEngineExit(adapter: EngineAdapter, code: number | null): void {
     if (this.adapter !== adapter) return;
     if (adapter.getStatus() === 'quit') return;
     console.warn(`[match] 引擎异常退出 code=${code}，自动重启（§5.8）`);
@@ -528,16 +552,19 @@ export class MatchService {
 
   private forwardLiveEval(evaluation: { cp?: number; mate?: number; depth?: number }): void {
     if (!this.thinking || this.state.engineSide === null) return;
-    if (evaluation.depth !== undefined && evaluation.depth === this.lastLiveDepth) return;
-    if (evaluation.depth !== undefined) this.lastLiveDepth = evaluation.depth;
-    // 引擎视角 → 红方视角：走子方（思考者）为红时同号
-    const mover = this.turnNow();
-    const flip = mover === 'first' ? 1 : -1;
-    this.events.liveEval({
-      redCp: evaluation.cp === undefined ? undefined : evaluation.cp * flip,
-      redMate: evaluation.mate === undefined ? undefined : evaluation.mate * flip,
-      depth: evaluation.depth,
-    });
+    const { redCp, redMate } = toRedPerspective(this.turnNow(), evaluation.cp, evaluation.mate);
+    const prev = this.lastForwardedLive;
+    const next: LiveEval = {
+      redCp: redCp ?? prev?.redCp,
+      redMate: redMate ?? prev?.redMate,
+      depth: evaluation.depth ?? prev?.depth,
+    };
+    const sameDepth = next.depth !== undefined && next.depth === this.lastLiveDepth;
+    const sameScore = next.redCp === prev?.redCp && next.redMate === prev?.redMate;
+    if (sameDepth && sameScore) return;
+    if (next.depth !== undefined) this.lastLiveDepth = next.depth;
+    this.lastForwardedLive = next;
+    this.events.liveEval(next);
   }
 
   // -------------------------------------------------------------------------
@@ -551,16 +578,19 @@ export class MatchService {
     let notationPos = this.tree.positionOf(path[0]!);
     for (let i = 1; i < path.length; i++) {
       const node = path[i]!;
-      const side: Player = i % 2 === 1 ? 'first' : 'second';
       const record = node.evalRecord;
-      const flip = side === 'first' ? 1 : -1;
       const cp = record !== undefined && record.score.kind === 'cp' ? record.score : undefined;
+      const { redCp: itemCp, redMate: itemMate } = toRedPerspective(
+        notationPos.turn,
+        cp?.value,
+        cp?.mate,
+      );
       items.push({
         nodeId: node.id,
         iccs: moveToIccs(node.move!),
         notation: this.game.moveToNotation(notationPos, node.move!),
-        redCp: cp === undefined ? undefined : cp.value * flip,
-        redMate: cp?.mate === undefined ? undefined : cp.mate * flip,
+        redCp: itemCp,
+        redMate: itemMate,
         depth: record?.depth,
       });
       notationPos = this.tree.positionOf(node);
@@ -569,13 +599,17 @@ export class MatchService {
     const lastMove = cursor.move === null ? null : { from: cursor.move.from, to: cursor.move.to };
     let redCp: number | undefined;
     let redMate: number | undefined;
+    let depth: number | undefined;
     for (let i = items.length - 1; i >= 0; i--) {
       const item = items[i]!;
-      if (item.redCp !== undefined || item.redMate !== undefined) {
-        redCp = item.redCp;
-        redMate = item.redMate;
-        break;
+      if (redCp === undefined && redMate === undefined) {
+        if (item.redCp !== undefined || item.redMate !== undefined) {
+          redCp = item.redCp;
+          redMate = item.redMate;
+        }
       }
+      if (depth === undefined && item.depth !== undefined) depth = item.depth;
+      if ((redCp !== undefined || redMate !== undefined) && depth !== undefined) break;
     }
     const snap = this.state.snapshot;
     return {
@@ -589,10 +623,12 @@ export class MatchService {
       cursorNodeId: cursor.id,
       paused: this.paused,
       thinking: this.thinking,
+      playDelaySec: this.playDelaySec,
       inCheck: isInCheck(pos, pos.turn),
       lastMove,
       redCp,
       redMate,
+      depth,
     };
   }
 
@@ -600,8 +636,8 @@ export class MatchService {
     this.events.snapshot(this.buildSnapshot());
   }
 
-  private pushEngineStatus(status: EngineStatus): void {
-    this.events.engineStatus(status, this.adapter?.engineName ?? null);
+  private pushEngineStatus(status: EngineStatus, extra?: { delaySec?: number }): void {
+    this.events.engineStatus(status, this.adapter?.engineName ?? null, extra);
   }
 
   // -------------------------------------------------------------------------

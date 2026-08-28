@@ -33,6 +33,7 @@ import type {
   ThemeSetting,
 } from '@shared/ipc';
 import { LINKER_SETTINGS_DEFAULT, type ActiveWindowPick } from '@shared/linker';
+import { MOVE_DELAY_DEFAULT, pickMoveDelayMs } from '@shared/moveDelay';
 import type {
   GameSnapshot,
   IntentResult,
@@ -41,6 +42,7 @@ import type {
   NewGameIntent,
   PlayMoveIntent,
 } from '@shared/game';
+import { toRedPerspective } from '@shared/score';
 
 /** 子力价值（厘兵），mock 材料评估用 */
 const PIECE_CP: Record<string, number> = {
@@ -72,6 +74,7 @@ function createMockApi(): SuperGoApi {
   let tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
   const state = new GameStateMachine('xiangqi');
   let thinking = false;
+  let playDelaySec: number | undefined;
   let paused = false;
   /** 终局悔棋复活用：end 清空 state 前留底执方 */
   let lastEngineSide: EngineSide = null;
@@ -137,16 +140,19 @@ function createMockApi(): SuperGoApi {
     let notationPos = tree.positionOf(path[0]!);
     for (let i = 1; i < path.length; i++) {
       const node = path[i]!;
-      const side: Player = i % 2 === 1 ? 'first' : 'second';
       const record = node.evalRecord;
-      const flip = side === 'first' ? 1 : -1;
       const cp = record !== undefined && record.score.kind === 'cp' ? record.score : undefined;
+      const { redCp: itemCp, redMate: itemMate } = toRedPerspective(
+        notationPos.turn,
+        cp?.value,
+        cp?.mate,
+      );
       items.push({
         nodeId: node.id,
         iccs: moveToIccs(node.move!),
         notation: game.moveToNotation(notationPos, node.move!),
-        redCp: cp === undefined ? undefined : cp.value * flip,
-        redMate: cp?.mate === undefined ? undefined : cp.mate * flip,
+        redCp: itemCp,
+        redMate: itemMate,
         depth: record?.depth,
       });
       notationPos = tree.positionOf(node);
@@ -154,11 +160,12 @@ function createMockApi(): SuperGoApi {
     const pos = positionNow();
     const snap = state.snapshot;
     let redCp: number | undefined;
+    let depth: number | undefined;
     for (let i = items.length - 1; i >= 0; i--) {
-      if (items[i]!.redCp !== undefined) {
-        redCp = items[i]!.redCp;
-        break;
-      }
+      const item = items[i]!;
+      if (redCp === undefined && item.redCp !== undefined) redCp = item.redCp;
+      if (depth === undefined && item.depth !== undefined) depth = item.depth;
+      if (redCp !== undefined && depth !== undefined) break;
     }
     return {
       phase: snap.phase,
@@ -171,10 +178,12 @@ function createMockApi(): SuperGoApi {
       cursorNodeId: tree.cursor.id,
       paused,
       thinking,
+      playDelaySec,
       inCheck: isInCheck(pos, pos.turn),
       lastMove:
         tree.cursor.move === null ? null : { from: tree.cursor.move.from, to: tree.cursor.move.to },
       redCp,
+      depth,
     };
   };
 
@@ -183,8 +192,15 @@ function createMockApi(): SuperGoApi {
     for (const cb of snapshotListeners) cb(snap);
   };
 
-  const pushStatus = (status: EngineStatusPayload['status']): void => {
-    for (const cb of statusListeners) cb({ status, name: 'Mock Engine 1800' });
+  const pushStatus = (status: EngineStatusPayload['status'], delaySec?: number): void => {
+    for (const cb of statusListeners) cb({ status, name: 'Mock Engine 1800', delaySec });
+  };
+
+  const clearThinking = (): void => {
+    thinking = false;
+    playDelaySec = undefined;
+    pushLiveEval(null);
+    pushStatus('ready');
   };
 
   // ---- 模拟引擎 ----
@@ -201,6 +217,7 @@ function createMockApi(): SuperGoApi {
   const fakeEngineTurn = (): void => {
     const gen = ++generation;
     thinking = true;
+    playDelaySec = undefined;
     pushLiveEval(null);
     pushStatus('thinking');
     pushSnapshot();
@@ -224,9 +241,12 @@ function createMockApi(): SuperGoApi {
         (600 / frames) * i,
       );
     }
-    setTimeout(
-      () => {
+    setTimeout(() => {
+      if (gen !== generation) return;
+      const delayMs = pickMoveDelayMs(settings.xiangqi);
+      const play = (): void => {
         if (gen !== generation) return;
+        playDelaySec = undefined;
         const choice = pickMove(pos, moves);
         const node = tree.play(choice);
         const flip = pos.turn === 'first' ? 1 : -1;
@@ -240,10 +260,17 @@ function createMockApi(): SuperGoApi {
         finishIfOver();
         pushStatus('ready');
         pushSnapshot();
-        if (!paused && state.phase === 'playing' && engineToMoveNow()) fakeEngineTurn(); // 互搏续走
-      },
-      600 + Math.random() * 600,
-    );
+        if (!paused && state.phase === 'playing' && engineToMoveNow()) fakeEngineTurn();
+      };
+      if (delayMs > 0) {
+        playDelaySec = delayMs / 1000;
+        pushStatus('delaying', playDelaySec);
+        pushSnapshot();
+        setTimeout(play, delayMs);
+      } else {
+        play();
+      }
+    }, 600);
   };
 
   const finishIfOver = (): void => {
@@ -304,8 +331,7 @@ function createMockApi(): SuperGoApi {
 
     newGame: (intent: NewGameIntent) => {
       generation++;
-      thinking = false;
-      pushLiveEval(null);
+      clearThinking();
       paused = false;
       if (state.phase === 'playing') state.abort();
       if (!intent.fromCursor) tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
@@ -351,7 +377,7 @@ function createMockApi(): SuperGoApi {
       }
       if (tree.cursor === tree.root) return Promise.resolve({ ok: false, error: '无可悔之着' });
       generation++;
-      thinking = false;
+      clearThinking();
       tree.undo();
       if (state.engineSide === 'both') {
         pushSnapshot();
@@ -369,7 +395,7 @@ function createMockApi(): SuperGoApi {
         return Promise.resolve({ ok: false, error: '观战模式不可认输' });
       }
       generation++;
-      thinking = false;
+      clearThinking();
       state.end({ winner: (state.engineSide ?? 'first') as Player, reason: 'resign' });
       pushSnapshot();
       return Promise.resolve({ ok: true });
@@ -378,7 +404,7 @@ function createMockApi(): SuperGoApi {
       const guard = guardPlaying();
       if (guard !== null) return Promise.resolve(guard);
       generation++;
-      thinking = false;
+      clearThinking();
       state.setEngineSide(side);
       pushSnapshot();
       if (!paused && engineToMoveNow()) fakeEngineTurn();
@@ -390,7 +416,7 @@ function createMockApi(): SuperGoApi {
       paused = !paused;
       if (paused) {
         generation++;
-        thinking = false;
+        clearThinking();
       } else if (engineToMoveNow()) {
         fakeEngineTurn();
       }
@@ -523,7 +549,12 @@ function loadSettings(): AppSettings {
         return {
           ...parsed,
           view: { board3d: true, alwaysOnTop: false, ...parsed.view },
-          xiangqi: { ponder: false, ...parsed.xiangqi },
+          xiangqi: {
+            ponder: false,
+            moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
+            moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
+            ...parsed.xiangqi,
+          },
         };
       }
     }
@@ -533,7 +564,12 @@ function loadSettings(): AppSettings {
   return {
     theme: 'system' satisfies ThemeSetting,
     view: { board3d: true, alwaysOnTop: false },
-    xiangqi: { strength: {}, ponder: false },
+    xiangqi: {
+      strength: {},
+      ponder: false,
+      moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
+      moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
+    },
     linker: { ...LINKER_SETTINGS_DEFAULT },
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from '../i18n';
-import { evalFromBottom, evalValueText } from './eval';
+import { evalFromBottom, evalValueText, resolveDisplayedEval } from './eval';
 
 const t = ((key: string): string => {
   if (key === 'eval.mateN') return '{attacker}{n}步杀{defender}';
@@ -30,8 +30,37 @@ describe('evalValueText', () => {
 
   it('翻转后数字分按下方颜色，杀棋文案仍写红黑绝对归属', () => {
     expect(evalValueText(t, 684, undefined, true).text).toBe('−684');
+    expect(evalValueText(t, -2000, undefined, true).text).toBe('+2000');
     expect(evalValueText(t, undefined, 3).text).toBe('红3步杀黑');
     expect(evalValueText(t, undefined, -4).text).toBe('黑4步杀红');
     expect(evalValueText(t, undefined, 3, true).text).toBe('红3步杀黑');
+    expect(evalValueText(t, undefined, -1, true).text).toBe('黑1步杀红');
+  });
+});
+
+describe('resolveDisplayedEval', () => {
+  it('live 只有 depth 时整组回落到 snapshot，不混旧分', () => {
+    expect(
+      resolveDisplayedEval({ depth: 5 }, { redCp: 684, redMate: undefined, depth: 18 }),
+    ).toEqual({ redCp: 684, redMate: undefined, depth: 18 });
+  });
+
+  it('live 有分数时用 live，缺 depth 再借 snapshot', () => {
+    expect(
+      resolveDisplayedEval({ redCp: 12, depth: 7 }, { redCp: 684, depth: 18 }),
+    ).toEqual({ redCp: 12, redMate: undefined, depth: 7 });
+    expect(resolveDisplayedEval({ redCp: 12 }, { redCp: 684, depth: 18 })).toEqual({
+      redCp: 12,
+      redMate: undefined,
+      depth: 18,
+    });
+  });
+
+  it('live 为空走 snapshot', () => {
+    expect(resolveDisplayedEval(null, { redCp: 100, depth: 10 })).toEqual({
+      redCp: 100,
+      redMate: undefined,
+      depth: 10,
+    });
   });
 });

@@ -3,7 +3,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeXiangqiStrength } from '@super-go/core';
 import { IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
-import { linkerMoveDelayMs } from '../shared/linker';
+import { moveDelayMs } from '../shared/moveDelay';
 import { cpuThreadCount } from './cpuThreads';
 import { enginesRootCandidates, findPikafishBinary } from './engine/discover';
 import { registerIpc } from './ipc';
@@ -156,15 +156,19 @@ void app.whenReady().then(() => {
   };
   const events: MatchEvents = {
     snapshot: (snap) => send(IPC_CHANNELS.gameSnapshot, snap),
-    engineStatus: (status, name) =>
-      send(IPC_CHANNELS.engineStatus, { status, name } satisfies EngineStatusPayload),
+    engineStatus: (status, name, extra) =>
+      send(IPC_CHANNELS.engineStatus, {
+        status,
+        name,
+        delaySec: extra?.delaySec,
+      } satisfies EngineStatusPayload),
     liveEval: (evaluation) => send(IPC_CHANNELS.gameLiveEval, evaluation),
   };
   const match = new MatchService(
     events,
     () => resolveEnginePath(settings.get().xiangqi?.enginePath),
     () => normalizeXiangqiStrength(settings.get().xiangqi?.strength, cpuThreadCount()),
-    () => linkerMoveDelayMs(settings.get().linker),
+    () => moveDelayMs(settings.get().xiangqi),
   );
 
   // 连线（P2）：连线 = 以平台识别局面重开一局，对局本体复用 MatchService
