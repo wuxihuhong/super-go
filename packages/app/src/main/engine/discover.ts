@@ -42,16 +42,109 @@ export function enginesRootCandidates(opts: {
   appPath: string;
   isPackaged: boolean;
   resourcesPath: string;
+  /** 缺省 chess，围棋用 go */
+  kind?: 'chess' | 'go';
 }): string[] {
+  const folder = opts.kind === 'go' ? 'go' : 'chess';
   const roots: string[] = [];
   if (opts.overridePath !== undefined && opts.overridePath !== '') {
     roots.push(opts.overridePath);
   }
   if (opts.isPackaged) {
-    roots.push(join(opts.resourcesPath, 'engines', 'chess'));
+    roots.push(join(opts.resourcesPath, 'engines', folder));
   } else {
     // dev：appPath = packages/app → 仓库根
-    roots.push(join(opts.appPath, '..', '..', 'engines', 'chess'));
+    roots.push(join(opts.appPath, '..', '..', 'engines', folder));
   }
   return roots;
+}
+
+const BREW_KATAGO_BINS = [
+  '/opt/homebrew/bin/katago',
+  '/usr/local/bin/katago',
+] as const;
+
+const BREW_KATAGO_MODEL_DIRS = [
+  '/opt/homebrew/opt/katago/share/katago',
+  '/usr/local/opt/katago/share/katago',
+] as const;
+
+export function findKatagoBinaryOnPath(): string | null {
+  for (const p of BREW_KATAGO_BINS) {
+    if (existsSync(p)) return p;
+  }
+  const pathEnv = process.env['PATH'] ?? '';
+  for (const dir of pathEnv.split(':')) {
+    if (dir === '') continue;
+    const candidate = join(dir, 'katago');
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/** 在 engines/go 或 brew 目录下找主模型（优先 kata1-b18） */
+export function findKatagoModel(searchDirs: readonly string[]): string | null {
+  const preferred: string[] = [];
+  const fallback: string[] = [];
+  for (const dir of searchDirs) {
+    if (!existsSync(dir)) continue;
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      if (!name.endsWith('.bin.gz') || name.includes('human')) continue;
+      const full = join(dir, name);
+      if (name.startsWith('kata1-b18')) preferred.push(full);
+      else fallback.push(full);
+    }
+  }
+  return preferred[0] ?? fallback[0] ?? null;
+}
+
+export function brewKatagoModelDirs(): string[] {
+  return BREW_KATAGO_MODEL_DIRS.filter((d) => existsSync(d));
+}
+
+export function resolveKatagoBinary(opts: {
+  userPath?: string;
+  appPath: string;
+  isPackaged: boolean;
+  resourcesPath: string;
+}): string | null {
+  if (opts.userPath !== undefined && opts.userPath !== '' && existsSync(opts.userPath)) {
+    return opts.userPath;
+  }
+  for (const root of enginesRootCandidates({ ...opts, kind: 'go' })) {
+    if (!existsSync(root)) continue;
+    const direct = join(root, 'katago');
+    if (existsSync(direct)) return direct;
+    try {
+      for (const entry of readdirSync(root)) {
+        const candidate = join(root, entry, process.platform === 'win32' ? 'katago.exe' : 'katago');
+        if (existsSync(candidate)) return candidate;
+      }
+    } catch {
+      /* skip */
+    }
+  }
+  return findKatagoBinaryOnPath();
+}
+
+export function resolveKatagoModel(opts: {
+  userPath?: string;
+  appPath: string;
+  isPackaged: boolean;
+  resourcesPath: string;
+}): string | null {
+  if (opts.userPath !== undefined && opts.userPath !== '' && existsSync(opts.userPath)) {
+    return opts.userPath;
+  }
+  const dirs = [
+    ...enginesRootCandidates({ ...opts, kind: 'go' }),
+    ...brewKatagoModelDirs(),
+  ];
+  return findKatagoModel(dirs);
 }

@@ -1,12 +1,13 @@
-import { useState } from 'react';
-import type { Player } from '@super-go/core';
+import { useEffect, useState } from 'react';
+import { defaultKomi, type GameKind, type GameSetup, type Player, type RuleSet } from '@super-go/core';
 import type { TFunction } from '../i18n';
 
 export interface SetupPanelProps {
   t: TFunction;
+  kind: GameKind;
   /** 续弈模式：从当前游标局面接着下（标题与确认键不同） */
   mode: 'new' | 'continue';
-  onStart: (humanSide: Player) => void;
+  onStart: (humanSide: Player, goSetup?: GameSetup) => void;
   onCancel: () => void;
 }
 
@@ -16,12 +17,30 @@ export interface SetupPanelProps {
  * 棋力/引擎属固有配置（设置面板，一次配置全局生效）。
  */
 export default function SetupPanel(props: SetupPanelProps) {
-  const [humanSide, setHumanSide] = useState<Player>('first'); // 默认我执红
+  const [humanSide, setHumanSide] = useState<Player>('first');
+  const [rules, setRules] = useState<RuleSet>('chinese');
+  const [komi, setKomi] = useState(() => defaultKomi('chinese'));
+  const [handicap, setHandicap] = useState(0);
+  const go = props.kind === 'go';
 
-  const options: ReadonlyArray<{ value: Player; label: string }> = [
-    { value: 'first', label: props.t('setup.side.red') },
-    { value: 'second', label: props.t('setup.side.black') },
-  ];
+  useEffect(() => {
+    if (!go) return;
+    void window.superGo.getSettings().then((s) => {
+      const nextRules = s.go?.rules ?? 'chinese';
+      setRules(nextRules);
+      setKomi(s.go?.komi ?? defaultKomi(nextRules));
+    });
+  }, [go]);
+
+  const options: ReadonlyArray<{ value: Player; label: string }> = go
+    ? [
+        { value: 'first', label: props.t('setup.side.blackGo') },
+        { value: 'second', label: props.t('setup.side.whiteGo') },
+      ]
+    : [
+        { value: 'first', label: props.t('setup.side.red') },
+        { value: 'second', label: props.t('setup.side.black') },
+      ];
 
   return (
     <div className="w-80 rounded-xl border border-border bg-surface p-3 shadow-xl">
@@ -48,6 +67,52 @@ export default function SetupPanel(props: SetupPanelProps) {
         </div>
       </div>
 
+      {go && (
+        <div className="mt-2 space-y-2 rounded-lg border border-border bg-background p-3">
+          <label className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">{props.t('setup.komi')}</span>
+            <input
+              type="number"
+              step={0.5}
+              value={komi}
+              onChange={(e) => setKomi(Number(e.target.value))}
+              className="w-16 rounded-md border border-border bg-surface px-1.5 py-1 tabular-nums"
+            />
+          </label>
+          <label className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">{props.t('setup.handicap')}</span>
+            <input
+              type="number"
+              min={0}
+              max={9}
+              value={handicap}
+              onChange={(e) => setHandicap(Number(e.target.value))}
+              className="w-16 rounded-md border border-border bg-surface px-1.5 py-1 tabular-nums"
+            />
+          </label>
+          <div>
+            <div className="mb-1 text-xs text-muted-foreground">{props.t('setup.rules')}</div>
+            <div className="flex gap-1">
+              {(['chinese', 'japanese', 'aga'] as const).map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => {
+                    setRules(r);
+                    setKomi(defaultKomi(r));
+                  }}
+                  className={`flex-1 rounded-md px-2 py-1 text-xs ${
+                    rules === r ? 'bg-surface text-accent ring-1 ring-accent/40' : 'text-muted-foreground'
+                  }`}
+                >
+                  {props.t(`setup.rules.${r}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mt-3 flex justify-end gap-2">
         <button
           type="button"
@@ -58,7 +123,9 @@ export default function SetupPanel(props: SetupPanelProps) {
         </button>
         <button
           type="button"
-          onClick={() => props.onStart(humanSide)}
+          onClick={() =>
+            props.onStart(humanSide, go ? { boardSize: 19, komi, handicap, rules } : undefined)
+          }
           className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-accent-foreground"
         >
           {props.t(props.mode === 'new' ? 'setup.start' : 'setup.continueFrom')}

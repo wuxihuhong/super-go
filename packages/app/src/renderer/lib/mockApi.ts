@@ -9,28 +9,36 @@
  */
 import {
   chessStrengthFromConfig,
+  defaultKomi,
   GameStateMachine,
+  GoGame,
+  goMoveToGtp,
   isInCheck,
   MoveTree,
   moveToIccs,
+  normalizeGoStrength,
   normalizeXiangqiStrength,
   pieceAt,
   pieceTypeOf,
   pieceSide,
   XiangqiGame,
   type EngineSide,
+  type GameKind,
   type GameResult,
+  type GoMove,
+  type GoPosition,
   type Player,
   type XiangqiMove,
   type XiangqiPosition,
 } from '@super-go/core';
-import type {
-  AppSettings,
-  EngineStatusPayload,
-  LinkerLogEntry,
-  LinkerStatus,
-  SuperGoApi,
-  ThemeSetting,
+import {
+  GO_ANALYSIS_DEFAULT,
+  type AppSettings,
+  type EngineStatusPayload,
+  type LinkerLogEntry,
+  type LinkerStatus,
+  type SuperGoApi,
+  type ThemeSetting,
 } from '@shared/ipc';
 import { LINKER_SETTINGS_DEFAULT, type ActiveWindowPick } from '@shared/linker';
 import { MOVE_DELAY_DEFAULT, pickMoveDelayMs } from '@shared/moveDelay';
@@ -73,6 +81,10 @@ function createMockApi(): SuperGoApi {
   const game = new XiangqiGame();
   let tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
   const state = new GameStateMachine('xiangqi');
+  const goGame = new GoGame();
+  let goTree = new MoveTree<GoMove, GoPosition>(goGame, { boardSize: 19 });
+  const goState = new GameStateMachine('go');
+  let kind: GameKind = 'xiangqi';
   let thinking = false;
   let playDelaySec: number | undefined;
   let paused = false;
@@ -115,6 +127,7 @@ function createMockApi(): SuperGoApi {
 
   // ---- 设置（localStorage 持久化；主题用 class 覆盖，无 nativeTheme）----
   let settings: AppSettings = loadSettings();
+  kind = settings.activeKind === 'go' ? 'go' : 'xiangqi';
   const media = window.matchMedia('(prefers-color-scheme: dark)');
   const effectiveDark = (): boolean =>
     settings.theme === 'dark' || (settings.theme === 'system' && media.matches);
@@ -134,7 +147,53 @@ function createMockApi(): SuperGoApi {
   // ---- 快照 ----
   const positionNow = (): XiangqiPosition => tree.positionOf(tree.cursor);
 
+  const liveState = (): GameStateMachine => (kind === 'go' ? goState : state);
+
+  const buildGoSnapshot = (): GameSnapshot => {
+    const path = goTree.pathOf(goTree.cursor);
+    const items: MainlineItem[] = [];
+    let notationPos = goTree.positionOf(path[0]!);
+    for (let i = 1; i < path.length; i++) {
+      const node = path[i]!;
+      const wr = node.evalRecord?.score.kind === 'winRate' ? node.evalRecord.score : undefined;
+      items.push({
+        nodeId: node.id,
+        iccs: goMoveToGtp(node.move!, notationPos.size),
+        notation: goGame.moveToNotation(notationPos, node.move!),
+        winRate: wr?.winRate,
+        lead: wr?.lead,
+        depth: node.evalRecord?.depth,
+      });
+      notationPos = goTree.positionOf(node);
+    }
+    const pos = goTree.positionOf(goTree.cursor);
+    const snap = goState.snapshot;
+    return {
+      kind: 'go',
+      phase: snap.phase,
+      engineSide: snap.engineSide,
+      strengthLabel: snap.strength === null ? null : snap.strength.label,
+      result: snap.result,
+      turn: pos.turn,
+      fen: goGame.serialize(pos),
+      moves: items,
+      cursorNodeId: goTree.cursor.id,
+      paused,
+      thinking,
+      playDelaySec,
+      inCheck: false,
+      lastMove: null,
+      lastPoint: goTree.cursor.move === null ? undefined : goTree.cursor.move.point,
+      winRate: items.at(-1)?.winRate,
+      lead: items.at(-1)?.lead,
+      depth: items.at(-1)?.depth,
+      boardSize: pos.size,
+      komi: pos.komi,
+    };
+  };
+
   const buildSnapshot = (): GameSnapshot => {
+    if (kind === 'go') return buildGoSnapshot();
     const path = tree.pathOf(tree.cursor);
     const items: MainlineItem[] = [];
     let notationPos = tree.positionOf(path[0]!);
@@ -168,6 +227,7 @@ function createMockApi(): SuperGoApi {
       if (redCp !== undefined && depth !== undefined) break;
     }
     return {
+      kind: 'xiangqi',
       phase: snap.phase,
       engineSide: snap.engineSide,
       strengthLabel: snap.strength === null ? null : snap.strength.label,
@@ -214,7 +274,39 @@ function createMockApi(): SuperGoApi {
     return value;
   };
 
+  const fakeGoEngineTurn = (): void => {
+    const gen = ++generation;
+    thinking = true;
+    pushStatus('thinking');
+    pushSnapshot();
+    const pos = goTree.positionOf(goTree.cursor);
+    const moves = goGame.legalMoves(pos).filter((m) => m.point !== null);
+    setTimeout(() => {
+      if (gen !== generation) return;
+      const choice = moves[Math.floor(Math.random() * Math.max(1, moves.length))] ?? { kind: 'go' as const, point: null };
+      const node = goTree.play(choice);
+      const wr = 0.45 + Math.random() * 0.1;
+      node.evalRecord = {
+        score: { kind: 'winRate', winRate: pos.turn === 'first' ? wr : 1 - wr, lead: (wr - 0.5) * 8 },
+        depth: 80,
+        source: 'Mock KataGo',
+      };
+      thinking = false;
+      const over = goGame.isGameOver(goTree.positionOf(goTree.cursor), []);
+      if (over && goState.phase === 'playing') goState.end(over);
+      pushStatus('ready');
+      pushSnapshot();
+      if (!paused && goState.phase === 'playing' && (goState.engineSide === 'both' || goState.engineSide === goTree.positionOf(goTree.cursor).turn)) {
+        fakeGoEngineTurn();
+      }
+    }, 400);
+  };
+
   const fakeEngineTurn = (): void => {
+    if (kind === 'go') {
+      fakeGoEngineTurn();
+      return;
+    }
     const gen = ++generation;
     thinking = true;
     playDelaySec = undefined;
@@ -282,12 +374,16 @@ function createMockApi(): SuperGoApi {
 
   /** 当前是否轮到引擎（含互搏） */
   const engineToMoveNow = (): boolean => {
+    if (kind === 'go') {
+      const side = goState.engineSide;
+      return side === 'both' || side === goTree.positionOf(goTree.cursor).turn;
+    }
     const side = state.engineSide;
     return side === 'both' || side === positionNow().turn;
   };
 
   const guardPlaying = (): IntentResult | null => {
-    if (state.phase !== 'playing') return { ok: false, error: '对局未在进行中' };
+    if (liveState().phase !== 'playing') return { ok: false, error: '对局未在进行中' };
     return null;
   };
 
@@ -313,11 +409,23 @@ function createMockApi(): SuperGoApi {
               : {}),
           }
         : undefined;
+      if (patch.activeKind === 'go' || patch.activeKind === 'xiangqi') {
+        kind = patch.activeKind;
+      }
+      const go = {
+        ...settings.go,
+        ...patch.go,
+        analysis: { ...settings.go?.analysis, ...patch.go?.analysis },
+      };
+      if (patch.go?.rules !== undefined && patch.go.komi === undefined) {
+        go.komi = defaultKomi(go.rules ?? 'chinese');
+      }
       settings = {
         ...settings,
         ...patch,
         view: { board3d: true, alwaysOnTop: false, ...settings.view, ...patch.view },
         xiangqi: { ponder: false, ...settings.xiangqi, ...xiangqi },
+        go,
       };
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       applyThemeClass();
@@ -333,6 +441,27 @@ function createMockApi(): SuperGoApi {
       generation++;
       clearThinking();
       paused = false;
+      if (kind === 'go') {
+        if (goState.phase === 'playing') goState.abort();
+        if (!intent.fromCursor) {
+          goTree = new MoveTree<GoMove, GoPosition>(
+            goGame,
+            intent.goSetup ?? {
+              boardSize: 19,
+              komi: settings.go?.komi,
+              rules: settings.go?.rules,
+            },
+          );
+        }
+        const profile = { label: `${normalizeGoStrength(settings.go?.strength).visits} visits`, params: { maxVisits: normalizeGoStrength(settings.go?.strength).visits } };
+        const engineSide = intent.engineSide ?? (intent.fromCursor === true ? lastEngineSide : null);
+        goState.start({ engineSide, strength: profile });
+        lastEngineSide = engineSide;
+        pushStatus('ready');
+        pushSnapshot();
+        if (engineToMoveNow()) fakeEngineTurn();
+        return Promise.resolve({ ok: true });
+      }
       if (state.phase === 'playing') state.abort();
       if (!intent.fromCursor) tree = new MoveTree<XiangqiMove, XiangqiPosition>(game);
       const profile = chessStrengthFromConfig(normalizeXiangqiStrength(settings.xiangqi?.strength));
@@ -350,6 +479,23 @@ function createMockApi(): SuperGoApi {
       const guard = guardPlaying();
       if (guard !== null) return Promise.resolve(guard);
       if (thinking) return Promise.resolve({ ok: false, error: '引擎思考中' });
+      if (kind === 'go') {
+        if (goState.engineSide === 'both') {
+          return Promise.resolve({ ok: false, error: '引擎互搏中，观战模式不可落子' });
+        }
+        if (goTree.positionOf(goTree.cursor).turn === goState.engineSide) {
+          return Promise.resolve({ ok: false, error: '轮到引擎行棋' });
+        }
+        const pos = goTree.positionOf(goTree.cursor);
+        const move: GoMove = { kind: 'go', point: intent.point ?? null };
+        if (!goGame.isLegal(pos, move)) return Promise.resolve({ ok: false, error: '非法着法' });
+        goTree.play(move);
+        const over = goGame.isGameOver(goTree.positionOf(goTree.cursor), []);
+        if (over && goState.phase === 'playing') goState.end(over);
+        pushSnapshot();
+        if (!paused && goState.phase === 'playing' && engineToMoveNow()) fakeEngineTurn();
+        return Promise.resolve({ ok: true });
+      }
       if (state.engineSide === 'both') {
         return Promise.resolve({ ok: false, error: '引擎互搏中，观战模式不可落子' });
       }
@@ -358,6 +504,9 @@ function createMockApi(): SuperGoApi {
         return Promise.resolve({ ok: false, error: '轮到引擎行棋' });
       }
       const pos = positionNow();
+      if (intent.from === undefined || intent.to === undefined) {
+        return Promise.resolve({ ok: false, error: '非法着法' });
+      }
       const move: XiangqiMove = { kind: 'xiangqi', from: intent.from, to: intent.to };
       if (!game.isLegal(pos, move)) return Promise.resolve({ ok: false, error: '非法着法' });
       tree.play(move);
@@ -391,12 +540,12 @@ function createMockApi(): SuperGoApi {
     resign: () => {
       const guard = guardPlaying();
       if (guard !== null) return Promise.resolve(guard);
-      if (state.engineSide === 'both') {
+      if (liveState().engineSide === 'both') {
         return Promise.resolve({ ok: false, error: '观战模式不可认输' });
       }
       generation++;
       clearThinking();
-      state.end({ winner: (state.engineSide ?? 'first') as Player, reason: 'resign' });
+      liveState().end({ winner: (liveState().engineSide ?? 'first') as Player, reason: 'resign' });
       pushSnapshot();
       return Promise.resolve({ ok: true });
     },
@@ -405,7 +554,8 @@ function createMockApi(): SuperGoApi {
       if (guard !== null) return Promise.resolve(guard);
       generation++;
       clearThinking();
-      state.setEngineSide(side);
+      liveState().setEngineSide(side);
+      lastEngineSide = side;
       pushSnapshot();
       if (!paused && engineToMoveNow()) fakeEngineTurn();
       return Promise.resolve({ ok: true });
@@ -424,6 +574,20 @@ function createMockApi(): SuperGoApi {
       return Promise.resolve({ ok: true });
     },
     pickEnginePath: () => Promise.resolve(null), // 浏览器沙箱无文件对话框，入口由文本框承担
+    pickGoEnginePath: () => Promise.resolve(null),
+    pickGoModelPath: () => Promise.resolve(null),
+    pickGoConfigPath: () => Promise.resolve(null),
+    setKind: (next) => {
+      generation++;
+      clearThinking();
+      kind = next;
+      settings = { ...settings, activeKind: next };
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      if (next === 'go') goState.reset();
+      else state.reset();
+      pushSnapshot();
+      return Promise.resolve({ ok: true });
+    },
     gotoNode: (nodeId: number) => {
       if (state.phase === 'playing') return Promise.resolve({ ok: false, error: '对局中不可跳转' });
       const walk = (node: typeof tree.root): typeof tree.root | null => {
@@ -555,6 +719,17 @@ function loadSettings(): AppSettings {
             moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
             ...parsed.xiangqi,
           },
+          go: {
+            ponder: false,
+            moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
+            moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
+            rules: 'chinese',
+            komi: 7.5,
+            boardSize: 19,
+            ...parsed.go,
+            strength: { ...parsed.go?.strength },
+            analysis: { ...GO_ANALYSIS_DEFAULT, ...parsed.go?.analysis },
+          },
         };
       }
     }
@@ -564,11 +739,22 @@ function loadSettings(): AppSettings {
   return {
     theme: 'system' satisfies ThemeSetting,
     view: { board3d: true, alwaysOnTop: false },
+    activeKind: 'xiangqi',
     xiangqi: {
       strength: {},
       ponder: false,
       moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
       moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
+    },
+    go: {
+      strength: {},
+      ponder: false,
+      moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
+      moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
+      rules: 'chinese',
+      komi: 7.5,
+      boardSize: 19,
+      analysis: { ...GO_ANALYSIS_DEFAULT },
     },
     linker: { ...LINKER_SETTINGS_DEFAULT },
   };

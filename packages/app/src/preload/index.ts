@@ -41,6 +41,13 @@ const api: SuperGoApi = {
   togglePause: () => ipcRenderer.invoke(IPC_CHANNELS.gamePauseToggle),
   pickEnginePath: () =>
     ipcRenderer.invoke(IPC_CHANNELS.settingsPickEnginePath) as Promise<string | null>,
+  pickGoEnginePath: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.settingsPickGoEnginePath) as Promise<string | null>,
+  pickGoModelPath: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.settingsPickGoModelPath) as Promise<string | null>,
+  pickGoConfigPath: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.settingsPickGoConfigPath) as Promise<string | null>,
+  setKind: (kind) => ipcRenderer.invoke(IPC_CHANNELS.gameSetKind, kind),
   gotoNode: (nodeId: number) => ipcRenderer.invoke(IPC_CHANNELS.gameGoto, nodeId),
   getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.gameSnapshotGet) as Promise<GameSnapshot>,
   onSnapshot: (cb: (snap: GameSnapshot) => void) =>

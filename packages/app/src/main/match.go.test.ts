@@ -1,0 +1,134 @@
+/**
+ * 围棋 MatchService：假 GTP 适配器，验证棋种切换、出招评估、双虚着 + final_score。
+ */
+import { gtpToPoint, normalizeGoStrength, normalizeXiangqiStrength } from '@super-go/core';
+import { describe, expect, it } from 'vitest';
+import type { EngineAdapter, EngineEvaluation, EngineStatus } from '../shared/engine';
+import type { GameSnapshot } from '../shared/game';
+import { MatchService, type MatchEvents } from './match';
+
+function fakeGoAdapter(opts?: { finalScore?: string; move?: string }): EngineAdapter {
+  return {
+    engineName: 'FakeKata',
+    async launch() {
+      /* no-op */
+    },
+    syncPosition() {
+      /* no-op */
+    },
+    async genmove() {
+      return {
+        move: opts?.move ?? 'D4',
+        evaluation: { winRate: 0.58, lead: 1.6, depth: 12 },
+      };
+    },
+    async setStrength() {
+      /* no-op */
+    },
+    stopSearch() {
+      /* no-op */
+    },
+    quit() {
+      /* no-op */
+    },
+    getStatus: (): EngineStatus => 'ready',
+    onExit: () => () => undefined,
+    onEvaluation: (_cb: (evaluation: EngineEvaluation) => void) => () => undefined,
+    async setPonder() {
+      /* no-op */
+    },
+    async finalScore() {
+      return opts?.finalScore ?? 'B+3.5';
+    },
+    async analyzeOnce() {
+      return { winRate: 0.51, lead: 0.4, depth: 8 };
+    },
+  };
+}
+
+function makeMatch(adapter: EngineAdapter): { match: MatchService; latest: () => GameSnapshot } {
+  const snapshots: GameSnapshot[] = [];
+  const events: MatchEvents = {
+    snapshot: (snap) => snapshots.push(snap),
+    engineStatus: () => undefined,
+    liveEval: () => undefined,
+  };
+  const match = new MatchService(
+    events,
+    () => null,
+    () => normalizeXiangqiStrength({}),
+    () => ({ min: 0, max: 0 }),
+    {
+      createGoAdapter: () => adapter,
+      sleep: async () => undefined,
+      go: {
+        launch: () => ({
+          binaryPath: '/dev/null',
+          modelPath: '/dev/null',
+          configPath: '/dev/null',
+        }),
+        strength: () => normalizeGoStrength({ mode: 'visits', visits: 25 }),
+        playDelayMs: () => ({ min: 0, max: 0 }),
+        analysis: () => ({ maxVisits: 50, fastVisits: 8, maxTimeSec: 1, wideRootNoise: 0.04 }),
+        ponder: () => false,
+        setup: () => ({ boardSize: 19, komi: 7.5, rules: 'chinese' }),
+      },
+    },
+  );
+  return {
+    match,
+    latest: () => snapshots[snapshots.length - 1]!,
+  };
+}
+
+async function waitFor(
+  latest: () => GameSnapshot,
+  pred: (snap: GameSnapshot) => boolean,
+  ms = 2_000,
+): Promise<GameSnapshot> {
+  const deadline = Date.now() + ms;
+  while (Date.now() <= deadline) {
+    const snap = latest();
+    if (snap !== undefined && pred(snap)) return snap;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(`等待围棋快照超时: ${JSON.stringify(latest())}`);
+}
+
+describe('MatchService 围棋', () => {
+  it('人机一步：引擎应招带 winRate，切回象棋', async () => {
+    const { match, latest } = makeMatch(fakeGoAdapter());
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect(latest().kind).toBe('go');
+    expect((await match.newGame({ engineSide: 'second', goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
+    const snap = await waitFor(
+      latest,
+      (s) => s.kind === 'go' && s.moves.length >= 2 && s.thinking === false && s.winRate !== undefined,
+    );
+    expect(snap.moves[0]?.iccs.toUpperCase()).toBe('Q16');
+    expect(snap.moves[1]?.iccs.toUpperCase()).toBe('D4');
+    expect(snap.winRate).toBeGreaterThan(0);
+    expect(snap.lead).toBeDefined();
+    expect((await match.setKind('xiangqi')).ok).toBe(true);
+    expect(latest().kind).toBe('xiangqi');
+    expect(latest().phase).toBe('idle');
+    match.dispose();
+  });
+
+  it('双虚着后以引擎 final_score 覆盖本地数子', async () => {
+    const { match, latest } = makeMatch(fakeGoAdapter({ finalScore: 'B+3.5' }));
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19, komi: 7.5 } })).ok).toBe(
+      true,
+    );
+    expect(match.playMove({ point: null }).ok).toBe(true);
+    expect(match.playMove({ point: null }).ok).toBe(true);
+    const snap = await waitFor(
+      latest,
+      (s) => s.phase === 'ended' && s.result?.winner === 'first' && s.result.reason === 'twoPasses',
+    );
+    expect(snap.result?.winner).toBe('first');
+    match.dispose();
+  });
+});

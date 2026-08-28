@@ -1,11 +1,17 @@
 import { app, BrowserWindow, Menu, nativeTheme } from 'electron';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { normalizeXiangqiStrength } from '@super-go/core';
-import { IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
+import { normalizeGoStrength, normalizeXiangqiStrength } from '@super-go/core';
+import { GO_ANALYSIS_DEFAULT, IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
 import { moveDelayMs } from '../shared/moveDelay';
 import { cpuThreadCount } from './cpuThreads';
-import { enginesRootCandidates, findPikafishBinary } from './engine/discover';
+import {
+  enginesRootCandidates,
+  findPikafishBinary,
+  resolveKatagoBinary,
+  resolveKatagoModel,
+} from './engine/discover';
+import { resolveKatagoConfig } from './engine/katagoConfig';
 import { registerIpc } from './ipc';
 import {
   handleFromNativeBuffer,
@@ -137,6 +143,29 @@ function resolveEnginePath(userPath: string | undefined): string | null {
   return null;
 }
 
+function resolveGoLaunch(settingsGo: {
+  enginePath?: string;
+  modelPath?: string;
+  configPath?: string;
+  analysis?: { wideRootNoise?: number };
+}): import('../shared/engine').GtpLaunchSpec | null {
+  const locate = {
+    appPath: app.getAppPath(),
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+  };
+  const binaryPath = resolveKatagoBinary({ ...locate, userPath: settingsGo.enginePath });
+  const modelPath = resolveKatagoModel({ ...locate, userPath: settingsGo.modelPath });
+  if (binaryPath === null || modelPath === null) return null;
+  const configPath = resolveKatagoConfig({
+    userPath: settingsGo.configPath,
+    userDataDir: app.getPath('userData'),
+    numSearchThreads: Math.max(1, Math.min(8, cpuThreadCount())),
+    analysisWideRootNoise: settingsGo.analysis?.wideRootNoise,
+  });
+  return { binaryPath, modelPath, configPath };
+}
+
 void app.whenReady().then(() => {
   installAppMenu();
   const settings = new SettingsStore();
@@ -169,7 +198,24 @@ void app.whenReady().then(() => {
     () => resolveEnginePath(settings.get().xiangqi?.enginePath),
     () => normalizeXiangqiStrength(settings.get().xiangqi?.strength, cpuThreadCount()),
     () => moveDelayMs(settings.get().xiangqi),
+    {
+      go: {
+        launch: () => resolveGoLaunch(settings.get().go),
+        strength: () => normalizeGoStrength(settings.get().go.strength),
+        playDelayMs: () => moveDelayMs(settings.get().go),
+        analysis: () => ({ ...GO_ANALYSIS_DEFAULT, ...settings.get().go.analysis }),
+        ponder: () => settings.get().go.ponder === true,
+        setup: () => ({
+          boardSize: 19,
+          komi: settings.get().go.komi,
+          rules: settings.get().go.rules,
+        }),
+      },
+    },
   );
+  if (settings.get().activeKind === 'go') {
+    void match.setKind('go');
+  }
 
   // 连线（P2）：连线 = 以平台识别局面重开一局，对局本体复用 MatchService
   // （引擎进程、执方、强度生命周期同源；连线只是眼睛 + 手）

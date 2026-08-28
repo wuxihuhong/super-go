@@ -1,4 +1,4 @@
-import { normalizeXiangqiStrength } from '@super-go/core';
+import { normalizeGoStrength, normalizeXiangqiStrength, type GameKind } from '@super-go/core';
 import { app, dialog, ipcMain, nativeTheme, type BrowserWindow } from 'electron';
 import {
   IPC_CHANNELS,
@@ -46,6 +46,15 @@ export function registerIpc(
         },
       };
     }
+    if (patch.go?.strength !== undefined) {
+      patch = {
+        ...patch,
+        go: {
+          ...patch.go,
+          strength: normalizeGoStrength(patch.go.strength),
+        },
+      };
+    }
     const next = settings.patch(patch);
     if (patch.theme !== undefined) {
       // 手动选浅/深即固定；选回 system 恢复跟随（§7.5）
@@ -57,18 +66,33 @@ export function registerIpc(
     }
     // 棋力/线程/哈希属固有配置：设置一变立即下发（对局中与空闲均生效）
     void match.refreshStrength();
+    if (patch.activeKind !== undefined && patch.activeKind !== match.activeKind) {
+      void match.setKind(patch.activeKind);
+    }
     return next;
   });
 
-  // 引擎路径浏览：系统文件对话框（用户值优先，§5.6 逃生口的图形化入口）
-  ipcMain.handle(IPC_CHANNELS.settingsPickEnginePath, async () => {
+  const pickFile = async (message: string, filters?: Electron.FileFilter[]): Promise<string | null> => {
     const win = getMainWindow();
     const result = await dialog.showOpenDialog(win!, {
       properties: ['openFile'],
-      message: '选择象棋引擎可执行文件',
+      message,
+      filters,
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
-  });
+  };
+
+  // 引擎路径浏览：系统文件对话框（用户值优先，§5.6 逃生口的图形化入口）
+  ipcMain.handle(IPC_CHANNELS.settingsPickEnginePath, async () =>
+    pickFile('选择象棋引擎可执行文件'),
+  );
+  ipcMain.handle(IPC_CHANNELS.settingsPickGoEnginePath, async () => pickFile('选择 KataGo 可执行文件'));
+  ipcMain.handle(IPC_CHANNELS.settingsPickGoModelPath, async () =>
+    pickFile('选择 KataGo 模型文件', [{ name: 'KataGo model', extensions: ['bin', 'gz', 'bin.gz'] }]),
+  );
+  ipcMain.handle(IPC_CHANNELS.settingsPickGoConfigPath, async () =>
+    pickFile('选择 KataGo 配置文件', [{ name: 'Config', extensions: ['cfg', 'config', 'txt'] }]),
+  );
 
   nativeTheme.on('updated', () => {
     getMainWindow()?.webContents.send(IPC_CHANNELS.themeChanged, nativeTheme.shouldUseDarkColors);
@@ -97,6 +121,7 @@ export function registerIpc(
   ipcMain.handle(IPC_CHANNELS.gamePauseToggle, () => match.togglePause());
   ipcMain.handle(IPC_CHANNELS.gameGoto, (_e, nodeId: number) => match.goto(nodeId));
   ipcMain.handle(IPC_CHANNELS.gameSnapshotGet, () => match.snapshot());
+  ipcMain.handle(IPC_CHANNELS.gameSetKind, (_e, kind: GameKind) => match.setKind(kind));
 
   // ---- 连线（P2，DESIGN §6）----
   ipcMain.handle(IPC_CHANNELS.linkerListWindows, () => linker.listWindows());

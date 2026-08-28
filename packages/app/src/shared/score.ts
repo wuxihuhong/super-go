@@ -17,3 +17,16 @@ export function toRedPerspective(
     redMate: mate === undefined ? undefined : mate * flip,
   };
 }
+
+/** 走子方视角 → 黑方视角（围棋：胜率/目差） */
+export function toBlackPerspective(
+  mover: Player,
+  winRate?: number,
+  lead?: number,
+): { winRate?: number; lead?: number } {
+  if (mover === 'first') return { winRate, lead };
+  return {
+    winRate: winRate === undefined ? undefined : 1 - winRate,
+    lead: lead === undefined ? undefined : -lead,
+  };
+}

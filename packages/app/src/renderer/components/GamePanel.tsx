@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
-import { normalizeXiangqiStrength, type XiangqiStrengthConfig } from '@super-go/core';
+import {
+  GO_VISITS_PRESETS,
+  normalizeGoStrength,
+  normalizeXiangqiStrength,
+  type XiangqiStrengthConfig,
+} from '@super-go/core';
 import type { AppSettings } from '@shared/ipc';
 import { guessCpuThreads, resolveCpuThreads } from '../lib/cpuThreads';
 import StrengthFields from './StrengthFields';
@@ -44,7 +49,36 @@ export default function GamePanel(props: GamePanelProps) {
   const strength = settings
     ? normalizeXiangqiStrength(settings.xiangqi?.strength, cpuThreads)
     : null;
+  const goStrength = normalizeGoStrength(settings?.go?.strength);
   if (strength === null) return <div className="w-80" />;
+
+  if (settings?.activeKind === 'go') {
+    return (
+      <div className="w-80 rounded-xl border border-border bg-surface p-3 shadow-xl">
+        <div className="flex flex-wrap gap-1 p-2">
+          {GO_VISITS_PRESETS.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => {
+                void window.superGo
+                  .setSettings({ go: { ...settings.go, strength: { ...goStrength, mode: 'visits', visits: n } } })
+                  .then((next) => {
+                    setSettingsState(next);
+                    props.onSettingsChanged(next);
+                  });
+              }}
+              className={`rounded-md px-2 py-1 text-xs ${
+                goStrength.visits === n ? 'bg-accent/10 text-accent ring-1 ring-accent/40' : 'text-muted-foreground'
+              }`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-80 rounded-xl border border-border bg-surface p-3 shadow-xl">

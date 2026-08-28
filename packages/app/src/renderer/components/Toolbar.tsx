@@ -1,4 +1,4 @@
-import type { Player } from '@super-go/core';
+import type { GameKind, GameSetup, Player } from '@super-go/core';
 import type {
   AppSettings,
   EngineStatusPayload,
@@ -28,7 +28,7 @@ import {
   IconZoomIn,
 } from './icons';
 
-export type Popover = 'none' | 'setup' | 'settings' | 'game' | 'linker' | 'zoom';
+export type Popover = 'none' | 'setup' | 'settings' | 'game' | 'linker' | 'zoom' | 'kindConfirm';
 
 export interface ToolbarProps {
   t: TFunction;
@@ -46,8 +46,11 @@ export interface ToolbarProps {
   snapshot: GameSnapshot | null;
   popover: Popover;
   onPopoverChange: (popover: Popover) => void;
+  kind: GameKind;
+  onSetKind: (kind: GameKind) => void;
+  onPass: () => void;
   /** 新对局弹窗所选执方（纯视角锚定，不设置引擎执方） */
-  onNewGame: (humanSide: Player) => void;
+  onNewGame: (humanSide: Player, goSetup?: GameSetup) => void;
   onUndo: () => void;
   onResign: () => void;
   onPauseToggle: () => void;
@@ -140,7 +143,7 @@ function ToolButton(props: {  label: string;
 function EngineSideButton(props: {
   label: string;
   hint?: string;
-  color: 'red' | 'black';
+  color: 'red' | 'black' | 'white';
   active: boolean;
   disabled?: boolean;
   onClick: () => void;
@@ -158,11 +161,14 @@ function EngineSideButton(props: {
         }`}
       >
         <span
-          className={`h-3.5 w-3.5 rounded-full border ${
+          className="h-3.5 w-3.5 rounded-full border"
+          style={
             props.color === 'red'
-              ? 'border-piece-red/60 bg-piece-red'
-              : 'border-piece-black/60 bg-piece-black'
-          }`}
+              ? { background: 'var(--piece-red)', borderColor: 'color-mix(in srgb, var(--piece-red) 60%, transparent)' }
+              : props.color === 'white'
+                ? { background: 'var(--stone-white)', borderColor: 'var(--stone-white-rim)' }
+                : { background: 'var(--stone-black)', borderColor: 'color-mix(in srgb, var(--stone-black) 60%, transparent)' }
+          }
         />
       </button>
       <span className="pointer-events-none absolute top-full left-1/2 z-50 mt-1.5 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-[11px] leading-tight whitespace-nowrap text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-hover:delay-250">
@@ -236,6 +242,61 @@ export default function Toolbar(props: ToolbarProps) {
       }`}
     >
       <div className="relative flex items-center gap-1" style={NO_DRAG}>
+        <div className="mr-1 flex rounded-lg bg-background p-0.5">
+          {(['xiangqi', 'go'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => {
+                if (k === props.kind) return;
+                if (props.playing) {
+                  props.onPopoverChange('kindConfirm');
+                  return;
+                }
+                props.onSetKind(k);
+              }}
+              className={`rounded-md px-2 py-1 text-[11px] ${
+                props.kind === k ? 'bg-surface text-foreground shadow-sm' : 'text-muted-foreground'
+              }`}
+            >
+              {props.t(k === 'go' ? 'toolbar.kind.go' : 'toolbar.kind.xiangqi')}
+            </button>
+          ))}
+        </div>
+        {popoverLayer(
+          'kindConfirm',
+          <div className="w-72 rounded-xl border border-border bg-surface p-3 shadow-xl">
+            <h2 className="mb-1 px-1 text-xs font-semibold text-foreground">
+              {props.t('toolbar.kind.confirm')}
+            </h2>
+            <p className="mb-3 px-1 text-xs leading-relaxed text-muted-foreground">
+              {props.t('toolbar.kind.confirm.body')}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closePopover}
+                className="rounded-lg px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+              >
+                {props.t('setup.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  closePopover();
+                  if (props.linkerStatus !== null && isLinkerActivePhase(props.linkerStatus.phase)) {
+                    props.onLinkerStop();
+                  }
+                  props.onSetKind(props.kind === 'go' ? 'xiangqi' : 'go');
+                }}
+                className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-accent-foreground"
+              >
+                {props.t('toolbar.kind.confirm.ok')}
+              </button>
+            </div>
+          </div>,
+          'left',
+        )}
         {iconButton(
           'toolbar.newGame',
           <IconPlus />,
@@ -248,10 +309,11 @@ export default function Toolbar(props: ToolbarProps) {
           'setup',
           <SetupPanel
             t={props.t}
+            kind={props.kind}
             mode="new"
-            onStart={(side) => {
+            onStart={(side, goSetup) => {
               closePopover();
-              props.onNewGame(side);
+              props.onNewGame(side, goSetup);
             }}
             onCancel={closePopover}
           />,
@@ -270,6 +332,8 @@ export default function Toolbar(props: ToolbarProps) {
           ' ',
         )}
       {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.canResign)}
+      {props.kind === 'go' &&
+        iconButton('toolbar.pass', <span className="text-[11px] font-medium">P</span>, props.onPass, !props.playing)}
 
       {/* 居中标题仅 mac：hiddenInset 没有系统标题，Win/Linux 窗框已有应用名 */}
       {IS_MAC && (
@@ -301,9 +365,9 @@ export default function Toolbar(props: ToolbarProps) {
         {/* 引擎执方（独立开关）：红/黑各自切换引擎托管；两个都开 = 引擎互搏，
             都关 = 无引擎（人执双方 / 纯观战）。任何对弈状态下随时可切 */}
         <EngineSideButton
-          label={props.t('toolbar.engineRed')}
-          hint={props.t('toolbar.engineRed.hint')}
-          color="red"
+          label={props.t(props.kind === 'go' ? 'toolbar.engineBlackGo' : 'toolbar.engineRed')}
+          hint={props.t(props.kind === 'go' ? 'toolbar.engineBlackGo.hint' : 'toolbar.engineRed.hint')}
+          color={props.kind === 'go' ? 'black' : 'red'}
           active={
             props.snapshot?.engineSide === 'first' || props.snapshot?.engineSide === 'both'
           }
@@ -311,15 +375,16 @@ export default function Toolbar(props: ToolbarProps) {
           onClick={() => props.onToggleEngineSide('first')}
         />
         <EngineSideButton
-          label={props.t('toolbar.engineBlack')}
-          hint={props.t('toolbar.engineBlack.hint')}
-          color="black"
+          label={props.t(props.kind === 'go' ? 'toolbar.engineWhiteGo' : 'toolbar.engineBlack')}
+          hint={props.t(props.kind === 'go' ? 'toolbar.engineWhiteGo.hint' : 'toolbar.engineBlack.hint')}
+          color={props.kind === 'go' ? 'white' : 'black'}
           active={
             props.snapshot?.engineSide === 'second' || props.snapshot?.engineSide === 'both'
           }
           disabled={!props.playing}
           onClick={() => props.onToggleEngineSide('second')}
         />
+        {props.kind !== 'go' && (
         <div className="relative">
           {iconButton(
             'toolbar.linker',
@@ -342,6 +407,7 @@ export default function Toolbar(props: ToolbarProps) {
             'right',
           )}
         </div>
+        )}
         <div className="relative">
           {iconButton(
             'toolbar.boardZoom',

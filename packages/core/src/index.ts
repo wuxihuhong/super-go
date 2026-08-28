@@ -2,6 +2,8 @@
  * @super-go/core 公共出口。core 零运行时依赖、零 Electron 依赖（AGENTS.md 分层铁律）。
  */
 export type {
+  BoardMark,
+  BoardMarkType,
   CpScore,
   EvalRecord,
   GameEndReason,
@@ -92,3 +94,74 @@ export {
   type XiangqiStrengthConfig,
   type XiangqiStrengthMode,
 } from './xiangqi/strength.js';
+
+// ---------------------------------------------------------------------------
+// 围棋（P3）
+// ---------------------------------------------------------------------------
+export type { GoCell, GoPosition, GoSize } from './go/position.js';
+export {
+  DEFAULT_GO_SIZE,
+  GO_SIZES,
+  boardIndex as goBoardIndex,
+  cellAt,
+  defaultKomi,
+  emptyCells,
+  handicapPoints,
+  inBoard as goInBoard,
+  isGoSize,
+  makeGoPosition,
+  normalizeGoSize,
+  normalizeRules,
+  opponentOf as goOpponentOf,
+  pointOfIndex as goPointOfIndex,
+  withStones,
+} from './go/position.js';
+export {
+  applyGoMove,
+  collectGroup,
+  diffGo,
+  isGoGameOver,
+  isLegalGoMove,
+  legalGoMoves,
+  neighbors as goNeighbors,
+  resultFromScore,
+  sameBoard,
+  scoreTrompTaylor,
+  tryPlace,
+  wouldViolateSuperko,
+} from './go/rules.js';
+export { parseGo, serializeGo } from './go/serialize.js';
+export {
+  GTP_COLUMNS,
+  goMoveToGtp,
+  goNotation,
+  gtpToPoint,
+  parseGtpMove,
+  pointToGtp,
+} from './go/notation.js';
+export { goZobrist } from './go/zobrist.js';
+export { GoGame } from './go/goGame.js';
+export {
+  GO_MOVETIME_MAX,
+  GO_MOVETIME_MIN,
+  GO_STRENGTH_DEFAULT,
+  GO_VISITS_MAX,
+  GO_VISITS_MIN,
+  GO_VISITS_PRESETS,
+  goGenmoveConstraintFromConfig,
+  goStrengthFromConfig,
+  normalizeGoStrength,
+  type GoGenmoveConstraint,
+  type GoHumanRank,
+  type GoStrengthConfig,
+  type GoStrengthMode,
+} from './go/strength.js';
+export {
+  parseSgf,
+  positionFromSgf,
+  serializeSgf,
+  sgfToTree,
+  treeToSgf,
+  type SgfGameRecord,
+  type SgfNode,
+} from './go/sgf.js';

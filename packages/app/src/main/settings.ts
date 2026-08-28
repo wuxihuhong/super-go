@@ -1,3 +1,4 @@
+import { defaultKomi } from '@super-go/core';
 import { app } from 'electron';
 import {
   copyFileSync,
@@ -9,17 +10,29 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { AppSettings } from '../shared/ipc';
+import { GO_ANALYSIS_DEFAULT } from '../shared/ipc';
 import { LINKER_SETTINGS_DEFAULT } from '../shared/linker';
 import { MOVE_DELAY_DEFAULT } from '../shared/moveDelay';
 
 const DEFAULTS: AppSettings = {
   theme: 'system',
   view: { board3d: true, alwaysOnTop: false },
+  activeKind: 'xiangqi',
   xiangqi: {
     strength: {},
     ponder: false,
     moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
     moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
+  },
+  go: {
+    strength: {},
+    ponder: false,
+    moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
+    moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
+    rules: 'chinese',
+    komi: 7.5,
+    boardSize: 19,
+    analysis: { ...GO_ANALYSIS_DEFAULT },
   },
   linker: { ...LINKER_SETTINGS_DEFAULT },
 };
@@ -54,10 +67,17 @@ export class SettingsStore {
         }
       }
     }
-    this.data = { ...DEFAULTS, xiangqi: { ...DEFAULTS.xiangqi }, ...this.read() };
+    this.data = { ...DEFAULTS, xiangqi: { ...DEFAULTS.xiangqi }, go: { ...DEFAULTS.go }, ...this.read() };
     this.data.view = { ...DEFAULTS.view, ...this.data.view };
     this.data.xiangqi = { ...DEFAULTS.xiangqi, ...this.data.xiangqi };
+    this.data.go = {
+      ...DEFAULTS.go,
+      ...this.data.go,
+      analysis: { ...DEFAULTS.go.analysis, ...this.data.go?.analysis },
+    };
     this.data.linker = { ...DEFAULTS.linker, ...this.data.linker };
+    if (this.data.activeKind !== 'go') this.data.activeKind = 'xiangqi';
+    this.data.go.boardSize = 19;
   }
 
   get(): AppSettings {
@@ -70,8 +90,17 @@ export class SettingsStore {
       ...partial,
       view: { ...this.data.view, ...partial.view },
       xiangqi: { ...this.data.xiangqi, ...partial.xiangqi },
+      go: {
+        ...this.data.go,
+        ...partial.go,
+        analysis: { ...this.data.go.analysis, ...partial.go?.analysis },
+      },
       linker: { ...this.data.linker, ...partial.linker },
     };
+    this.data.go.boardSize = 19;
+    if (partial.go?.rules !== undefined && partial.go.komi === undefined) {
+      this.data.go.komi = defaultKomi(this.data.go.rules ?? 'chinese');
+    }
     this.write();
     return this.get();
   }

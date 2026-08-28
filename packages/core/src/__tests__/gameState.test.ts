@@ -103,6 +103,16 @@ describe('GameStateMachine', () => {
     expect(sm.strength).toBeNull();
   });
 
+  it('终局后 refineResult 可覆盖本地兜底，非 ended 抛错', () => {
+    const sm = makeMachine();
+    expect(() => sm.refineResult({ winner: 'first', reason: 'twoPasses' })).toThrow();
+    sm.start({ engineSide: 'first', strength: null });
+    sm.end({ winner: 'second', reason: 'twoPasses' });
+    sm.refineResult({ winner: 'first', reason: 'twoPasses' });
+    expect(sm.result).toEqual({ winner: 'first', reason: 'twoPasses' });
+    expect(sm.phase).toBe('ended');
+  });
+
   it('非 playing 时 updateStrength / setEngineSide 抛错', () => {
     const sm = makeMachine();
     expect(() => sm.updateStrength(elo2200)).toThrow();

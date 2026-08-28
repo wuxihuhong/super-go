@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   findKing,
+  GoGame,
+  parseGo,
   pieceAt,
   pieceSide,
   XiangqiGame,
   type EngineSide,
+  type GameKind,
+  type GameSetup,
   type Player,
   type Point,
   type XiangqiPosition,
@@ -21,6 +25,8 @@ import { BOARD3D_SCALE, clampBoard3dScale, isLinkerActivePhase } from '@shared/i
 import type { GameSnapshot } from '@shared/game';
 import Board from './components/Board';
 import Board3D from './components/Board3D';
+import GoBoard from './components/GoBoard';
+import GoBoard3D from './components/GoBoard3D';
 import SidePanel from './components/SidePanel';
 import StatusBar from './components/StatusBar';
 import Toolbar, { type Popover } from './components/Toolbar';
@@ -49,17 +55,22 @@ export default function App() {
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   // 3D 棋盘在容器内的占比（仅 3D 生效；0.5–2，持久化 view.board3dScale）
   const [board3dScale, setBoard3dScale] = useState(1);
+  const [kind, setKind] = useState<GameKind>('xiangqi');
   const userClosedPanel = useRef(false);
   const prevLinkerPhase = useRef<LinkerStatus['phase'] | undefined>(undefined);
   const board3dScaleTimer = useRef<number | null>(null);
   // 连线（P2）：状态/日志（对局快照走 game:snapshot——连线 = 重开一局）
   const [linkerStatus, setLinkerStatus] = useState<LinkerStatus | null>(null);
   const [linkerLogs, setLinkerLogs] = useState<LinkerLogEntry[]>([]);
-  // 中央区实测高度 → 推算棋盘列宽（useElementSize 报告 contentRect，已不含 p-6 内边距）
-  const { ref: mainRef, height: mainHeight } = useElementSize<HTMLElement>();
-  const boardHeight = Math.max(240, mainHeight * (board3d && !glFailed ? board3dScale : 1));
-  // 画布宽高比 =（8+2×0.85）/（9+2×0.85），含坐标编号边距
-  const boardColumnWidth = boardHeight * 0.907;
+  // 中央区实测尺寸 → 推算棋盘盒（useElementSize 报告 contentRect，已不含 p-6 内边距）
+  const { ref: mainRef, width: mainWidth, height: mainHeight } = useElementSize<HTMLElement>();
+  const viewScale = board3d && !glFailed ? board3dScale : 1;
+  const mainReady = mainWidth > 0 && mainHeight > 0;
+  // 围棋必须真正正方形：宽高一起取 min(avail)，禁止只靠 max-w-full 截宽（会留下竖长条，3D 近沿被裁）
+  const goBox = mainReady ? Math.max(240, Math.min(mainWidth, mainHeight) * viewScale) : 0;
+  const xiangqiHeight = mainReady ? Math.max(240, mainHeight * viewScale) : 0;
+  const boardHeight = kind === 'go' ? goBox : xiangqiHeight;
+  const boardColumnWidth = kind === 'go' ? goBox : xiangqiHeight * 0.907;
 
   useEffect(() => {
     void window.superGo.getSettings().then((s) => {
@@ -68,6 +79,7 @@ export default function App() {
       setBoard3d(s.view?.board3d ?? true);
       setAlwaysOnTop(s.view?.alwaysOnTop ?? false);
       setBoard3dScale(s.view?.board3dScale ?? 1);
+      setKind(s.activeKind === 'go' ? 'go' : 'xiangqi');
     });
     void window.superGo.getSnapshot().then(setSnapshot);
     // 主题变化时 CSS 变量已自动切换，这里只为触发 canvas 重绘
@@ -78,6 +90,7 @@ export default function App() {
     const offSnapshot = window.superGo.onSnapshot((snap) => {
       setSnapshot(snap);
       setSelected(null);
+      if (snap.kind === 'go' || snap.kind === 'xiangqi') setKind(snap.kind);
     });
     const offStatus = window.superGo.onEngineStatus(setEngineStatus);
     const offEval = window.superGo.onLiveEval(setLiveEval);
@@ -106,10 +119,29 @@ export default function App() {
   }, [notice]);
 
   const game = useMemo(() => new XiangqiGame(), []);
+  const goGame = useMemo(() => new GoGame(), []);
   const position: XiangqiPosition = useMemo(
-    () => (snapshot !== null ? game.parse(snapshot.fen) : game.initialPosition()),
+    () =>
+      snapshot !== null && snapshot.kind !== 'go' ? game.parse(snapshot.fen) : game.initialPosition(),
     [snapshot, game],
   );
+  const goFen = snapshot?.kind === 'go' ? snapshot.fen : null;
+  const goPosRef = useRef(goGame.initialPosition());
+  const goPosition = useMemo(() => {
+    if (goFen !== null) {
+      try {
+        const next = parseGo(goFen);
+        goPosRef.current = next;
+        return next;
+      } catch {
+        // 解析失败保上一手，避免整盘棋子被清空成「落子后丢失」
+        return goPosRef.current;
+      }
+    }
+    const empty = goGame.initialPosition();
+    goPosRef.current = empty;
+    return empty;
+  }, [goFen, goGame]);
 
   // ---- 音效（§7.4：走子/吃子/将军/终局）----
   const soundPrev = useRef<{ movesLen: number; pieceCount: number; phase: string }>({
@@ -119,7 +151,10 @@ export default function App() {
   });
   useEffect(() => {
     if (snapshot === null) return;
-    const pieceCount = position.board.filter((p) => p !== null).length;
+    const pieceCount =
+      snapshot.kind === 'go'
+        ? goPosition.cells.filter((c) => c !== null).length
+        : position.board.filter((p) => p !== null).length;
     const prev = soundPrev.current;
     const next = { movesLen: snapshot.moves.length, pieceCount, phase: snapshot.phase };
     if (next.movesLen > prev.movesLen) {
@@ -131,7 +166,7 @@ export default function App() {
       playSound('end');
     }
     soundPrev.current = next;
-  }, [snapshot, position]);
+  }, [snapshot, position, goPosition]);
 
   const engineSide = snapshot?.engineSide ?? null;
   const spectating = engineSide === 'both'; // 引擎互搏，人观战
@@ -196,6 +231,7 @@ export default function App() {
     setBoard3d(next.view?.board3d ?? true);
     setAlwaysOnTop(next.view?.alwaysOnTop ?? false);
     setBoard3dScale(next.view?.board3dScale ?? 1);
+    if (next.activeKind === 'go' || next.activeKind === 'xiangqi') setKind(next.activeKind);
   }, []);
 
   /** 工具栏快速切换窗口置顶（走设置通道：持久化 + main 即时生效） */
@@ -348,10 +384,16 @@ export default function App() {
         snapshot={snapshot}
         popover={popover}
         onPopoverChange={setPopover}
-        onNewGame={(side) => {
-          // 弹窗选的执方只作为视角锚定；引擎执方不在此设置（缺省 = 沿用工具栏开关状态）
+        kind={kind}
+        onSetKind={(next) => {
+          setKind(next);
+          void window.superGo.setSettings({ activeKind: next });
+          runIntent(() => window.superGo.setKind(next));
+        }}
+        onPass={() => runIntent(() => window.superGo.playMove({ point: null }))}
+        onNewGame={(side, goSetup?: GameSetup) => {
           pendingAnchorRef.current = side;
-          runIntent(() => window.superGo.newGame({ fromCursor: false }));
+          runIntent(() => window.superGo.newGame({ fromCursor: false, goSetup }));
         }}
         onUndo={() => runIntent(() => window.superGo.undoMove())}
         onResign={() => runIntent(() => window.superGo.resign())}
@@ -391,15 +433,41 @@ export default function App() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <main ref={mainRef} className="flex min-w-0 flex-1 items-center justify-center p-6">
-          {mainHeight > 0 && (
+        <main
+          ref={mainRef}
+          className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-6"
+        >
+          {mainReady && (
             <div
-              className={`relative max-w-full overflow-hidden rounded-xl ${
+              className={`relative overflow-hidden rounded-xl ${
+                kind === 'go' ? '' : 'max-w-full'
+              } ${
                 board3d && !glFailed ? '' : 'shadow-md' // 3D 自带接地投影，CSS 盒阴影会叠出"外框"
               }`}
               style={{ width: boardColumnWidth, height: boardHeight }}
             >
-              {board3d && !glFailed ? (
+              {kind === 'go' ? (
+                board3d && !glFailed ? (
+                  <GoBoard3D
+                    position={goPosition}
+                    lastPoint={snapshot?.lastPoint}
+                    flip={flip}
+                    themeTick={themeTick}
+                    interactive={interactive}
+                    onPlay={(p) => runIntent(() => window.superGo.playMove({ point: p }))}
+                    onUnavailable={() => setGlFailed(true)}
+                  />
+                ) : (
+                  <GoBoard
+                    position={goPosition}
+                    lastPoint={snapshot?.lastPoint}
+                    flip={flip}
+                    themeTick={themeTick}
+                    interactive={interactive}
+                    onPlay={(p) => runIntent(() => window.superGo.playMove({ point: p }))}
+                  />
+                )
+              ) : board3d && !glFailed ? (
                 <Board3D
                   position={position}
                   selected={selected}

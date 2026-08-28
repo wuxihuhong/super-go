@@ -1,5 +1,5 @@
 import type { Game } from './game.js';
-import type { EvalRecord, GameSetup, Move, Position } from './types.js';
+import type { BoardMark, EvalRecord, GameSetup, Move, Position } from './types.js';
 import { isSameMove } from './types.js';
 
 /**
@@ -16,6 +16,8 @@ export class MoveNode<M extends Move, P extends Position> {
   /** 评估记录（多态评分：cp | 胜率+目差），人机/连线/胜率条数据统一挂点 */
   evalRecord?: EvalRecord;
   comment?: string;
+  /** 盘面标记（SGF CR/SQ/TR/MA/LB） */
+  marks?: BoardMark[];
 
   /** 局面快照缓存：首次经 MoveTree.positionOf 填充，之后复用 */
   position?: P;

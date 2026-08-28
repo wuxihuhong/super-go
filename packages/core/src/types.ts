@@ -88,6 +88,15 @@ export interface EvalRecord {
   source?: string;
 }
 
+/** 棋谱盘面标记（SGF CR/SQ/TR/MA/LB；棋种无关） */
+export type BoardMarkType = 'circle' | 'square' | 'triangle' | 'cross' | 'label';
+
+export interface BoardMark {
+  type: BoardMarkType;
+  point: Point;
+  label?: string;
+}
+
 // ---------------------------------------------------------------------------
 // 局面差异（§6.4：连线识别核心原语）
 // ---------------------------------------------------------------------------

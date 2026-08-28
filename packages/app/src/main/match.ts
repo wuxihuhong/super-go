@@ -16,14 +16,24 @@ import {
   chessStrengthFromConfig,
   genmoveConstraintFromConfig,
   GameStateMachine,
+  GoGame,
+  goGenmoveConstraintFromConfig,
+  goMoveToGtp,
+  goStrengthFromConfig,
   iccsToMove,
   isInCheck,
   MoveTree,
   moveToIccs,
+  parseGtpMove,
   xiangqiThreadCap,
   XiangqiGame,
   type EngineSide,
   type EvalRecord,
+  type GameKind,
+  type GameSetup,
+  type GoMove,
+  type GoPosition,
+  type GoStrengthConfig,
   type MoveNode,
   type Player,
   type StrengthProfile,
@@ -31,7 +41,14 @@ import {
   type XiangqiPosition,
   type XiangqiStrengthConfig,
 } from '@super-go/core';
-import type { EngineAdapter, EngineStatus, UciStrengthSpec } from '../shared/engine';
+import type {
+  EngineAdapter,
+  EngineEvaluation,
+  EngineStatus,
+  GtpLaunchSpec,
+  StrengthSpec,
+  UciStrengthSpec,
+} from '../shared/engine';
 import type {
   GameSnapshot,
   IntentResult,
@@ -40,9 +57,12 @@ import type {
   NewGameIntent,
   PlayMoveIntent,
 } from '../shared/game';
+import { GO_ANALYSIS_DEFAULT, type GoAnalysisSettings } from '../shared/ipc';
 import { moveDelayMs, pickDelayMs } from '../shared/moveDelay';
-import { toRedPerspective } from '../shared/score';
+import { toBlackPerspective, toRedPerspective } from '../shared/score';
 import { cpuThreadCount } from './cpuThreads';
+import { GtpAdapter } from './engine/gtpAdapter';
+import { parseGtpScore } from './engine/gtpProtocol';
 import { UciAdapter } from './engine/uciAdapter';
 
 export interface MatchEvents {
@@ -51,10 +71,21 @@ export interface MatchEvents {
   liveEval(evaluation: LiveEval | null): void;
 }
 
+export interface MatchGoProviders {
+  launch: () => GtpLaunchSpec | null;
+  strength: () => GoStrengthConfig;
+  playDelayMs: () => { min: number; max: number };
+  analysis: () => GoAnalysisSettings;
+  ponder: () => boolean;
+  setup: () => GameSetup;
+}
+
 /** 测试注入：假适配器 + 可推进的 sleep，生产路径不传 */
 export interface MatchServiceDeps {
   createAdapter?: () => EngineAdapter;
+  createGoAdapter?: () => EngineAdapter;
   sleep?: (ms: number) => Promise<void>;
+  go?: MatchGoProviders;
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -62,9 +93,14 @@ function defaultSleep(ms: number): Promise<void> {
 }
 
 export class MatchService {
+  private kind: GameKind = 'xiangqi';
   private readonly game = new XiangqiGame();
   private tree = new MoveTree<XiangqiMove, XiangqiPosition>(this.game);
   private readonly state = new GameStateMachine('xiangqi');
+  private readonly goGame = new GoGame();
+  private goTree = new MoveTree<GoMove, GoPosition>(this.goGame);
+  private readonly goState = new GameStateMachine('go');
+  private goSetup: GameSetup = { boardSize: 19 };
   private adapter: EngineAdapter | null = null;
   private launchedPath: string | null = null;
   private launching: Promise<void> | null = null;
@@ -86,7 +122,9 @@ export class MatchService {
   /** 引擎着法落子拦截（连线注入点：§6.1 出招 → 本地先落子 → 再点平台） */
   private engineMoveInterceptor: ((move: XiangqiMove) => Promise<boolean>) | null = null;
   private readonly createAdapter: () => EngineAdapter;
+  private readonly createGoAdapter: () => EngineAdapter;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly goProviders: MatchGoProviders | undefined;
 
   constructor(
     private readonly events: MatchEvents,
@@ -97,7 +135,18 @@ export class MatchService {
     deps?: MatchServiceDeps,
   ) {
     this.createAdapter = deps?.createAdapter ?? (() => new UciAdapter());
+    this.createGoAdapter = deps?.createGoAdapter ?? (() => new GtpAdapter());
     this.sleep = deps?.sleep ?? defaultSleep;
+    this.goProviders = deps?.go;
+    if (deps?.go !== undefined) this.goSetup = deps.go.setup();
+  }
+
+  get activeKind(): GameKind {
+    return this.kind;
+  }
+
+  private get liveState(): GameStateMachine {
+    return this.kind === 'go' ? this.goState : this.state;
   }
 
   /** 连线会话注入/移除落子拦截（null = 移除） */
@@ -105,9 +154,42 @@ export class MatchService {
     this.engineMoveInterceptor = fn;
   }
 
-  /** 连线 diff 基准：当前游标局面 */
+  /** 连线 diff 基准：当前游标局面（仅象棋） */
   currentPosition(): XiangqiPosition {
-    return this.positionNow();
+    return this.xiangqiPositionNow();
+  }
+
+  /** 切换棋种：中止当前对局、关掉旧引擎、空闲到新棋种 */
+  async setKind(kind: GameKind): Promise<IntentResult> {
+    if (kind === this.kind) {
+      this.pushSnapshot();
+      return { ok: true };
+    }
+    this.generation++;
+    this.adapter?.stopSearch();
+    this.setThinking(false);
+    this.paused = false;
+    if (this.liveState.phase === 'playing') {
+      this.liveState.abort();
+      await this.resetStrength();
+    }
+    this.adapter?.quit();
+    this.adapter = null;
+    this.launchedPath = null;
+    this.kind = kind;
+    this.lastEngineSide = null;
+    this.lastStrength = null;
+    if (kind === 'go') {
+      this.goSetup = this.goProviders?.setup() ?? { boardSize: 19 };
+      this.goTree = new MoveTree<GoMove, GoPosition>(this.goGame, this.goSetup);
+      this.goState.reset();
+    } else {
+      this.tree = new MoveTree<XiangqiMove, XiangqiPosition>(this.game);
+      this.state.reset();
+    }
+    this.pushSnapshot();
+    this.pushEngineStatus('not-found');
+    return { ok: true };
   }
 
   /**
@@ -118,10 +200,13 @@ export class MatchService {
    * 以及引擎回合内对方抢先落子。仍走规则校验，非法着法照样拒绝（识别防线）。
    */
   playObserved(move: XiangqiMove): IntentResult {
-    if (this.state.phase !== 'playing') {
+    if (this.liveState.phase !== 'playing') {
       return { ok: false, error: '对局未在进行中' };
     }
-    if (!this.game.isLegal(this.positionNow(), move)) {
+    if (this.kind !== 'xiangqi') {
+      return { ok: false, error: '连线仅支持象棋' };
+    }
+    if (!this.game.isLegal(this.xiangqiPositionNow(), move)) {
       return { ok: false, error: '非法着法' };
     }
     // 平台已经走了，引擎正在算的那一步就此作废
@@ -131,7 +216,7 @@ export class MatchService {
     this.tree.play(move);
     this.finishIfOver();
     this.pushSnapshot();
-    if (!this.paused && this.state.phase === 'playing' && this.engineToMoveNow()) {
+    if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
       void this.engineTurn();
     }
     return { ok: true };
@@ -139,7 +224,7 @@ export class MatchService {
 
   /** 暂停置位（幂等；togglePause 与连线的冻结/解冻共用，避免 toggle 奇偶错位） */
   setPaused(paused: boolean): IntentResult {
-    if (this.state.phase !== 'playing') {
+    if (this.liveState.phase !== 'playing') {
       return { ok: false, error: '对局未在进行中' };
     }
     if (this.paused === paused) return { ok: true };
@@ -187,15 +272,23 @@ export class MatchService {
     this.setThinking(false);
     this.paused = false;
 
-    if (this.state.phase === 'playing') {
-      this.state.abort();
+    if (this.liveState.phase === 'playing') {
+      this.liveState.abort();
       await this.resetStrength(); // 中途开新局 = 离开旧对局，立即复位（粘滞防线）
     }
     if (!intent.fromCursor) {
-      this.tree = new MoveTree<XiangqiMove, XiangqiPosition>(this.game);
-      // 连线重开一局：根局面来自平台识别（§6.1）；填 root 缓存即整树从此生长
-      if (intent.initialFen !== undefined) {
-        this.tree.root.position = this.game.parse(intent.initialFen);
+      if (this.kind === 'go') {
+        this.goSetup = intent.goSetup ?? this.goProviders?.setup() ?? { boardSize: 19 };
+        this.goTree = new MoveTree<GoMove, GoPosition>(this.goGame, this.goSetup);
+        if (intent.initialFen !== undefined) {
+          this.goTree.root.position = this.goGame.parse(intent.initialFen);
+        }
+      } else {
+        this.tree = new MoveTree<XiangqiMove, XiangqiPosition>(this.game);
+        // 连线重开一局：根局面来自平台识别（§6.1）；填 root 缓存即整树从此生长
+        if (intent.initialFen !== undefined) {
+          this.tree.root.position = this.game.parse(intent.initialFen);
+        }
       }
     }
 
@@ -207,9 +300,12 @@ export class MatchService {
     // fromCursor（续弈 / 终局悔棋复活）= 保留当前执方，局面没动引擎就不换岗
     const engineSide =
       intent.engineSide ?? (intent.fromCursor === true ? this.lastEngineSide : null);
-    const profile = chessStrengthFromConfig(this.getStrengthConfig());
-    await this.applyStrength(uciSpecOf(profile));
-    this.state.start({ engineSide, strength: profile });
+    const profile =
+      this.kind === 'go'
+        ? goStrengthFromConfig(this.goStrengthConfig())
+        : chessStrengthFromConfig(this.getStrengthConfig());
+    await this.applyStrength(this.strengthSpecOf(profile));
+    this.liveState.start({ engineSide, strength: profile });
     this.lastEngineSide = engineSide;
     this.lastStrength = profile;
     this.pushSnapshot();
@@ -218,19 +314,38 @@ export class MatchService {
   }
 
   playMove(intent: PlayMoveIntent): IntentResult {
-    if (this.state.phase !== 'playing' || this.thinking) {
+    if (this.liveState.phase !== 'playing' || this.thinking) {
       return { ok: false, error: '当前不可落子' };
     }
-    if (this.state.engineSide === 'both') {
+    if (this.liveState.engineSide === 'both') {
       return { ok: false, error: '引擎互搏中，观战模式不可落子' };
     }
     // 回合制不变量（底线）：严格轮替，任何一方不得连走两步——
     // 轮到引擎时（含暂停中，引擎尚未落子）用户不可落子，动谁的子都不行；
     // 轮到用户时暂停期间照常可走（暂停只冻结引擎）
-    if (this.turnNow() === this.state.engineSide) {
+    if (this.turnNow() === this.liveState.engineSide) {
       return { ok: false, error: '轮到引擎行棋' };
     }
-    const pos = this.positionNow();
+    if (this.kind === 'go') {
+      const goPos = this.goPositionNow();
+      const move: GoMove = { kind: 'go', point: intent.point ?? null };
+      if (!this.goGame.isLegal(goPos, move)) {
+        return { ok: false, error: '非法着法' };
+      }
+      const node = this.goTree.play(move);
+      this.finishIfOver();
+      this.pushSnapshot();
+      if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
+        void this.engineTurn();
+      } else if (this.liveState.phase === 'playing') {
+        void this.goAnalyzeNode(node, 'fast');
+      }
+      return { ok: true };
+    }
+    const pos = this.xiangqiPositionNow();
+    if (intent.from === undefined || intent.to === undefined) {
+      return { ok: false, error: '非法着法' };
+    }
     const move: XiangqiMove = { kind: 'xiangqi', from: intent.from, to: intent.to };
     if (!this.game.isLegal(pos, move)) {
       return { ok: false, error: '非法着法' };
@@ -238,35 +353,35 @@ export class MatchService {
     this.tree.play(move);
     this.finishIfOver();
     this.pushSnapshot();
-    if (!this.paused && this.state.phase === 'playing' && this.engineToMoveNow()) {
+    if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
       void this.engineTurn();
     }
     return { ok: true };
   }
 
   async undo(): Promise<IntentResult> {
-    if (this.state.phase === 'ended') {
+    if (this.liveState.phase === 'ended') {
       // 终局悔棋复活：撤回着法、沿用原执方与棋力继续对弈（终局即复位的强度重新下发）
       const revived = await this.newGame({ fromCursor: true });
       if (!revived.ok) return revived;
-    } else if (this.state.phase !== 'playing') {
+    } else if (this.liveState.phase !== 'playing') {
       return { ok: false, error: '对局未在进行中' };
     }
-    if (this.tree.cursor === this.tree.root) {
+    if (this.isAtRoot()) {
       return { ok: false, error: '无可悔之着' };
     }
     this.generation++; // 进行中的思考结果作废
     this.adapter?.stopSearch();
     this.setThinking(false);
-    this.tree.undo();
-    if (this.state.engineSide === 'both') {
+    this.undoOnce();
+    if (this.liveState.engineSide === 'both') {
       // 互搏观战：回退一着后暂停（不自动重下，避免循环）；可再续弈/接管
       this.pushSnapshot();
       return { ok: true };
     }
     // 连续剪到轮到用户（引擎的应招一并剪掉）
-    while (this.tree.cursor !== this.tree.root && this.engineToMoveNow()) {
-      this.tree.undo();
+    while (!this.isAtRoot() && this.engineToMoveNow()) {
+      this.undoOnce();
     }
     this.pushSnapshot();
     if (!this.paused && this.engineToMoveNow()) void this.engineTurn(); // 引擎执先时重下第一着
@@ -274,17 +389,17 @@ export class MatchService {
   }
 
   async resign(): Promise<IntentResult> {
-    if (this.state.phase !== 'playing') {
+    if (this.liveState.phase !== 'playing') {
       return { ok: false, error: '对局未在进行中' };
     }
-    if (this.state.engineSide === 'both') {
+    if (this.liveState.engineSide === 'both') {
       return { ok: false, error: '观战模式不可认输（可开新对局结束）' };
     }
     this.generation++;
     this.adapter?.stopSearch();
     this.setThinking(false);
-    const engineSide = (this.state.engineSide ?? 'first') as Player;
-    this.state.end({ winner: engineSide, reason: 'resign' });
+    const engineSide = (this.liveState.engineSide ?? 'first') as Player;
+    this.liveState.end({ winner: engineSide, reason: 'resign' });
     await this.resetStrength();
     this.pushSnapshot();
     return { ok: true };
@@ -297,13 +412,13 @@ export class MatchService {
 
   /** 对局中变更执方：接管（引擎→人）/ 放手（人→引擎）/ 转为互搏 */
   setEngineSide(engineSide: EngineSide): IntentResult {
-    if (this.state.phase !== 'playing') {
+    if (this.liveState.phase !== 'playing') {
       return { ok: false, error: '对局未在进行中' };
     }
     this.generation++; // 进行中的思考按新执方重新决定
     this.adapter?.stopSearch();
     this.setThinking(false);
-    this.state.setEngineSide(engineSide);
+    this.liveState.setEngineSide(engineSide);
     this.lastEngineSide = engineSide;
     this.pushSnapshot();
     if (!this.paused && this.engineToMoveNow()) void this.engineTurn();
@@ -312,26 +427,45 @@ export class MatchService {
 
   /** 固有配置变更（棋力/线程/哈希实时生效；引擎路径变化则下次冷启动生效，§5.6） */
   async refreshStrength(): Promise<void> {
+    if (this.kind === 'go') {
+      const profile = goStrengthFromConfig(this.goStrengthConfig());
+      if (this.liveState.phase === 'playing') {
+        this.liveState.updateStrength(profile);
+        this.lastStrength = profile;
+        await this.applyStrength(this.strengthSpecOf(profile));
+        await this.adapter?.setPonder?.(this.goProviders?.ponder() === true);
+        this.pushSnapshot();
+        return;
+      }
+      await this.applyStrength(this.strengthSpecOf(this.liveState.strength));
+      return;
+    }
     const config = this.getStrengthConfig();
-    if (this.state.phase === 'playing') {
+    if (this.liveState.phase === 'playing') {
       const profile = chessStrengthFromConfig(config);
-      this.state.updateStrength(profile);
+      this.liveState.updateStrength(profile);
       this.lastStrength = profile;
       await this.applyStrength(uciSpecOf(profile));
       this.pushSnapshot();
       return;
     }
     // 未在对局：弱化档已复位，仍要把 Threads/Hash 推给已启动的引擎
-    await this.applyStrength(uciSpecOf(this.state.strength));
+    await this.applyStrength(uciSpecOf(this.liveState.strength));
   }
 
   goto(nodeId: number): IntentResult {
-    if (this.state.phase === 'playing') {
+    if (this.liveState.phase === 'playing') {
       return { ok: false, error: '对局中不可跳转着法（先结束或悔棋）' };
     }
-    const node = this.findNode(nodeId);
-    if (node === null) return { ok: false, error: '节点不存在' };
-    this.tree.goTo(node);
+    if (this.kind === 'go') {
+      const node = this.findGoNode(nodeId);
+      if (node === null) return { ok: false, error: '节点不存在' };
+      this.goTree.goTo(node);
+    } else {
+      const node = this.findXiangqiNode(nodeId);
+      if (node === null) return { ok: false, error: '节点不存在' };
+      this.tree.goTo(node);
+    }
     this.pushSnapshot();
     return { ok: true };
   }
@@ -354,12 +488,15 @@ export class MatchService {
 
   /** 当前是否轮到引擎（含互搏） */
   private engineToMoveNow(): boolean {
-    const side = this.state.engineSide;
+    const side = this.liveState.engineSide;
     return side === 'both' || side === this.turnNow();
   }
 
-  /** 引擎算完后、落子前：读象棋配置的随机秒数（本机与连线同一条） */
+  /** 引擎算完后、落子前：读当前棋种配置的随机秒数（本机与连线同一条） */
   private playDelayMs(): number {
+    if (this.kind === 'go') {
+      return pickDelayMs(this.goProviders?.playDelayMs() ?? moveDelayMs({}));
+    }
     return pickDelayMs(this.getPlayDelayMs?.() ?? moveDelayMs({}));
   }
 
@@ -369,7 +506,11 @@ export class MatchService {
     this.pushEngineStatus('thinking');
     this.pushSnapshot();
     try {
-      const pos = this.positionNow();
+      if (this.kind === 'go') {
+        await this.goEngineTurn(gen);
+        return;
+      }
+      const pos = this.xiangqiPositionNow();
       const moves = this.tree
         .pathOf(this.tree.cursor)
         .slice(1)
@@ -395,7 +536,7 @@ export class MatchService {
         // 本地合法性防线：引擎输出不可信时重启重同步（§5.8）
         console.warn(`[match] 引擎着法未过本地校验: ${move}`);
         await this.recoverEngine();
-        if (gen === this.generation && this.state.phase === 'playing' && this.engineToMoveNow()) {
+        if (gen === this.generation && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
           void this.engineTurn();
         }
         return;
@@ -430,7 +571,7 @@ export class MatchService {
 
       this.setThinking(false);
       this.pushSnapshot();
-      if (!this.paused && this.state.phase === 'playing' && this.engineToMoveNow()) {
+      if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
         void this.engineTurn(); // 互搏：引擎接着走下一手
       }
     } catch (err) {
@@ -440,13 +581,22 @@ export class MatchService {
     }
   }
 
-  /** 终局检测（绝杀/困毙）。返回是否终局 */
+  /** 终局检测（绝杀/困毙 / 双虚着）。返回是否终局 */
   private finishIfOver(): boolean {
-    if (this.state.phase !== 'playing') return false;
-    const pos = this.positionNow();
+    if (this.liveState.phase !== 'playing') return false;
+    if (this.kind === 'go') {
+      const pos = this.goPositionNow();
+      const result = this.goGame.isGameOver(pos, [pos]);
+      if (result === null) return false;
+      this.liveState.end(result);
+      void this.resetStrength();
+      void this.refineGoFinalScore();
+      return true;
+    }
+    const pos = this.xiangqiPositionNow();
     const result = this.game.isGameOver(pos, [pos]);
     if (result === null) return false;
-    this.state.end(result);
+    this.liveState.end(result);
     void this.resetStrength(); // 对局结束立即复位（粘滞门禁）
     return true;
   }
@@ -456,6 +606,9 @@ export class MatchService {
   // -------------------------------------------------------------------------
 
   private async ensureEngine(): Promise<IntentResult | null> {
+    if (this.kind === 'go') {
+      return this.ensureGoEngine();
+    }
     const binaryPath = this.getEnginePath();
     if (binaryPath === null) {
       this.pushEngineStatus('not-found');
@@ -499,6 +652,51 @@ export class MatchService {
     }
   }
 
+  private async ensureGoEngine(): Promise<IntentResult | null> {
+    const spec = this.goProviders?.launch() ?? null;
+    if (spec === null) {
+      this.pushEngineStatus('not-found');
+      return { ok: false, error: '未找到 KataGo（mac 可用 brew install katago，或在设置中指定路径）' };
+    }
+    const key = `${spec.binaryPath}|${spec.modelPath}|${spec.configPath}`;
+    if (this.adapter !== null && this.launchedPath === key) {
+      if (this.adapter.getStatus() !== 'crashed') return null;
+    } else if (this.adapter !== null) {
+      this.adapter.quit();
+      this.adapter = null;
+    }
+    if (this.launching !== null) {
+      await this.launching;
+      return null;
+    }
+    this.pushEngineStatus('launching');
+    const adapter = this.createGoAdapter();
+    this.launching = adapter
+      .launch(spec)
+      .then(async () => {
+        this.adapter = adapter;
+        this.launchedPath = key;
+        adapter.onExit((code) => this.onEngineExit(adapter, code));
+        adapter.onEvaluation((evaluation) => this.forwardLiveEval(evaluation));
+        await adapter.setPonder?.(this.goProviders?.ponder() === true);
+        this.pushEngineStatus('ready');
+      })
+      .catch((err: unknown) => {
+        console.error('[match] KataGo 启动失败', err);
+        this.pushEngineStatus('not-found');
+        throw err;
+      })
+      .finally(() => {
+        this.launching = null;
+      });
+    try {
+      await this.launching;
+      return null;
+    } catch {
+      return { ok: false, error: 'KataGo 启动失败（详见主进程日志）' };
+    }
+  }
+
   private onEngineExit(adapter: EngineAdapter, code: number | null): void {
     if (this.adapter !== adapter) return;
     if (adapter.getStatus() === 'quit') return;
@@ -520,18 +718,22 @@ export class MatchService {
         this.pushSnapshot();
         return;
       }
-      await this.applyStrength(uciSpecOf(this.state.strength));
+      await this.applyStrength(this.strengthSpecOf(this.liveState.strength));
       this.pushSnapshot();
-      if (this.state.phase === 'playing' && this.engineToMoveNow()) void this.engineTurn();
+      if (this.liveState.phase === 'playing' && this.engineToMoveNow()) void this.engineTurn();
     } finally {
       this.recovering = false;
     }
   }
 
   /** 强度设置统一入口：按调用顺序串行执行（复位与新设档不会乱序竞态） */
-  private applyStrength(spec: UciStrengthSpec | null): Promise<void> {
+  private applyStrength(spec: StrengthSpec | null): Promise<void> {
     const next = this.strengthTail.then(async () => {
       try {
+        if (this.kind === 'go') {
+          await this.adapter?.setStrength(spec);
+          return;
+        }
         const { threads, hash } = this.getStrengthConfig();
         await this.adapter?.setStrength(spec, {
           threads: Math.min(threads, xiangqiThreadCap(cpuThreadCount())),
@@ -550,10 +752,29 @@ export class MatchService {
     return this.applyStrength(null);
   }
 
-  private forwardLiveEval(evaluation: { cp?: number; mate?: number; depth?: number }): void {
-    if (!this.thinking || this.state.engineSide === null) return;
-    const { redCp, redMate } = toRedPerspective(this.turnNow(), evaluation.cp, evaluation.mate);
+  private forwardLiveEval(evaluation: EngineEvaluation): void {
+    if (!this.thinking || this.liveState.engineSide === null) return;
     const prev = this.lastForwardedLive;
+    if (this.kind === 'go') {
+      const { winRate, lead } = toBlackPerspective(
+        this.turnNow(),
+        evaluation.winRate,
+        evaluation.lead,
+      );
+      const next: LiveEval = {
+        winRate: winRate ?? prev?.winRate,
+        lead: lead ?? prev?.lead,
+        depth: evaluation.depth ?? prev?.depth,
+      };
+      const sameDepth = next.depth !== undefined && next.depth === this.lastLiveDepth;
+      const sameScore = next.winRate === prev?.winRate && next.lead === prev?.lead;
+      if (sameDepth && sameScore) return;
+      if (next.depth !== undefined) this.lastLiveDepth = next.depth;
+      this.lastForwardedLive = next;
+      this.events.liveEval(next);
+      return;
+    }
+    const { redCp, redMate } = toRedPerspective(this.turnNow(), evaluation.cp, evaluation.mate);
     const next: LiveEval = {
       redCp: redCp ?? prev?.redCp,
       redMate: redMate ?? prev?.redMate,
@@ -572,6 +793,11 @@ export class MatchService {
   // -------------------------------------------------------------------------
 
   private buildSnapshot(): GameSnapshot {
+    if (this.kind === 'go') return this.buildGoSnapshot();
+    return this.buildXiangqiSnapshot();
+  }
+
+  private buildXiangqiSnapshot(): GameSnapshot {
     const cursor = this.tree.cursor;
     const path = this.tree.pathOf(cursor);
     const items: MainlineItem[] = [];
@@ -595,7 +821,7 @@ export class MatchService {
       });
       notationPos = this.tree.positionOf(node);
     }
-    const pos = this.positionNow();
+    const pos = this.xiangqiPositionNow();
     const lastMove = cursor.move === null ? null : { from: cursor.move.from, to: cursor.move.to };
     let redCp: number | undefined;
     let redMate: number | undefined;
@@ -611,8 +837,9 @@ export class MatchService {
       if (depth === undefined && item.depth !== undefined) depth = item.depth;
       if ((redCp !== undefined || redMate !== undefined) && depth !== undefined) break;
     }
-    const snap = this.state.snapshot;
+    const snap = this.liveState.snapshot;
     return {
+      kind: 'xiangqi',
       phase: snap.phase,
       engineSide: snap.engineSide,
       strengthLabel: snap.strength === null ? null : snap.strength.label,
@@ -632,6 +859,65 @@ export class MatchService {
     };
   }
 
+  private buildGoSnapshot(): GameSnapshot {
+    const cursor = this.goTree.cursor;
+    const path = this.goTree.pathOf(cursor);
+    const items: MainlineItem[] = [];
+    let notationPos = this.goTree.positionOf(path[0]!);
+    for (let i = 1; i < path.length; i++) {
+      const node = path[i]!;
+      const record = node.evalRecord;
+      const wr = record !== undefined && record.score.kind === 'winRate' ? record.score : undefined;
+      items.push({
+        nodeId: node.id,
+        iccs: goMoveToGtp(node.move!, notationPos.size),
+        notation: this.goGame.moveToNotation(notationPos, node.move!),
+        winRate: wr?.winRate,
+        lead: wr?.lead,
+        depth: record?.depth,
+      });
+      notationPos = this.goTree.positionOf(node);
+    }
+    const pos = this.goPositionNow();
+    let winRate: number | undefined;
+    let lead: number | undefined;
+    let depth: number | undefined;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i]!;
+      if (winRate === undefined && lead === undefined) {
+        if (item.winRate !== undefined || item.lead !== undefined) {
+          winRate = item.winRate;
+          lead = item.lead;
+        }
+      }
+      if (depth === undefined && item.depth !== undefined) depth = item.depth;
+      if ((winRate !== undefined || lead !== undefined) && depth !== undefined) break;
+    }
+    const snap = this.liveState.snapshot;
+    return {
+      kind: 'go',
+      phase: snap.phase,
+      engineSide: snap.engineSide,
+      strengthLabel: snap.strength === null ? null : snap.strength.label,
+      result: snap.result,
+      turn: pos.turn,
+      fen: this.goGame.serialize(pos),
+      moves: items,
+      cursorNodeId: cursor.id,
+      paused: this.paused,
+      thinking: this.thinking,
+      playDelaySec: this.playDelaySec,
+      inCheck: false,
+      lastMove: null,
+      lastPoint: cursor.move === null ? undefined : cursor.move.point,
+      winRate,
+      lead,
+      depth,
+      boardSize: pos.size,
+      komi: pos.komi,
+    };
+  }
+
   private pushSnapshot(): void {
     this.events.snapshot(this.buildSnapshot());
   }
@@ -642,15 +928,30 @@ export class MatchService {
 
   // -------------------------------------------------------------------------
 
-  private positionNow(): XiangqiPosition {
+  private xiangqiPositionNow(): XiangqiPosition {
     return this.tree.positionOf(this.tree.cursor);
   }
 
-  private turnNow(): Player {
-    return this.positionNow().turn;
+  private goPositionNow(): GoPosition {
+    return this.goTree.positionOf(this.goTree.cursor);
   }
 
-  private findNode(nodeId: number): MoveNode<XiangqiMove, XiangqiPosition> | null {
+  private turnNow(): Player {
+    return this.kind === 'go' ? this.goPositionNow().turn : this.xiangqiPositionNow().turn;
+  }
+
+  private isAtRoot(): boolean {
+    return this.kind === 'go'
+      ? this.goTree.cursor === this.goTree.root
+      : this.tree.cursor === this.tree.root;
+  }
+
+  private undoOnce(): void {
+    if (this.kind === 'go') this.goTree.undo();
+    else this.tree.undo();
+  }
+
+  private findXiangqiNode(nodeId: number): MoveNode<XiangqiMove, XiangqiPosition> | null {
     const walk = (
       node: MoveNode<XiangqiMove, XiangqiPosition>,
     ): MoveNode<XiangqiMove, XiangqiPosition> | null => {
@@ -662,6 +963,151 @@ export class MatchService {
       return null;
     };
     return walk(this.tree.root);
+  }
+
+  private findGoNode(nodeId: number): MoveNode<GoMove, GoPosition> | null {
+    const walk = (node: MoveNode<GoMove, GoPosition>): MoveNode<GoMove, GoPosition> | null => {
+      if (node.id === nodeId) return node;
+      for (const child of node.children) {
+        const hit = walk(child);
+        if (hit !== null) return hit;
+      }
+      return null;
+    };
+    return walk(this.goTree.root);
+  }
+
+  private goStrengthConfig(): GoStrengthConfig {
+    return this.goProviders?.strength() ?? {
+      mode: 'visits',
+      visits: 400,
+      movetime: 8_000,
+    };
+  }
+
+  private goAnalysis(): GoAnalysisSettings {
+    return this.goProviders?.analysis() ?? GO_ANALYSIS_DEFAULT;
+  }
+
+  private strengthSpecOf(profile: StrengthProfile | null): StrengthSpec | null {
+    if (this.kind === 'go') {
+      if (profile === null) return null;
+      const visits = profile.params.maxVisits;
+      const time = profile.params.maxTime;
+      return {
+        maxVisits: typeof visits === 'number' ? visits : undefined,
+        maxTimeSec: typeof time === 'number' ? time : undefined,
+      };
+    }
+    return uciSpecOf(profile);
+  }
+
+  private async goEngineTurn(gen: number): Promise<void> {
+    const pos = this.goPositionNow();
+    const moves = this.goTree
+      .pathOf(this.goTree.cursor)
+      .slice(1)
+      .map((node) => goMoveToGtp(node.move!, pos.size));
+    this.adapter!.syncPosition(this.goGame.serialize(this.goTree.positionOf(this.goTree.root)), moves);
+    const constraint = goGenmoveConstraintFromConfig(this.goStrengthConfig());
+    const { move, evaluation } = await this.adapter!.genmove({
+      maxVisits: constraint.maxVisits,
+      maxTimeSec: constraint.maxTimeSec,
+      color: pos.turn === 'first' ? 'B' : 'W',
+    });
+    if (gen !== this.generation) return;
+    if (move === null) {
+      this.abortThinking();
+      return;
+    }
+    let engineMove: GoMove;
+    try {
+      engineMove = parseGtpMove(move, pos.size);
+    } catch {
+      console.warn(`[match] 围棋引擎着法无法解析: ${move}`);
+      await this.recoverEngine();
+      return;
+    }
+    if (!this.goGame.isLegal(pos, engineMove)) {
+      console.warn(`[match] 围棋引擎着法未过本地校验: ${move}`);
+      await this.recoverEngine();
+      if (gen === this.generation && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
+        void this.engineTurn();
+      }
+      return;
+    }
+    const wait = this.playDelayMs();
+    if (wait > 0) {
+      this.playDelaySec = wait / 1000;
+      this.pushEngineStatus('delaying', { delaySec: this.playDelaySec });
+      this.pushSnapshot();
+      await this.sleep(wait);
+      if (gen !== this.generation) return;
+      this.playDelaySec = undefined;
+      this.pushEngineStatus('thinking');
+    }
+    const node = this.goTree.play(engineMove);
+    node.evalRecord = this.toGoEvalRecord(evaluation, pos.turn);
+    this.finishIfOver();
+    this.pushSnapshot();
+    this.setThinking(false);
+    this.pushSnapshot();
+    if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
+      void this.engineTurn();
+    }
+  }
+
+  private async goAnalyzeNode(
+    node: MoveNode<GoMove, GoPosition>,
+    speed: 'fast' | 'full',
+  ): Promise<void> {
+    const adapter = this.adapter;
+    if (adapter?.analyzeOnce === undefined) return;
+    try {
+      const root = this.goTree.positionOf(this.goTree.root);
+      const moves = this.goTree
+        .pathOf(node)
+        .slice(1)
+        .map((n) => goMoveToGtp(n.move!, root.size));
+      adapter.syncPosition(this.goGame.serialize(root), moves);
+      const analysis = this.goAnalysis();
+      const parent = node.parent;
+      const mover = parent === null ? 'first' : this.goTree.positionOf(parent).turn;
+      const evaln = await adapter.analyzeOnce({
+        maxVisits: speed === 'fast' ? analysis.fastVisits : analysis.maxVisits,
+        maxTimeSec: analysis.maxTimeSec,
+        wideRootNoise: analysis.wideRootNoise,
+      });
+      if (evaln !== undefined) {
+        node.evalRecord = this.toGoEvalRecord(evaln, mover);
+        this.pushSnapshot();
+      }
+    } catch {
+      /* 分析失败不打断对局 */
+    }
+  }
+
+  /** 双虚着后引擎在线则以 `final_score` 覆盖本地 Tromp-Taylor 兜底 */
+  private async refineGoFinalScore(): Promise<void> {
+    const adapter = this.adapter;
+    if (adapter?.finalScore === undefined) return;
+    if (this.liveState.phase !== 'ended') return;
+    try {
+      const root = this.goTree.positionOf(this.goTree.root);
+      const moves = this.goTree
+        .pathOf(this.goTree.cursor)
+        .slice(1)
+        .map((n) => goMoveToGtp(n.move!, root.size));
+      adapter.syncPosition(this.goGame.serialize(root), moves);
+      const text = await adapter.finalScore();
+      if (text === null || text === '') return;
+      const parsed = parseGtpScore(text);
+      if (parsed === null) return;
+      this.liveState.refineResult(parsed);
+      this.pushSnapshot();
+    } catch {
+      /* 本地数子已写入 */
+    }
   }
 
   private toEvalRecord(
@@ -677,6 +1123,20 @@ export class MatchService {
       },
       depth: evaluation.depth,
       source: this.adapter?.engineName ?? 'engine',
+    };
+  }
+
+  private toGoEvalRecord(
+    evaluation: EngineEvaluation | undefined,
+    mover: Player,
+  ): EvalRecord | undefined {
+    if (evaluation === undefined) return undefined;
+    if (evaluation.winRate === undefined && evaluation.lead === undefined) return undefined;
+    const { winRate, lead } = toBlackPerspective(mover, evaluation.winRate, evaluation.lead);
+    return {
+      score: { kind: 'winRate', winRate: winRate ?? 0.5, lead },
+      depth: evaluation.depth,
+      source: this.adapter?.engineName ?? 'katago',
     };
   }
 }

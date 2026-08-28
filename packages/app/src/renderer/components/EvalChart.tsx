@@ -13,6 +13,7 @@ export interface EvalChartProps {
   themeTick: number;
   /** 无数据占位文案 */
   emptyText: string;
+  mode?: 'cp' | 'winRate';
 }
 
 /**
@@ -37,9 +38,10 @@ export default function EvalChart(props: EvalChartProps) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, H);
 
+    const winRate = props.mode === 'winRate';
     const c = {
-      red: cssColor('--piece-red'),
-      black: cssColor('--piece-black'),
+      red: cssColor(winRate ? '--stone-black' : '--piece-red'),
+      black: cssColor(winRate ? '--stone-white' : '--piece-black'),
       border: cssColor('--border'),
       muted: cssColor('--muted-foreground'),
     };
@@ -50,7 +52,23 @@ export default function EvalChart(props: EvalChartProps) {
 
     // 序列：cp 直取；mate 钳制为满幅。刻度只看有限分——杀棋若进 maxAbs，
     // yScale 变成 Infinity，历史点 y 全是 NaN，图上只剩「+Infinity」空轴。
-    const { pts, yScale } = buildEvalChartSeries(props.moves, props.liveEval ?? null);
+    const series =
+      props.mode === 'winRate'
+        ? {
+            pts: props.moves
+              .map((m, i) =>
+                m.winRate !== undefined ? { ply: i, v: (m.winRate - 0.5) * 100 } : null,
+              )
+              .filter((p): p is { ply: number; v: number } => p !== null)
+              .concat(
+                props.liveEval?.winRate !== undefined
+                  ? [{ ply: props.moves.length, v: (props.liveEval.winRate - 0.5) * 100 }]
+                  : [],
+              ),
+            yScale: 50,
+          }
+        : buildEvalChartSeries(props.moves, props.liveEval ?? null);
+    const { pts, yScale } = series;
 
     // 均势基准线
     ctx.save();
@@ -109,20 +127,39 @@ export default function EvalChart(props: EvalChartProps) {
       ctx.restore();
     };
 
-    drawLine(1, c.red);
-    drawLine(-1, c.black);
+    if (winRate) {
+      drawLine(1, c.red);
+    } else {
+      drawLine(1, c.red);
+      drawLine(-1, c.black);
+    }
 
-    // 上下界刻度（tabular 语境下的小号数字，原始整数分）
+    // 上下界刻度：象棋原始分；围棋 0–100%（50 为均势）
     ctx.save();
     ctx.fillStyle = c.muted;
     ctx.font = '9px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(`+${yScale}`, padX + 2, padY - 6);
+    ctx.fillText(winRate ? '100%' : `+${yScale}`, padX + 2, padY - 6);
     ctx.textBaseline = 'bottom';
-    ctx.fillText(`${-yScale}`, padX + 2, H - padY + 6);
+    ctx.fillText(winRate ? '0%' : `${-yScale}`, padX + 2, H - padY + 6);
     ctx.restore();
-  }, [props.moves, props.liveEval, props.themeTick, props.emptyText, width]);
+
+    if (winRate) {
+      const lead =
+        props.liveEval?.lead ??
+        [...props.moves].reverse().find((m) => m.lead !== undefined)?.lead;
+      const last = pts[pts.length - 1];
+      if (lead !== undefined && last !== undefined) {
+        ctx.fillStyle = c.muted;
+        ctx.font = '9px system-ui, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        const sign = lead > 0 ? '+' : lead < 0 ? '' : '';
+        ctx.fillText(`${sign}${lead.toFixed(1)}`, width - padX, yOf(last.v));
+      }
+    }
+  }, [props.moves, props.liveEval, props.themeTick, props.emptyText, props.mode, width]);
 
   return (
     <div ref={ref} className="w-full" style={{ height: H }}>

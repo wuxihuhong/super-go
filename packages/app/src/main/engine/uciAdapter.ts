@@ -15,11 +15,12 @@ import { createInterface } from 'node:readline';
 import type {
   EngineAdapter,
   EngineEvaluation,
+  EngineLaunchSource,
   EngineStatus,
   GenMoveRequest,
   GenMoveResult,
+  StrengthSpec,
   UciEngineResources,
-  UciStrengthSpec,
 } from '../../shared/engine';
 import { parseUciLine, uciCommands, type UciInfo, type UciOption } from './uciProtocol';
 
@@ -51,7 +52,8 @@ export class UciAdapter implements EngineAdapter {
     return this.status;
   }
 
-  async launch(binaryPath: string): Promise<void> {
+  async launch(source: EngineLaunchSource): Promise<void> {
+    const binaryPath = typeof source === 'string' ? source : source.binaryPath;
     if (this.proc !== null) {
       throw new Error('引擎已在运行，重复 launch');
     }
@@ -101,13 +103,14 @@ export class UciAdapter implements EngineAdapter {
     this.send(uciCommands.position(fen, moves));
   }
 
-  async setStrength(spec: UciStrengthSpec | null, resources?: UciEngineResources): Promise<void> {
+  async setStrength(spec: StrengthSpec | null, resources?: UciEngineResources): Promise<void> {
     this.assertRunning();
-    if (spec === null) {
+    const elo = spec !== null && 'uciElo' in spec ? spec.uciElo : undefined;
+    if (elo === undefined) {
       // 复位为满强度：只关 LimitStrength，不碰 Skill Level（§5.5）
       this.send(uciCommands.setOption('UCI_LimitStrength', false));
     } else {
-      this.send(uciCommands.setOption('UCI_Elo', spec.uciElo));
+      this.send(uciCommands.setOption('UCI_Elo', elo));
       this.send(uciCommands.setOption('UCI_LimitStrength', true));
     }
     // Threads/Hash 是引擎级资源：与弱化档同行下发，但复位强度时不得清回出厂值（§5.7）

@@ -38,6 +38,12 @@
   --piece-black: #383327; /* 黑方字 */
   --piece-emboss: rgba(90, 66, 30, 0.35); /* 刻字浮雕暗侧 */
   --piece-shadow: rgba(74, 54, 22, 0.35); /* 棋子投影 */
+  --stone-black: #1a1a1a;
+  --stone-black-hi: #3a3a3a;
+  --stone-white: #f4f1ea;
+  --stone-white-hi: #ffffff;
+  --stone-white-rim: #c8c2b6;
+  --go-hoshi: #5c4a2a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -67,6 +73,12 @@
     --piece-black: #e6e1d3;
     --piece-emboss: rgba(0, 0, 0, 0.45);
     --piece-shadow: rgba(0, 0, 0, 0.55);
+    --stone-black: #0d0d0d;
+    --stone-black-hi: #2c2c2c;
+    --stone-white: #ece8df;
+    --stone-white-hi: #f7f4ee;
+    --stone-white-rim: #9a9488;
+    --go-hoshi: #c4b48a;
   }
 }
 
@@ -95,6 +107,12 @@ html.theme-dark {
   --piece-black: #e6e1d3;
   --piece-emboss: rgba(0, 0, 0, 0.45);
   --piece-shadow: rgba(0, 0, 0, 0.55);
+  --stone-black: #0d0d0d;
+  --stone-black-hi: #2c2c2c;
+  --stone-white: #ece8df;
+  --stone-white-hi: #f7f4ee;
+  --stone-white-rim: #9a9488;
+  --go-hoshi: #c4b48a;
 }
 
 html.theme-light {
@@ -121,4 +139,10 @@ html.theme-light {
   --piece-black: #383327;
   --piece-emboss: rgba(90, 66, 30, 0.35);
   --piece-shadow: rgba(74, 54, 22, 0.35);
+  --stone-black: #1a1a1a;
+  --stone-black-hi: #3a3a3a;
+  --stone-white: #f4f1ea;
+  --stone-white-hi: #ffffff;
+  --stone-white-rim: #c8c2b6;
+  --go-hoshi: #5c4a2a;
 }

@@ -2,7 +2,13 @@
  * IPC 契约（通道名 + payload 类型）：main / preload / renderer 三方共用。
  * 本文件禁止引入 Node / Electron 类型——renderer 也消费它。
  */
-import type { EngineSide as EngineSideT, XiangqiStrengthConfig } from '@super-go/core';
+import type {
+  EngineSide as EngineSideT,
+  GameKind,
+  GoStrengthConfig,
+  RuleSet,
+  XiangqiStrengthConfig,
+} from '@super-go/core';
 import type { EngineStatus } from './engine';
 import type { GameSnapshot, IntentResult, LiveEval, NewGameIntent, PlayMoveIntent } from './game';
 import type {
@@ -55,6 +61,10 @@ export const IPC_CHANNELS = {
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   settingsPickEnginePath: 'settings:pickEnginePath',
+  settingsPickGoEnginePath: 'settings:pickGoEnginePath',
+  settingsPickGoModelPath: 'settings:pickGoModelPath',
+  settingsPickGoConfigPath: 'settings:pickGoConfigPath',
+  gameSetKind: 'game:setKind',
   themeChanged: 'theme:changed',
   // 对弈（P1）
   gameNew: 'game:new',
@@ -110,6 +120,40 @@ export interface XiangqiGameSettings {
   moveDelayMaxSec?: number;
 }
 
+export interface GoAnalysisSettings {
+  /** 分析中每手 visits（截图默认 500） */
+  maxVisits: number;
+  /** 快速分析 visits（截图默认 25） */
+  fastVisits: number;
+  /** 分析时间上限秒（截图默认 8.0） */
+  maxTimeSec: number;
+  /** 宽根噪声（截图默认 0.04） */
+  wideRootNoise: number;
+}
+
+export const GO_ANALYSIS_DEFAULT: GoAnalysisSettings = {
+  maxVisits: 500,
+  fastVisits: 25,
+  maxTimeSec: 8,
+  wideRootNoise: 0.04,
+};
+
+/** 围棋独立配置（与象棋分开持久化） */
+export interface GoGameSettings {
+  enginePath?: string;
+  modelPath?: string;
+  configPath?: string;
+  strength: Partial<GoStrengthConfig>;
+  ponder?: boolean;
+  moveDelayMinSec?: number;
+  moveDelayMaxSec?: number;
+  rules?: RuleSet;
+  komi?: number;
+  /** 只支持 19 路标准盘 */
+  boardSize?: 19;
+  analysis?: Partial<GoAnalysisSettings>;
+}
+
 export interface AppSettings {
   /** 主题三态（§7.5）：默认 system（公有配置） */
   theme: ThemeSetting;
@@ -126,8 +170,12 @@ export interface AppSettings {
     /** 3D 棋盘在中央区的占比（0.5–2，仅 3D 生效；2D 恒满高） */
     board3dScale?: number;
   };
+  /** 当前棋种（工具栏全局开关；缺省象棋） */
+  activeKind?: GameKind;
   /** 象棋独立配置 */
   xiangqi: XiangqiGameSettings;
+  /** 围棋独立配置 */
+  go: GoGameSettings;
   /** 连线参数（§6.5） */
   linker: LinkerSettings;
 }
@@ -159,6 +207,10 @@ export interface SuperGoApi {
   /** 再来一局：沿用上局执方与棋力从头开始 */
   /** 引擎路径浏览（Electron 文件对话框；浏览器 mock 返回 null） */
   pickEnginePath(): Promise<string | null>;
+  pickGoEnginePath(): Promise<string | null>;
+  pickGoModelPath(): Promise<string | null>;
+  pickGoConfigPath(): Promise<string | null>;
+  setKind(kind: GameKind): Promise<IntentResult>;
   gotoNode(nodeId: number): Promise<IntentResult>;
   getSnapshot(): Promise<GameSnapshot>;
   onSnapshot(cb: (snap: GameSnapshot) => void): () => void;

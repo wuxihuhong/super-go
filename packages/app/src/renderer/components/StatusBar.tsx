@@ -1,7 +1,7 @@
 import type { GameSnapshot } from '@shared/game';
 import type { EngineStatusPayload, LiveEval } from '@shared/ipc';
 import { engineStatusText } from '../lib/engineStatusText';
-import { evalValueText, resolveDisplayedEval } from '../lib/eval';
+import { evalValueText, goEvalText, resolveDisplayedEval, resolveGoEval } from '../lib/eval';
 import type { TFunction } from '../i18n';
 
 export interface StatusBarProps {
@@ -15,9 +15,15 @@ export interface StatusBarProps {
 /** 窗口底栏：引擎 / 状态 / 强度 / 深度 / 优势（侧栏不再竖排这些字段） */
 export default function StatusBar(props: StatusBarProps): React.JSX.Element {
   const { t, snapshot, engineStatus } = props;
+  const isGo = snapshot?.kind === 'go';
   const shown = resolveDisplayedEval(props.liveEval, snapshot);
-  const evalText = evalValueText(t, shown.redCp, shown.redMate, props.boardFlipped);
-  const depth = shown.depth !== undefined ? String(shown.depth) : '—';
+  const goShown = resolveGoEval(props.liveEval, snapshot);
+  const evalText = isGo
+    ? { text: goEvalText(goShown.winRate, goShown.lead) }
+    : evalValueText(t, shown.redCp, shown.redMate, props.boardFlipped);
+  const depth = (isGo ? goShown.depth : shown.depth) !== undefined
+    ? String(isGo ? goShown.depth : shown.depth)
+    : '—';
 
   const items = [
     { label: t('panel.engine'), value: engineStatus?.name ?? '—' },
@@ -29,8 +35,8 @@ export default function StatusBar(props: StatusBarProps): React.JSX.Element {
       label: t('panel.engine.strength'),
       value: snapshot?.strengthLabel ?? t('panel.engine.unlimited'),
     },
-    { label: t('panel.engine.depth'), value: depth },
-    { label: t('panel.engine.eval'), value: evalText.text },
+    { label: t(isGo ? 'settings.go.strength.visits' : 'panel.engine.depth'), value: depth },
+    { label: t(isGo ? 'panel.engine.winRate' : 'panel.engine.eval'), value: evalText.text },
   ];
 
   return (

@@ -135,6 +135,7 @@ export default function SidePanel(props: SidePanelProps) {
           liveEval={props.liveEval}
           themeTick={props.themeTick}
           emptyText={props.t('panel.chart.empty')}
+          mode={snapshot?.kind === 'go' ? 'winRate' : 'cp'}
         />
       </div>
     </aside>
@@ -197,8 +198,12 @@ function MoveList({
           {/* 列头：左列红方、右列黑方 */}
           <div className="flex items-center gap-1 px-1 pb-1 text-[10px] text-muted-foreground select-none">
             <span className="w-6 shrink-0" />
-            <span className="min-w-0 flex-1 px-1.5 text-piece-red">{t('side.red')}</span>
-            <span className="min-w-0 flex-1 px-1.5 text-piece-black">{t('side.black')}</span>
+            <span className="min-w-0 flex-1 px-1.5 text-piece-red">
+              {t(snapshot?.kind === 'go' ? 'side.blackGo' : 'side.red')}
+            </span>
+            <span className="min-w-0 flex-1 px-1.5 text-piece-black">
+              {t(snapshot?.kind === 'go' ? 'side.whiteGo' : 'side.black')}
+            </span>
           </div>
           <ol className="space-y-0.5">
             {rows.map((row) => (
@@ -225,11 +230,12 @@ function statusOf(props: SidePanelProps): {
   const { t, snapshot } = props;
   if (snapshot === null) return { text: t('status.idle'), tone: 'neutral' };
   if (snapshot.phase === 'ended' && snapshot.result !== null) {
+    const go = snapshot.kind === 'go';
     const winner =
       snapshot.result.winner === 'first'
-        ? t('status.result.redWin')
+        ? t(go ? 'status.result.blackWinGo' : 'status.result.redWin')
         : snapshot.result.winner === 'second'
-          ? t('status.result.blackWin')
+          ? t(go ? 'status.result.whiteWinGo' : 'status.result.blackWin')
           : t('status.result.draw');
     const reasonKey: MessageKey | null =
       snapshot.result.reason === 'mate'
@@ -238,7 +244,9 @@ function statusOf(props: SidePanelProps): {
           ? 'status.reason.stalemate'
           : snapshot.result.reason === 'resign'
             ? 'status.reason.resign'
-            : null;
+            : snapshot.result.reason === 'twoPasses'
+              ? 'status.reason.twoPasses'
+              : null;
     const reason = reasonKey !== null ? ` · ${t(reasonKey)}` : '';
     return { text: `${winner}${reason}`, tone: 'neutral' };
   }
@@ -252,7 +260,15 @@ function statusOf(props: SidePanelProps): {
     return { text: t('status.thinking'), tone: 'busy' };
   }
   return {
-    text: t(snapshot.turn === 'first' ? 'status.turn.red' : 'status.turn.black'),
+    text: t(
+      snapshot.kind === 'go'
+        ? snapshot.turn === 'first'
+          ? 'status.turn.blackGo'
+          : 'status.turn.whiteGo'
+        : snapshot.turn === 'first'
+          ? 'status.turn.red'
+          : 'status.turn.black',
+    ),
     tone: 'neutral',
     check: snapshot.inCheck ? t('status.check') : undefined,
   };

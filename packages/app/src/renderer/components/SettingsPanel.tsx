@@ -1,6 +1,18 @@
 import { useEffect, useState } from 'react';
-import { normalizeXiangqiStrength, type XiangqiStrengthConfig } from '@super-go/core';
-import type { AppSettings, LanguageCode, ThemeSetting } from '@shared/ipc';
+import {
+  defaultKomi,
+  GO_VISITS_PRESETS,
+  normalizeGoStrength,
+  normalizeXiangqiStrength,
+  type GoStrengthConfig,
+  type XiangqiStrengthConfig,
+} from '@super-go/core';
+import {
+  GO_ANALYSIS_DEFAULT,
+  type AppSettings,
+  type LanguageCode,
+  type ThemeSetting,
+} from '@shared/ipc';
 import { LINKER_SETTINGS_DEFAULT, supportsBackgroundClick, type LinkerSettings } from '@shared/linker';
 import { MOVE_DELAY_MAX_SEC, normalizeMoveDelay } from '@shared/moveDelay';
 import { guessCpuThreads, resolveCpuThreads } from '../lib/cpuThreads';
@@ -8,7 +20,7 @@ import { commitNumberInput } from '../lib/numberInput';
 import StrengthFields from './StrengthFields';
 import type { TFunction } from '../i18n';
 
-type SettingsTab = 'common' | 'xiangqi' | 'linker';
+type SettingsTab = 'common' | 'xiangqi' | 'go' | 'linker';
 
 export interface SettingsPanelProps {
   t: TFunction;
@@ -137,9 +149,16 @@ export default function SettingsPanel(props: SettingsPanelProps) {
 
   if (strength === null) return <div className="w-96" />;
 
+  const goStrength = normalizeGoStrength(settings?.go?.strength);
+  const patchGo = (delta: Partial<AppSettings['go']>): void => {
+    patch({ go: { ...settings?.go, ...delta } as AppSettings['go'] });
+  };
+  const goDelay = normalizeMoveDelay(settings?.go ?? {});
+  const analysis = { ...GO_ANALYSIS_DEFAULT, ...settings?.go?.analysis };
   const tabs: ReadonlyArray<{ value: SettingsTab; label: string }> = [
     { value: 'common', label: props.t('settings.common') },
     { value: 'xiangqi', label: props.t('settings.xiangqi') },
+    { value: 'go', label: props.t('settings.go') },
     { value: 'linker', label: props.t('settings.linker') },
   ];
 
@@ -253,6 +272,155 @@ export default function SettingsPanel(props: SettingsPanelProps) {
               {/* P3 接通引擎后启用（§5.9），先不做可切换的假开关 */}
               <span className="relative h-4 w-7 rounded-full bg-border opacity-60" />
             </span>
+          </Row>
+        </Section>
+      )}
+
+      {tab === 'go' && (
+        <Section>
+          <Row label={props.t('settings.go.enginePath')} hint={props.t('settings.go.enginePath.hint')}>
+            <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
+              <input
+                type="text"
+                defaultValue={settings?.go?.enginePath ?? ''}
+                placeholder={props.t('settings.go.enginePath.hint')}
+                onBlur={(e) => {
+                  const value = e.target.value.trim();
+                  if (value !== (settings?.go?.enginePath ?? '')) patchGo({ enginePath: value });
+                }}
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  void window.superGo.pickGoEnginePath().then((path) => {
+                    if (path) patchGo({ enginePath: path });
+                  });
+                }}
+                className="shrink-0 rounded-md border border-border px-2 py-1 text-xs"
+              >
+                {props.t('settings.browse')}
+              </button>
+            </span>
+          </Row>
+          <Row label={props.t('settings.go.modelPath')} hint={props.t('settings.go.modelPath.hint')}>
+            <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
+              <input
+                type="text"
+                defaultValue={settings?.go?.modelPath ?? ''}
+                onBlur={(e) => {
+                  const value = e.target.value.trim();
+                  if (value !== (settings?.go?.modelPath ?? '')) patchGo({ modelPath: value });
+                }}
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  void window.superGo.pickGoModelPath().then((path) => {
+                    if (path) patchGo({ modelPath: path });
+                  });
+                }}
+                className="shrink-0 rounded-md border border-border px-2 py-1 text-xs"
+              >
+                {props.t('settings.browse')}
+              </button>
+            </span>
+          </Row>
+          <Row label={props.t('settings.go.configPath')} hint={props.t('settings.go.configPath.hint')}>
+            <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
+              <input
+                type="text"
+                defaultValue={settings?.go?.configPath ?? ''}
+                onBlur={(e) => {
+                  const value = e.target.value.trim();
+                  if (value !== (settings?.go?.configPath ?? '')) patchGo({ configPath: value });
+                }}
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  void window.superGo.pickGoConfigPath().then((path) => {
+                    if (path) patchGo({ configPath: path });
+                  });
+                }}
+                className="shrink-0 rounded-md border border-border px-2 py-1 text-xs"
+              >
+                {props.t('settings.browse')}
+              </button>
+            </span>
+          </Row>
+          <Row label={props.t('settings.strength')}>
+            {segmented(
+              [
+                { value: 'visits' as const, label: props.t('settings.go.strength.visits') },
+                { value: 'time' as const, label: props.t('settings.go.strength.time') },
+                { value: 'unlimited' as const, label: props.t('settings.strength.unlimited') },
+              ],
+              goStrength.mode,
+              (mode) => patchGo({ strength: { ...goStrength, mode } }),
+            )}
+          </Row>
+          {goStrength.mode === 'visits' && (
+            <Row label={props.t('settings.go.strength.visits')}>
+              <span className="flex flex-wrap items-center justify-end gap-1">
+                {GO_VISITS_PRESETS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => patchGo({ strength: { ...goStrength, visits: n } })}
+                    className={`rounded-md px-2 py-1 text-xs ${
+                      goStrength.visits === n ? 'bg-surface text-accent ring-1 ring-accent/40' : 'text-muted-foreground'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+                {numberInput(goStrength.visits, 1, 1_000_000, (v) => {
+                  patchGo({ strength: { ...goStrength, visits: v } satisfies GoStrengthConfig });
+                }, { inputKey: `gov-${goStrength.visits}` })}
+              </span>
+            </Row>
+          )}
+          <Row label={props.t('settings.moveDelay')} hint={props.t('settings.moveDelay.hint')}>
+            <span className="flex items-center gap-1">
+              {numberInput(goDelay.minSec, 0, MOVE_DELAY_MAX_SEC, (v) => {
+                patchGo({ moveDelayMinSec: v, moveDelayMaxSec: goDelay.maxSec });
+              }, { step: 0.1, widthClass: 'w-14', inputKey: `gdmin-${goDelay.minSec}` })}
+              <span>–</span>
+              {numberInput(goDelay.maxSec, 0, MOVE_DELAY_MAX_SEC, (v) => {
+                patchGo({ moveDelayMinSec: goDelay.minSec, moveDelayMaxSec: v });
+              }, { step: 0.1, widthClass: 'w-14', inputKey: `gdmax-${goDelay.maxSec}` })}
+            </span>
+          </Row>
+          <Row label={props.t('settings.go.ponder')} hint={props.t('settings.go.ponder.hint')}>
+            {segmented(onOff, settings?.go?.ponder ? 'true' : 'false', (v) =>
+              patchGo({ ponder: v === 'true' }),
+            )}
+          </Row>
+          {numberField(props.t('settings.go.analysis.maxVisits'), analysis.maxVisits, 1, 1_000_000, (v) =>
+            patchGo({ analysis: { ...analysis, maxVisits: v } }),
+          )}
+          {numberField(props.t('settings.go.analysis.fastVisits'), analysis.fastVisits, 1, 10_000, (v) =>
+            patchGo({ analysis: { ...analysis, fastVisits: v } }),
+          )}
+          {numberField(props.t('settings.go.analysis.maxTime'), analysis.maxTimeSec, 0.1, 60, (v) =>
+            patchGo({ analysis: { ...analysis, maxTimeSec: v } }), 0.1)}
+          {numberField(props.t('settings.go.analysis.noise'), analysis.wideRootNoise, 0, 1, (v) =>
+            patchGo({ analysis: { ...analysis, wideRootNoise: v } }), 0.01)}
+          {numberField(props.t('settings.go.komi'), settings?.go?.komi ?? 7.5, 0, 20, (v) =>
+            patchGo({ komi: v }), 0.5)}
+          <Row label={props.t('settings.go.rules')}>
+            {segmented(
+              [
+                { value: 'chinese', label: props.t('setup.rules.chinese') },
+                { value: 'japanese', label: props.t('setup.rules.japanese') },
+                { value: 'aga', label: props.t('setup.rules.aga') },
+              ],
+              settings?.go?.rules ?? 'chinese',
+              (rules) => patchGo({ rules, komi: defaultKomi(rules) }),
+            )}
           </Row>
         </Section>
       )}

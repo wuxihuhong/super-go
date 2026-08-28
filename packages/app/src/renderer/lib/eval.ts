@@ -80,6 +80,33 @@ export function resolveDisplayedEval(
   };
 }
 
+export function goEvalText(winRate?: number, lead?: number): string {
+  if (winRate === undefined && lead === undefined) return '—';
+  const pct = winRate === undefined ? '—' : `${(winRate * 100).toFixed(1)}%`;
+  if (lead === undefined) return pct;
+  const sign = lead > 0 ? '+' : lead < 0 ? '' : '';
+  return `${pct} ${sign}${lead.toFixed(1)}`;
+}
+
+export function resolveGoEval(
+  live: { winRate?: number; lead?: number; depth?: number } | null,
+  snapshot: { winRate?: number; lead?: number; depth?: number } | null | undefined,
+): { winRate?: number; lead?: number; depth?: number } {
+  const liveHas = live !== null && (live.winRate !== undefined || live.lead !== undefined);
+  if (liveHas && live !== null) {
+    return {
+      winRate: live.winRate,
+      lead: live.lead,
+      depth: live.depth ?? snapshot?.depth,
+    };
+  }
+  return {
+    winRate: snapshot?.winRate,
+    lead: snapshot?.lead,
+    depth: snapshot?.depth,
+  };
+}
+
 export function evalProportion(redCp?: number, redMate?: number): number {
   if (redMate !== undefined) return redMate > 0 ? 1 : 0;
   if (redCp === undefined) return 0.5;

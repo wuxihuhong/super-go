@@ -110,6 +110,14 @@ export class GameStateMachine {
     this.resetEngineOverrides();
   }
 
+  /** 终局后用引擎权威结果覆盖本地兜底（围棋 `final_score`）。 */
+  refineResult(result: GameResult): void {
+    if (this._phase !== 'ended') {
+      throw new Error('只能在终局后覆盖结果');
+    }
+    this._result = result;
+  }
+
   /** 中止对局（切回分析 / 用户放弃）：无结果，直接回 idle 并复位。 */
   abort(): void {
     if (this._phase !== 'playing') {
