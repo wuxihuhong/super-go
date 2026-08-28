@@ -48,6 +48,7 @@ const api: SuperGoApi = {
   pickGoConfigPath: () =>
     ipcRenderer.invoke(IPC_CHANNELS.settingsPickGoConfigPath) as Promise<string | null>,
   setKind: (kind) => ipcRenderer.invoke(IPC_CHANNELS.gameSetKind, kind),
+  estimateScore: () => ipcRenderer.invoke(IPC_CHANNELS.gameEstimateScore),
   gotoNode: (nodeId: number) => ipcRenderer.invoke(IPC_CHANNELS.gameGoto, nodeId),
   getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.gameSnapshotGet) as Promise<GameSnapshot>,
   onSnapshot: (cb: (snap: GameSnapshot) => void) =>

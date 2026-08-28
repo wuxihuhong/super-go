@@ -11,6 +11,8 @@ import {
   isLegalGoMove,
   legalGoMoves,
   pointToGtp,
+  scoreGo,
+  scoreJapanese,
   scoreTrompTaylor,
   withStones,
   wouldViolateSuperko,
@@ -185,6 +187,29 @@ describe('虚着与终局', () => {
     expect(score.black).toBe(45);
     expect(score.white).toBe(36);
     expect(score.margin).toBe(9);
+    expect(score.method).toBe('area');
+    const jpFull = scoreJapanese({ ...pos, rules: 'japanese' });
+    expect(jpFull.black).toBe(0);
+    expect(jpFull.white).toBe(0);
+  });
+
+  it('日式算目：空点+提子+贴目，子本身不计', () => {
+    const pos = stones(
+      9,
+      [
+        [0, 0, 'first'],
+        [1, 0, 'first'],
+        [0, 1, 'first'],
+        [8, 8, 'second'],
+      ],
+      { komi: 6.5, rules: 'japanese', captured: [2, 1], turn: 'first' },
+    );
+    const jp = scoreJapanese(pos);
+    expect(jp.method).toBe('territory');
+    expect(jp.black).toBe(jp.blackTerritory + 2);
+    expect(jp.white).toBe(jp.whiteTerritory + 1 + 6.5);
+    expect(scoreGo(pos).method).toBe('territory');
+    expect(scoreGo({ ...pos, rules: 'chinese' }).method).toBe('area');
   });
 });
 

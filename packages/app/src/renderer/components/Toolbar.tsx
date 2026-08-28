@@ -1,4 +1,5 @@
-import type { GameKind, GameSetup, Player } from '@super-go/core';
+import { useEffect, useState } from 'react';
+import type { GameKind, GameSetup, GoScore, Player } from '@super-go/core';
 import type {
   AppSettings,
   EngineStatusPayload,
@@ -8,7 +9,7 @@ import type {
   LinkerStatus,
 } from '@shared/ipc';
 import { BOARD3D_SCALE, isLinkerActivePhase } from '@shared/ipc';
-import type { GameSnapshot } from '@shared/game';
+import type { EstimateScoreResult, GameSnapshot, GoScoreEstimate } from '@shared/game';
 import type { MessageKey, TFunction } from '../i18n';
 import GamePanel from './GamePanel';
 import LinkerPanel from './LinkerPanel';
@@ -28,7 +29,15 @@ import {
   IconZoomIn,
 } from './icons';
 
-export type Popover = 'none' | 'setup' | 'settings' | 'game' | 'linker' | 'zoom' | 'kindConfirm';
+export type Popover =
+  | 'none'
+  | 'setup'
+  | 'settings'
+  | 'game'
+  | 'linker'
+  | 'zoom'
+  | 'kindConfirm'
+  | 'score';
 
 export interface ToolbarProps {
   t: TFunction;
@@ -334,6 +343,20 @@ export default function Toolbar(props: ToolbarProps) {
       {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.canResign)}
       {props.kind === 'go' &&
         iconButton('toolbar.pass', <span className="text-[11px] font-medium">P</span>, props.onPass, !props.playing)}
+      {props.kind === 'go' && (
+        <div className="relative">
+          {iconButton(
+            'toolbar.score',
+            <span className="text-[11px] font-medium">目</span>,
+            () => props.onPopoverChange(props.popover === 'score' ? 'none' : 'score'),
+          )}
+          {popoverLayer(
+            'score',
+            <ScoreEstimatePanel t={props.t} thinking={props.snapshot?.thinking === true} />,
+            'left',
+          )}
+        </div>
+      )}
 
       {/* 居中标题仅 mac：hiddenInset 没有系统标题，Win/Linux 窗框已有应用名 */}
       {IS_MAC && (
@@ -457,6 +480,139 @@ export default function Toolbar(props: ToolbarProps) {
         )}
       </div>
     </header>
+  );
+}
+
+function signed(n: number): string {
+  if (Object.is(n, -0) || n === 0) return '0';
+  const rounded = Math.round(n * 10) / 10;
+  return `${rounded > 0 ? '+' : ''}${rounded}`;
+}
+
+function ScoreEstimatePanel(props: {
+  t: TFunction;
+  thinking: boolean;
+}): React.JSX.Element {
+  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState<EstimateScoreResult | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void window.superGo.estimateScore().then((next) => {
+      if (!cancelled) {
+        setResult(next);
+        setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="w-80 rounded-xl border border-border bg-surface p-3 text-foreground shadow-xl">
+      <h2 className="mb-1 px-1 text-xs font-semibold">{props.t('toolbar.score')}</h2>
+      <p className="mb-3 px-1 text-[11px] leading-relaxed text-muted-foreground">
+        {props.thinking ? props.t('toolbar.score.busy') : props.t('toolbar.score.note')}
+      </p>
+      {loading ? (
+        <p className="px-1 text-xs text-muted-foreground">{props.t('toolbar.score.loading')}</p>
+      ) : result === null || !result.ok ? (
+        <p className="px-1 text-xs text-danger">{result !== null && !result.ok ? result.error : ''}</p>
+      ) : (
+        <ScoreBreakdown t={props.t} score={result.score} />
+      )}
+    </div>
+  );
+}
+
+function ScoreBreakdown(props: { t: TFunction; score: GoScoreEstimate }): React.JSX.Element {
+  const { local, engine } = props.score;
+  const method =
+    local.method === 'territory' ? props.t('toolbar.score.territory') : props.t('toolbar.score.area');
+  return (
+    <div className="space-y-3">
+      <section>
+        <h3 className="mb-1.5 px-1 text-[11px] font-medium text-muted-foreground">
+          {props.t('toolbar.score.local')} · {method}
+        </h3>
+        <ScoreSide
+          t={props.t}
+          label={props.t('toolbar.score.black')}
+          total={local.black}
+          local={local}
+          side="black"
+        />
+        <ScoreSide
+          t={props.t}
+          label={props.t('toolbar.score.white')}
+          total={local.white}
+          local={local}
+          side="white"
+        />
+        <div className="mt-1 flex justify-between px-1 text-xs">
+          <span className="text-muted-foreground">{props.t('toolbar.score.margin')}</span>
+          <span className="tabular-nums">{signed(local.margin)}</span>
+        </div>
+      </section>
+      {engine !== undefined && (
+        <section>
+          <h3 className="mb-1.5 px-1 text-[11px] font-medium text-muted-foreground">
+            {props.t('toolbar.score.engine')} · {props.t('toolbar.score.engineFinal')}
+          </h3>
+          {engine.raw !== '' && (
+            <div className="flex justify-between px-1 text-xs">
+              <span className="text-muted-foreground">{props.t('toolbar.score.margin')}</span>
+              <span className="tabular-nums">
+                {engine.raw} ({signed(engine.margin)})
+              </span>
+            </div>
+          )}
+          {engine.lead !== undefined && (
+            <div className="flex justify-between px-1 text-xs">
+              <span className="text-muted-foreground">{props.t('toolbar.score.lead')}</span>
+              <span className="tabular-nums">{signed(engine.lead)}</span>
+            </div>
+          )}
+          {engine.winRate !== undefined && (
+            <div className="flex justify-between px-1 text-xs">
+              <span className="text-muted-foreground">{props.t('toolbar.score.winRate')}</span>
+              <span className="tabular-nums">{Math.round(engine.winRate * 1000) / 10}%</span>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function ScoreSide(props: {
+  t: TFunction;
+  label: string;
+  total: number;
+  local: GoScore;
+  side: 'black' | 'white';
+}): React.JSX.Element {
+  const stones = props.side === 'black' ? props.local.blackStones : props.local.whiteStones;
+  const empty = props.side === 'black' ? props.local.blackTerritory : props.local.whiteTerritory;
+  const caps = props.side === 'black' ? props.local.capturedByBlack : props.local.capturedByWhite;
+  const parts =
+    props.local.method === 'area'
+      ? `${props.t('toolbar.score.stones')} ${stones} + ${props.t('toolbar.score.emptyPts')} ${empty}${
+          props.side === 'white' ? ` + ${props.t('toolbar.score.komi')} ${props.local.komi}` : ''
+        }`
+      : `${props.t('toolbar.score.emptyPts')} ${empty} + ${props.t('toolbar.score.captures')} ${caps}${
+          props.side === 'white' ? ` + ${props.t('toolbar.score.komi')} ${props.local.komi}` : ''
+        }`;
+  return (
+    <div className="flex items-baseline justify-between gap-2 px-1 text-xs">
+      <span className="text-muted-foreground">
+        {props.label}
+        <span className="ml-1 text-[11px]">({parts})</span>
+      </span>
+      <span className="shrink-0 tabular-nums">{props.total}</span>
+    </div>
   );
 }
 

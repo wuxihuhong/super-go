@@ -10,7 +10,14 @@ import type {
   XiangqiStrengthConfig,
 } from '@super-go/core';
 import type { EngineStatus } from './engine';
-import type { GameSnapshot, IntentResult, LiveEval, NewGameIntent, PlayMoveIntent } from './game';
+import type {
+  EstimateScoreResult,
+  GameSnapshot,
+  IntentResult,
+  LiveEval,
+  NewGameIntent,
+  PlayMoveIntent,
+} from './game';
 import type {
   ActiveWindowPick,
   LinkerLogEntry,
@@ -24,7 +31,9 @@ import type {
 } from './linker';
 
 export type {
+  EstimateScoreResult,
   GameSnapshot,
+  GoScoreEstimate,
   IntentResult,
   LiveEval,
   MainlineItem,
@@ -75,6 +84,7 @@ export const IPC_CHANNELS = {
   gamePauseToggle: 'game:pauseToggle',
   gameGoto: 'game:goto',
   gameSnapshotGet: 'game:snapshotGet',
+  gameEstimateScore: 'game:estimateScore',
   gameSnapshot: 'game:snapshot',
   engineStatus: 'engine:status',
   gameLiveEval: 'game:liveEval',
@@ -211,6 +221,8 @@ export interface SuperGoApi {
   pickGoModelPath(): Promise<string | null>;
   pickGoConfigPath(): Promise<string | null>;
   setKind(kind: GameKind): Promise<IntentResult>;
+  /** 围棋算目：本地数子/地盘 + 引擎 final_score（空闲时） */
+  estimateScore(): Promise<EstimateScoreResult>;
   gotoNode(nodeId: number): Promise<IntentResult>;
   getSnapshot(): Promise<GameSnapshot>;
   onSnapshot(cb: (snap: GameSnapshot) => void): () => void;

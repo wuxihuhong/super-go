@@ -38,6 +38,9 @@ import {
 const HANDSHAKE_TIMEOUT_MS = 60_000;
 const RPC_TIMEOUT_MS = 15_000;
 const ANALYZE_TIMEOUT_MS = 30_000;
+/** 棋力只限一维时，把另一维拉到引擎哨兵，避免和分析/上一档粘在一起 */
+const SEARCH_UNLIMITED_VISITS = 1_000_000_000;
+const SEARCH_UNLIMITED_TIME_SEC = 1e20;
 
 function isLaunchSpec(source: EngineLaunchSource): source is GtpLaunchSpec {
   return typeof source !== 'string';
@@ -149,11 +152,11 @@ export class GtpAdapter implements EngineAdapter {
     await this.enqueue(async () => {
       if (spec === null || !('maxVisits' in spec || 'maxTimeSec' in spec)) {
         this.lastStrength = null;
-        await this.applySearchParams({ maxVisits: 1_000_000 });
+        await this.applySearchParams({ exclusive: true });
         return;
       }
       this.lastStrength = { maxVisits: spec.maxVisits, maxTimeSec: spec.maxTimeSec };
-      await this.applySearchParams(this.lastStrength);
+      await this.applySearchParams({ ...this.lastStrength, exclusive: true });
     });
   }
 
@@ -172,6 +175,7 @@ export class GtpAdapter implements EngineAdapter {
       await this.applySearchParams({
         maxVisits: req.maxVisits,
         maxTimeSec: req.maxTimeSec ?? (req.movetimeMs !== undefined ? req.movetimeMs / 1000 : undefined),
+        exclusive: true,
       });
     });
     this.status = 'thinking';
@@ -180,10 +184,11 @@ export class GtpAdapter implements EngineAdapter {
     const cmd = this.commands.has('kata-genmove_analyze')
       ? gtpCommands.kataGenmoveAnalyze(color)
       : gtpCommands.genmove(color);
-    const timeoutMs = Math.min(
-      120_000,
-      Math.max(ANALYZE_TIMEOUT_MS, ((req.maxTimeSec ?? 15) + 20) * 1000),
-    );
+    const thinkSec = req.maxTimeSec ?? (req.movetimeMs !== undefined ? req.movetimeMs / 1000 : undefined);
+    const timeoutMs =
+      thinkSec !== undefined
+        ? Math.min(120_000, Math.max(ANALYZE_TIMEOUT_MS, (thinkSec + 20) * 1000))
+        : 120_000;
     const move = await new Promise<string | null>((resolve) => {
       this.waitMove = resolve;
       this.send(cmd);
@@ -423,13 +428,22 @@ export class GtpAdapter implements EngineAdapter {
     maxVisits?: number;
     maxTimeSec?: number;
     wideRootNoise?: number;
+    /** 出招：只限 visits 或只限时间，另一维拉到无上限，避免和分析抢同一套参数 */
+    exclusive?: boolean;
   }): Promise<void> {
     if (!this.commands.has('kata-set-param')) return;
-    if (opts.maxVisits !== undefined) {
-      await this.rpc(gtpCommands.kataSetParam('maxVisits', Math.max(1, Math.round(opts.maxVisits))));
-    }
-    if (opts.maxTimeSec !== undefined) {
-      await this.rpc(gtpCommands.kataSetParam('maxTime', opts.maxTimeSec));
+    if (opts.exclusive === true) {
+      const visits = opts.maxVisits ?? SEARCH_UNLIMITED_VISITS;
+      const timeSec = opts.maxTimeSec ?? SEARCH_UNLIMITED_TIME_SEC;
+      await this.rpc(gtpCommands.kataSetParam('maxVisits', Math.max(1, Math.round(visits))));
+      await this.rpc(gtpCommands.kataSetParam('maxTime', timeSec));
+    } else {
+      if (opts.maxVisits !== undefined) {
+        await this.rpc(gtpCommands.kataSetParam('maxVisits', Math.max(1, Math.round(opts.maxVisits))));
+      }
+      if (opts.maxTimeSec !== undefined) {
+        await this.rpc(gtpCommands.kataSetParam('maxTime', opts.maxTimeSec));
+      }
     }
     if (opts.wideRootNoise !== undefined) {
       await this.rpc(gtpCommands.kataSetParam('analysisWideRootNoise', opts.wideRootNoise));
@@ -438,10 +452,10 @@ export class GtpAdapter implements EngineAdapter {
 
   private async restoreStrength(): Promise<void> {
     if (this.lastStrength === null) {
-      await this.applySearchParams({ maxVisits: 1_000_000 });
+      await this.applySearchParams({ exclusive: true });
       return;
     }
-    await this.applySearchParams(this.lastStrength);
+    await this.applySearchParams({ ...this.lastStrength, exclusive: true });
   }
 
   private enqueue<T>(job: () => Promise<T>): Promise<T> {

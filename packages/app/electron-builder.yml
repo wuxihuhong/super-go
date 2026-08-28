@@ -13,9 +13,16 @@ asarUnpack:
   - '**/*.node'
 compression: maximum
 # 连线识别模型随包分发（10MB，双平台共用；GPLv3 来源已决策接受，见 AGENTS.md）
+# LICENSE / NOTICE 一并放入 Resources，满足 GPLv3 随附许可证与第三方声明
 extraResources:
   - from: ../../engines/vision
     to: engines/vision
+  - from: ../../LICENSE
+    to: LICENSE
+  - from: ../../NOTICE.md
+    to: NOTICE.md
+  - from: ../../licenses
+    to: licenses
 # 无签名证书：跳过公证流程（产物仍可右键打开/安装）
 mac:
   category: public.app-category.games

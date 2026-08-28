@@ -126,10 +126,13 @@ export {
   neighbors as goNeighbors,
   resultFromScore,
   sameBoard,
+  scoreGo,
+  scoreJapanese,
   scoreTrompTaylor,
   tryPlace,
   wouldViolateSuperko,
 } from './go/rules.js';
+export type { GoScore } from './go/rules.js';
 export { parseGo, serializeGo } from './go/serialize.js';
 export {
   GTP_COLUMNS,

@@ -21,6 +21,7 @@ import {
   pieceAt,
   pieceTypeOf,
   pieceSide,
+  scoreGo,
   XiangqiGame,
   type EngineSide,
   type GameKind,
@@ -577,6 +578,13 @@ function createMockApi(): SuperGoApi {
     pickGoEnginePath: () => Promise.resolve(null),
     pickGoModelPath: () => Promise.resolve(null),
     pickGoConfigPath: () => Promise.resolve(null),
+    estimateScore: () => {
+      if (kind !== 'go') return Promise.resolve({ ok: false, error: '仅围棋可算目' });
+      return Promise.resolve({
+        ok: true,
+        score: { local: scoreGo(goTree.positionOf(goTree.cursor)) },
+      });
+    },
     setKind: (next) => {
       generation++;
       clearThinking();

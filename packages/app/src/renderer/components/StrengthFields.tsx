@@ -141,8 +141,8 @@ function Row(props: {
 }): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-4 px-3 py-2.5">
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-xs">{props.label}</span>
+      <span className="flex shrink-0 flex-col gap-0.5">
+        <span className="text-xs whitespace-nowrap">{props.label}</span>
         {props.hint !== undefined && (
           <span className="max-w-44 text-[11px] leading-snug text-muted-foreground">
             {props.hint}

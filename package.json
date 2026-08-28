@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "description": "双棋种（围棋 + 象棋）对弈工具",
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/ensure-electron.mjs",

@@ -131,4 +131,24 @@ describe('MatchService 围棋', () => {
     expect(snap.result?.winner).toBe('first');
     match.dispose();
   });
+
+  it('算目：本地数子 + 引擎 final_score', async () => {
+    const { match } = makeMatch(fakeGoAdapter({ finalScore: 'B+3.5' }));
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19, komi: 7.5 } })).ok).toBe(
+      true,
+    );
+    const r = await match.estimateScore();
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.score.local.method).toBe('area');
+    expect(r.score.local.komi).toBe(7.5);
+    expect(r.score.engine?.margin).toBe(3.5);
+    expect(r.score.engine?.raw).toBe('B+3.5');
+    expect(r.score.engine?.winRate).toBeCloseTo(0.51);
+    expect(r.score.engine?.lead).toBeCloseTo(0.4);
+    expect((await match.setKind('xiangqi')).ok).toBe(true);
+    expect((await match.estimateScore()).ok).toBe(false);
+    match.dispose();
+  });
 });

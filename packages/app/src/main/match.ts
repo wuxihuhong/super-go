@@ -25,6 +25,7 @@ import {
   MoveTree,
   moveToIccs,
   parseGtpMove,
+  scoreGo,
   xiangqiThreadCap,
   XiangqiGame,
   type EngineSide,
@@ -50,7 +51,9 @@ import type {
   UciStrengthSpec,
 } from '../shared/engine';
 import type {
+  EstimateScoreResult,
   GameSnapshot,
+  GoEngineScore,
   IntentResult,
   LiveEval,
   MainlineItem,
@@ -473,6 +476,62 @@ export class MatchService {
   /** 当前快照（renderer 主动拉取，事件推送为主通路） */
   snapshot(): GameSnapshot {
     return this.buildSnapshot();
+  }
+
+  /**
+   * 围棋算目：本地按规则数子/地盘；引擎空闲且未思考时再问 `final_score` 与快分析。
+   * 思考中不打断 genmove，只回本地结果。
+   */
+  async estimateScore(): Promise<EstimateScoreResult> {
+    if (this.kind !== 'go') return { ok: false, error: '仅围棋可算目' };
+    const local = scoreGo(this.goPositionNow());
+    const adapter = this.adapter;
+    const finalScore = adapter?.finalScore;
+    if (this.thinking || adapter === null || adapter.getStatus() !== 'ready' || finalScore === undefined) {
+      return { ok: true, score: { local } };
+    }
+
+    try {
+      const root = this.goTree.positionOf(this.goTree.root);
+      const moves = this.goTree
+        .pathOf(this.goTree.cursor)
+        .slice(1)
+        .map((n) => goMoveToGtp(n.move!, root.size));
+      adapter.syncPosition(this.goGame.serialize(root), moves);
+
+      let engine: GoEngineScore | undefined;
+      const text = await finalScore.call(adapter);
+      if (text !== null && text !== '') {
+        const parsed = parseGtpScore(text);
+        if (parsed !== null) {
+          engine = { margin: parsed.margin ?? 0, raw: text.trim() };
+        }
+      }
+
+      if (adapter.analyzeOnce !== undefined) {
+        const analysis = this.goAnalysis();
+        const pos = this.goPositionNow();
+        const evaln = await adapter.analyzeOnce({
+          maxVisits: analysis.fastVisits,
+          maxTimeSec: Math.min(analysis.maxTimeSec, 2),
+          wideRootNoise: analysis.wideRootNoise,
+        });
+        if (evaln !== undefined) {
+          const { winRate, lead } = toBlackPerspective(pos.turn, evaln.winRate, evaln.lead);
+          engine = {
+            margin: engine?.margin ?? lead ?? local.margin,
+            raw: engine?.raw ?? '',
+            winRate,
+            lead,
+            visits: evaln.depth,
+          };
+        }
+      }
+
+      return { ok: true, score: { local, engine } };
+    } catch {
+      return { ok: true, score: { local } };
+    }
   }
 
   dispose(): void {

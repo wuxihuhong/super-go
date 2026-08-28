@@ -1,7 +1,7 @@
 /**
  * 对弈共享类型：快照 + 意图（main 生产、renderer 消费；禁止 Node/Electron 类型）。
  */
-import type { EngineSide, GameKind, GameResult, GameSetup, Player, Point } from '@super-go/core';
+import type { EngineSide, GameKind, GameResult, GameSetup, GoScore, Player, Point } from '@super-go/core';
 
 export interface MainlineItem {
   nodeId: number;
@@ -83,6 +83,26 @@ export interface IntentOk {
   ok: true;
 }
 export type IntentResult = IntentOk | IntentError;
+
+/** 引擎按当前规则把局面当终局来算的目差（黑 − 白） */
+export interface GoEngineScore {
+  margin: number;
+  raw: string;
+  /** 黑方视角胜率（形势，对局未结束时的期望） */
+  winRate?: number;
+  /** 黑方视角目差（形势） */
+  lead?: number;
+  visits?: number;
+}
+
+export interface GoScoreEstimate {
+  local: GoScore;
+  engine?: GoEngineScore;
+}
+
+export type EstimateScoreResult =
+  | { ok: true; score: GoScoreEstimate }
+  | { ok: false; error: string };
 
 /** 思考中的实时评估帧（象棋红方视角 / 围棋黑方视角） */
 export interface LiveEval {

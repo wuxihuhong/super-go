@@ -85,17 +85,22 @@ export function parseGtpLine(line: string): GtpEvent | null {
 export function parseGtpScore(text: string): {
   winner: 'first' | 'second' | null;
   reason: 'twoPasses' | 'resign' | 'timeout';
+  /** 黑 − 白；认输/超时无数值 */
+  margin?: number;
 } | null {
   const raw = text.trim();
   if (raw === '') return null;
-  if (/^0(?:\.0+)?$/i.test(raw)) return { winner: null, reason: 'twoPasses' };
+  if (/^0(?:\.0+)?$/i.test(raw)) return { winner: null, reason: 'twoPasses', margin: 0 };
   const m = raw.match(/^([BWbw])\+(\S+)/);
   if (m?.[1] === undefined || m[2] === undefined) return null;
   const winner = m[1].toUpperCase() === 'B' ? 'first' : 'second';
-  const rest = m[2].toUpperCase();
-  if (rest.startsWith('R')) return { winner, reason: 'resign' };
-  if (rest.startsWith('T')) return { winner, reason: 'timeout' };
-  return { winner, reason: 'twoPasses' };
+  const rest = m[2];
+  const upper = rest.toUpperCase();
+  if (upper.startsWith('R')) return { winner, reason: 'resign' };
+  if (upper.startsWith('T')) return { winner, reason: 'timeout' };
+  const n = Number(rest);
+  if (!Number.isFinite(n)) return { winner, reason: 'twoPasses' };
+  return { winner, reason: 'twoPasses', margin: winner === 'first' ? n : -n };
 }
 
 /** 一行可含多段 `info move ...`；畸形字段跳过，整行无有效段则 [] */

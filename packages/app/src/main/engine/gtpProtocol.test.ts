@@ -57,9 +57,9 @@ describe('kata-analyze info 行', () => {
 
 describe('final_score 文本', () => {
   it('目差 / 和棋 / 认输', () => {
-    expect(parseGtpScore('B+3.5')).toEqual({ winner: 'first', reason: 'twoPasses' });
-    expect(parseGtpScore('W+12.5')).toEqual({ winner: 'second', reason: 'twoPasses' });
-    expect(parseGtpScore('0')).toEqual({ winner: null, reason: 'twoPasses' });
+    expect(parseGtpScore('B+3.5')).toEqual({ winner: 'first', reason: 'twoPasses', margin: 3.5 });
+    expect(parseGtpScore('W+12.5')).toEqual({ winner: 'second', reason: 'twoPasses', margin: -12.5 });
+    expect(parseGtpScore('0')).toEqual({ winner: null, reason: 'twoPasses', margin: 0 });
     expect(parseGtpScore('B+R')).toEqual({ winner: 'first', reason: 'resign' });
     expect(parseGtpScore('w+T')).toEqual({ winner: 'second', reason: 'timeout' });
     expect(parseGtpScore('junk')).toBeNull();

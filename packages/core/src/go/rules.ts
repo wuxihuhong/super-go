@@ -224,17 +224,29 @@ export function wouldViolateSuperko(
 }
 
 export interface GoScore {
+  /** 中国/AGA：子数+领地；日本：领地+提子。白分含贴目 */
+  method: 'area' | 'territory';
   black: number;
   white: number;
-  /** 黑 − 白（已含贴目：白分含 komi） */
+  /** 黑 − 白（已含贴目） */
   margin: number;
+  blackStones: number;
+  whiteStones: number;
+  blackTerritory: number;
+  whiteTerritory: number;
+  /** 黑提白子数 */
+  capturedByBlack: number;
+  /** 白提黑子数 */
+  capturedByWhite: number;
+  komi: number;
 }
 
-/**
- * Tromp-Taylor 数子：子数 + 只邻接一方的空点；公共气（dame）不计。
- * 白分含贴目。本地终局兜底，引擎在线时以 final_score 为准。
- */
-export function scoreTrompTaylor(pos: GoPosition): GoScore {
+function boardStats(pos: GoPosition): {
+  blackStones: number;
+  whiteStones: number;
+  blackTerritory: number;
+  whiteTerritory: number;
+} {
   const size = pos.size;
   const owner = Array<GoCell>(pos.cells.length).fill(null);
   const visited = new Set<number>();
@@ -273,15 +285,61 @@ export function scoreTrompTaylor(pos: GoPosition): GoScore {
       for (const p of region) owner[boardIndex(size, p.x, p.y)] = color;
     }
   }
-  let blackEmpty = 0;
-  let whiteEmpty = 0;
+  let blackTerritory = 0;
+  let whiteTerritory = 0;
   for (const o of owner) {
-    if (o === 'first') blackEmpty += 1;
-    else if (o === 'second') whiteEmpty += 1;
+    if (o === 'first') blackTerritory += 1;
+    else if (o === 'second') whiteTerritory += 1;
   }
-  const black = blackStones + blackEmpty;
-  const white = whiteStones + whiteEmpty + pos.komi;
-  return { black, white, margin: black - white };
+  return { blackStones, whiteStones, blackTerritory, whiteTerritory };
+}
+
+function withCaptures(pos: GoPosition, stats: ReturnType<typeof boardStats>, extras: {
+  method: GoScore['method'];
+  black: number;
+  white: number;
+}): GoScore {
+  const [capturedByBlack, capturedByWhite] = pos.captured;
+  return {
+    ...extras,
+    ...stats,
+    margin: extras.black - extras.white,
+    capturedByBlack,
+    capturedByWhite,
+    komi: pos.komi,
+  };
+}
+
+/**
+ * Tromp-Taylor 数子：子数 + 只邻接一方的空点；公共气（dame）不计。
+ * 白分含贴目。中国/AGA 本地终局兜底；引擎在线时以 final_score 为准。
+ */
+export function scoreTrompTaylor(pos: GoPosition): GoScore {
+  const stats = boardStats(pos);
+  return withCaptures(pos, stats, {
+    method: 'area',
+    black: stats.blackStones + stats.blackTerritory,
+    white: stats.whiteStones + stats.whiteTerritory + pos.komi,
+  });
+}
+
+/**
+ * 日式地盘：只计单方空点 + 提子 + 贴目，子本身不计。
+ * 未点死子，中盘只是参考；终局仍以引擎 final_score 为准。
+ */
+export function scoreJapanese(pos: GoPosition): GoScore {
+  const stats = boardStats(pos);
+  const [capturedByBlack, capturedByWhite] = pos.captured;
+  return withCaptures(pos, stats, {
+    method: 'territory',
+    black: stats.blackTerritory + capturedByBlack,
+    white: stats.whiteTerritory + capturedByWhite + pos.komi,
+  });
+}
+
+/** 按当前规则集算目：日本用地盘，其余用数子 */
+export function scoreGo(pos: GoPosition): GoScore {
+  return pos.rules === 'japanese' ? scoreJapanese(pos) : scoreTrompTaylor(pos);
 }
 
 export function resultFromScore(score: GoScore): GameResult {
@@ -291,6 +349,6 @@ export function resultFromScore(score: GoScore): GameResult {
 }
 
 export function isGoGameOver(pos: GoPosition, _history: readonly GoPosition[]): GameResult | null {
-  if (pos.consecutivePasses >= 2) return resultFromScore(scoreTrompTaylor(pos));
+  if (pos.consecutivePasses >= 2) return resultFromScore(scoreGo(pos));
   return null;
 }

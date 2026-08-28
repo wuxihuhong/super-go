@@ -2,6 +2,7 @@
   "name": "@super-go/app",
   "version": "0.0.1",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "description": "Electron 壳：main(adapters) / preload / renderer(UI)",
   "main": "out/main/index.js",
   "scripts": {

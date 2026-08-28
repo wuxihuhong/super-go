@@ -383,6 +383,20 @@ export default function SettingsPanel(props: SettingsPanelProps) {
               </span>
             </Row>
           )}
+          {goStrength.mode === 'time' &&
+            numberField(
+              props.t('settings.go.strength.time'),
+              goStrength.movetime / 1000,
+              0.1,
+              60,
+              (seconds) => {
+                patchGo({
+                  strength: { ...goStrength, movetime: Math.round(seconds * 1000) } satisfies GoStrengthConfig,
+                });
+              },
+              0.5,
+              props.t('settings.go.strength.time.hint'),
+            )}
           <Row label={props.t('settings.moveDelay')} hint={props.t('settings.moveDelay.hint')}>
             <span className="flex items-center gap-1">
               {numberInput(goDelay.minSec, 0, MOVE_DELAY_MAX_SEC, (v) => {
@@ -399,14 +413,6 @@ export default function SettingsPanel(props: SettingsPanelProps) {
               patchGo({ ponder: v === 'true' }),
             )}
           </Row>
-          {numberField(props.t('settings.go.analysis.maxVisits'), analysis.maxVisits, 1, 1_000_000, (v) =>
-            patchGo({ analysis: { ...analysis, maxVisits: v } }),
-          )}
-          {numberField(props.t('settings.go.analysis.fastVisits'), analysis.fastVisits, 1, 10_000, (v) =>
-            patchGo({ analysis: { ...analysis, fastVisits: v } }),
-          )}
-          {numberField(props.t('settings.go.analysis.maxTime'), analysis.maxTimeSec, 0.1, 60, (v) =>
-            patchGo({ analysis: { ...analysis, maxTimeSec: v } }), 0.1)}
           {numberField(props.t('settings.go.analysis.noise'), analysis.wideRootNoise, 0, 1, (v) =>
             patchGo({ analysis: { ...analysis, wideRootNoise: v } }), 0.01)}
           {numberField(props.t('settings.go.komi'), settings?.go?.komi ?? 7.5, 0, 20, (v) =>
@@ -504,8 +510,8 @@ function Row(props: {
 }): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-4 px-3 py-2.5">
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-xs">{props.label}</span>
+      <span className="flex shrink-0 flex-col gap-0.5">
+        <span className="text-xs whitespace-nowrap">{props.label}</span>
         {props.hint !== undefined && (
           <span className="max-w-44 text-[11px] leading-snug text-muted-foreground">
             {props.hint}

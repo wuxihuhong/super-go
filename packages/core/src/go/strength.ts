@@ -15,7 +15,7 @@ export interface GoStrengthConfig {
   mode: GoStrengthMode;
   /** visits 模式：每手 maxVisits */
   visits: number;
-  /** 每步思考时长 ms：time 模式即棋力本体，其余作节奏上限 */
+  /** time 模式：每手思考时长 ms。visits / unlimited 不用这项 */
   movetime: number;
   /** 二期：Human SL 段位；一期保留但不驱动引擎 */
   rank?: GoHumanRank;
@@ -74,11 +74,11 @@ export interface GoGenmoveConstraint {
 export function goGenmoveConstraintFromConfig(config: GoStrengthConfig): GoGenmoveConstraint {
   switch (config.mode) {
     case 'visits':
-      return { maxVisits: config.visits, maxTimeSec: config.movetime / 1000 };
+      return { maxVisits: config.visits };
     case 'time':
       return { maxTimeSec: config.movetime / 1000 };
     case 'unlimited':
-      return { maxTimeSec: config.movetime / 1000 };
+      return {};
   }
 }
 

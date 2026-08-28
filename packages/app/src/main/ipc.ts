@@ -122,6 +122,7 @@ export function registerIpc(
   ipcMain.handle(IPC_CHANNELS.gameGoto, (_e, nodeId: number) => match.goto(nodeId));
   ipcMain.handle(IPC_CHANNELS.gameSnapshotGet, () => match.snapshot());
   ipcMain.handle(IPC_CHANNELS.gameSetKind, (_e, kind: GameKind) => match.setKind(kind));
+  ipcMain.handle(IPC_CHANNELS.gameEstimateScore, () => match.estimateScore());
 
   // ---- 连线（P2，DESIGN §6）----
   ipcMain.handle(IPC_CHANNELS.linkerListWindows, () => linker.listWindows());

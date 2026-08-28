@@ -27,7 +27,17 @@ describe('normalizeGoStrength', () => {
       label: '100 visits',
       params: { maxVisits: 100 },
     });
-    expect(goGenmoveConstraintFromConfig(cfg).maxVisits).toBe(100);
+    expect(goGenmoveConstraintFromConfig(cfg)).toEqual({ maxVisits: 100 });
+  });
+
+  it('三档互斥：visits 不带时限，time 不带 visits，unlimited 两维都不限', () => {
+    expect(goGenmoveConstraintFromConfig(normalizeGoStrength({ mode: 'visits', visits: 1600 }))).toEqual({
+      maxVisits: 1600,
+    });
+    expect(goGenmoveConstraintFromConfig(normalizeGoStrength({ mode: 'time', movetime: 5_000 }))).toEqual({
+      maxTimeSec: 5,
+    });
+    expect(goGenmoveConstraintFromConfig(normalizeGoStrength({ mode: 'unlimited' }))).toEqual({});
   });
 
   it('保留 rank 扩展位但不影响一期模式', () => {

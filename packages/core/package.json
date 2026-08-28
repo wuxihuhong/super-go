@@ -2,6 +2,7 @@
   "name": "@super-go/core",
   "version": "0.0.1",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "description": "领域内核：Game 接口、MoveTree、对弈状态机（纯逻辑，零 Electron 依赖）",
   "type": "module",
   "exports": {
