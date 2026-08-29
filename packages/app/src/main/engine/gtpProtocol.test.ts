@@ -1,6 +1,14 @@
 /** GTP / KataGo 行解析容错（AGENTS.md：畸形 info 行降级不崩） */
 import { describe, expect, it } from 'vitest';
-import { gtpCommands, parseGtpLine, parseGtpScore, parseInfoLine, pickBestInfo } from './gtpProtocol';
+import {
+  formatGtpRpc,
+  gtpCommands,
+  gtpRpcOwnsResponse,
+  parseGtpLine,
+  parseGtpScore,
+  parseInfoLine,
+  pickBestInfo,
+} from './gtpProtocol';
 
 describe('GTP 应答行', () => {
   it('成功 / 失败 / 空行结束', () => {
@@ -73,6 +81,12 @@ describe('命令构造', () => {
     expect(gtpCommands.kataSearchAnalyze('B')).toBe('kata-search_analyze B 10');
     expect(gtpCommands.play('B', 'Q16')).toBe('play B Q16');
     expect(gtpCommands.protocolVersion()).toBe('protocol_version');
+    expect(formatGtpRpc(7, 'name')).toBe('7 name');
+    expect(gtpRpcOwnsResponse(7, { type: 'success', id: 7, text: 'KataGo' })).toBe(true);
+    expect(gtpRpcOwnsResponse(7, { type: 'success', id: 6, text: '' })).toBe(false);
+    expect(gtpRpcOwnsResponse(7, { type: 'success', text: '' })).toBe(false);
+    expect(gtpRpcOwnsResponse(3, { type: 'error', id: 3, text: 'unknown command' })).toBe(true);
+    expect(gtpRpcOwnsResponse(3, { type: 'error', text: 'unknown command' })).toBe(false);
     expect(gtpCommands.kataSetParam('ponderingEnabled', true)).toBe(
       'kata-set-param ponderingEnabled true',
     );

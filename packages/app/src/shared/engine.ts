@@ -87,6 +87,8 @@ export interface AnalyzeRequest {
   maxTimeSec?: number;
   intervalSec?: number;
   wideRootNoise?: number;
+  /** Match 预约的流代次；适配器原样回填到 EngineEvaluation.streamId */
+  streamId?: number;
 }
 
 /** 引擎级资源（§5.7）：对局结束不随弱化档复位 */

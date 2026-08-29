@@ -182,6 +182,18 @@ export function pickBestInfo(infos: readonly GtpInfo[]): GtpInfo | undefined {
   return infos.reduce((best, cur) => ((cur.visits ?? 0) > (best.visits ?? 0) ? cur : best));
 }
 
+/** GTP 命令带自增 id，响应按 id 认领，避免 stop 残响错配到下一条 rpc */
+export function formatGtpRpc(id: number, command: string): string {
+  return `${id} ${command}`;
+}
+
+export function gtpRpcOwnsResponse(
+  pendingId: number,
+  event: Extract<GtpEvent, { type: 'success' | 'error' }>,
+): boolean {
+  return event.id === pendingId;
+}
+
 export const gtpCommands = {
   name: () => 'name',
   version: () => 'version',

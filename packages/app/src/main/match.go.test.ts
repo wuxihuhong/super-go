@@ -3,12 +3,14 @@
  */
 import { gtpToPoint, normalizeGoStrength, normalizeXiangqiStrength } from '@super-go/core';
 import { describe, expect, it } from 'vitest';
-import type { EngineAdapter, EngineEvaluation, EngineStatus } from '../shared/engine';
+import type { AnalyzeRequest, EngineAdapter, EngineEvaluation, EngineStatus } from '../shared/engine';
 import type { GameSnapshot } from '../shared/game';
 import { MatchService, type MatchEvents } from './match';
 
-function fakeGoAdapter(opts?: { finalScore?: string; move?: string }): EngineAdapter {
-  return {
+type FakeGoAdapter = EngineAdapter & { lastStartStreamId?: number };
+
+function fakeGoAdapter(opts?: { finalScore?: string; move?: string }): FakeGoAdapter {
+  const adapter: FakeGoAdapter = {
     engineName: 'FakeKata',
     async launch() {
       /* no-op */
@@ -37,8 +39,8 @@ function fakeGoAdapter(opts?: { finalScore?: string; move?: string }): EngineAda
     async setPonder() {
       /* no-op */
     },
-    startAnalysis() {
-      /* no-op */
+    startAnalysis(req: AnalyzeRequest) {
+      adapter.lastStartStreamId = req.streamId;
     },
     stopAnalysis() {
       /* no-op */
@@ -50,6 +52,7 @@ function fakeGoAdapter(opts?: { finalScore?: string; move?: string }): EngineAda
       return { winRate: 0.51, lead: 0.4, depth: 8 };
     },
   };
+  return adapter;
 }
 
 function makeMatch(
@@ -153,8 +156,9 @@ describe('MatchService 围棋', () => {
         emit = undefined;
       };
     };
-    adapter.startAnalysis = () => {
+    adapter.startAnalysis = (req) => {
       calls.push('start');
+      adapter.lastStartStreamId = req.streamId;
     };
     adapter.stopAnalysis = () => {
       calls.push('stop');
@@ -168,6 +172,7 @@ describe('MatchService 围棋', () => {
     await match.refreshStrength();
     expect(calls).toContain('start');
     emit?.({
+      streamId: adapter.lastStartStreamId,
       winRate: 0.55,
       lead: 2.0,
       depth: 2800,
@@ -207,6 +212,7 @@ describe('MatchService 围棋', () => {
     expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
     await match.refreshStrength();
     emit?.({
+      streamId: adapter.lastStartStreamId,
       winRate: 0.55,
       lead: 2.0,
       depth: 400,
@@ -237,7 +243,7 @@ describe('MatchService 围棋', () => {
     await match.refreshStrength();
     expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
     emit?.({
-      streamId: 1,
+      streamId: adapter.lastStartStreamId,
       winRate: 0.55,
       lead: 2.0,
       depth: 200,
@@ -263,8 +269,9 @@ describe('MatchService 围棋', () => {
     expect((await match.setKind('go')).ok).toBe(true);
     expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
     await match.refreshStrength();
+    const firstStream = adapter.lastStartStreamId;
     emit?.({
-      streamId: 1,
+      streamId: firstStream,
       winRate: 0.55,
       lead: 2.0,
       depth: 400,
@@ -278,7 +285,7 @@ describe('MatchService 围棋', () => {
     expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
     expect(latest().hintPoints).toBeUndefined();
     emit?.({
-      streamId: 1,
+      streamId: firstStream,
       winRate: 0.55,
       lead: 2.0,
       depth: 420,
@@ -290,7 +297,7 @@ describe('MatchService 围棋', () => {
     });
     expect(latest().hintPoints).toBeUndefined();
     emit?.({
-      streamId: 2,
+      streamId: adapter.lastStartStreamId,
       winRate: 0.52,
       lead: 1.1,
       depth: 40,
@@ -299,6 +306,57 @@ describe('MatchService 围棋', () => {
     });
     const snap = await waitFor(latest, (s) => (s.hintPoints?.length ?? 0) > 0);
     expect(snap.hintPoints?.[0]).toMatchObject({ point: { x: 3, y: 15 } });
+    match.dispose();
+  });
+
+  it('首帧未到再落子时，被停掉那条流的残余 info 不写回', async () => {
+    const adapter = fakeGoAdapter();
+    let emit: ((evaluation: EngineEvaluation) => void) | undefined;
+    adapter.onEvaluation = (cb) => {
+      emit = cb;
+      return () => {
+        emit = undefined;
+      };
+    };
+    const { match, latest } = makeMatch(adapter, { showBestMove: () => true });
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    const stream1 = adapter.lastStartStreamId;
+    emit?.({
+      streamId: stream1,
+      winRate: 0.55,
+      lead: 2.0,
+      depth: 200,
+      pv: ['Q16'],
+      candidates: [{ move: 'Q16', visits: 200, lead: 2.0 }],
+    });
+    expect(latest().hintPoints?.length).toBeGreaterThan(0);
+    expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
+    const stream2 = adapter.lastStartStreamId;
+    expect(stream2).not.toBe(stream1);
+    expect(latest().hintPoints).toBeUndefined();
+    expect(match.playMove({ point: gtpToPoint('D4', 19) }).ok).toBe(true);
+    const stream3 = adapter.lastStartStreamId;
+    expect(stream3).not.toBe(stream2);
+    emit?.({
+      streamId: stream2,
+      winRate: 0.54,
+      lead: 1.8,
+      depth: 240,
+      pv: ['D4'],
+      candidates: [{ move: 'D4', visits: 240, lead: 1.8 }],
+    });
+    expect(latest().hintPoints).toBeUndefined();
+    emit?.({
+      streamId: stream3,
+      winRate: 0.5,
+      lead: 0.4,
+      depth: 30,
+      pv: ['C3'],
+      candidates: [{ move: 'C3', visits: 30, lead: 0.4 }],
+    });
+    const snap = await waitFor(latest, (s) => (s.hintPoints?.length ?? 0) > 0);
+    expect(snap.hintPoints?.[0]).toMatchObject({ point: { x: 2, y: 16 } });
     match.dispose();
   });
 
@@ -346,19 +404,20 @@ describe('MatchService 围棋', () => {
     expect((await match.setKind('go')).ok).toBe(true);
     expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
     await match.refreshStrength();
-    const frame = { streamId: 1, winRate: 0.51, lead: 0.4, depth: 80, pv: ['Q16'] };
+    const stream1 = adapter.lastStartStreamId;
+    const frame = { streamId: stream1, winRate: 0.51, lead: 0.4, depth: 80, pv: ['Q16'] };
     emit?.(frame);
     emit?.(frame);
     emit?.(frame);
     expect(live).toHaveLength(1);
     expect(live[0]).toMatchObject({ winRate: 0.51, lead: 0.4, depth: 80 });
-    emit?.({ streamId: 1, winRate: 0.8, lead: 5, depth: 90, pv: ['Q16'] });
+    emit?.({ streamId: stream1, winRate: 0.8, lead: 5, depth: 90, pv: ['Q16'] });
     expect(live.at(-1)).toMatchObject({ winRate: 0.8, lead: 5, depth: 90 });
     expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
     const afterPlay = live.length;
-    emit?.({ streamId: 1, depth: 12, pv: ['D4'] });
+    emit?.({ streamId: stream1, depth: 12, pv: ['D4'] });
     expect(live.length).toBe(afterPlay);
-    emit?.({ streamId: 2, depth: 12, pv: ['D4'] });
+    emit?.({ streamId: adapter.lastStartStreamId, depth: 12, pv: ['D4'] });
     expect(live.length).toBe(afterPlay + 1);
     expect(live.at(-1)?.winRate).toBeUndefined();
     expect(live.at(-1)?.lead).toBeUndefined();

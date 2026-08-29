@@ -29,7 +29,9 @@ import type {
   StrengthSpec,
 } from '../../shared/engine';
 import {
+  formatGtpRpc,
   gtpCommands,
+  gtpRpcOwnsResponse,
   parseGtpLine,
   pickBestInfo,
   type GtpInfo,
@@ -68,17 +70,21 @@ export class GtpAdapter implements EngineAdapter {
   private latestInfos: GtpInfo[] = [];
   private waitMove: ((move: string | null) => void) | null = null;
   private pending: {
+    id: number;
     resolve: (text: string) => void;
     reject: (err: Error) => void;
     parts: string[];
     started: boolean;
   } | null = null;
+  private nextRpcId = 1;
   private nextColor: 'B' | 'W' = 'B';
   private analyzing = false;
   /** 已发出 kata-analyze、引擎还在流式吐 info */
   private streamOpen = false;
-  /** 当前 / 最近一轮流式分析代次；info 帧带上，停流后残余行仍是旧值 */
+  /** 已预约 / 最近一次 startAnalysis 的代次 */
   private streamSeq = 0;
+  /** 当前已发出、info 应挂上的流代次；stop 后残余帧仍用这个值 */
+  private liveStreamId = 0;
   private rpcTail: Promise<void> = Promise.resolve();
   /** 对局强度：分析后需还原，避免 fastVisits 粘滞 */
   private lastStrength: GtpStrengthSpec | null = null;
@@ -219,15 +225,17 @@ export class GtpAdapter implements EngineAdapter {
   startAnalysis(opts: AnalyzeRequest): void {
     if (this.proc === null) return;
     this.analyzing = true;
+    const streamId = opts.streamId ?? this.streamSeq + 1;
+    this.streamSeq = streamId;
     void this.enqueue(async () => {
-      if (!this.analyzing) return;
+      if (!this.analyzing || streamId !== this.streamSeq) return;
       await this.applySearchParams({
         maxVisits: opts.maxVisits,
         maxTimeSec: opts.maxTimeSec,
         wideRootNoise: opts.wideRootNoise,
       });
-      if (!this.analyzing) return;
-      this.streamSeq += 1;
+      if (!this.analyzing || streamId !== this.streamSeq) return;
+      this.liveStreamId = streamId;
       this.streamOpen = true;
       this.send(gtpCommands.kataAnalyze(this.nextColor));
     });
@@ -240,8 +248,8 @@ export class GtpAdapter implements EngineAdapter {
       this.send(gtpCommands.stop());
       this.streamOpen = false;
     }
+    // stop 无 id；后续 rpc 带自增 id，残响 = / 空行不会被认领，不必再 drain
     void this.enqueue(async () => {
-      await this.drainAfterStop();
       await this.restoreStrength();
     });
   }
@@ -266,7 +274,9 @@ export class GtpAdapter implements EngineAdapter {
           await this.rpc(cmd, ANALYZE_TIMEOUT_MS);
         } else {
           // streamOpen 与真实流一致，外部 stopAnalysis 才能发 stop 打断
-          this.streamSeq += 1;
+          const streamId = opts.streamId ?? this.streamSeq + 1;
+          this.streamSeq = streamId;
+          this.liveStreamId = streamId;
           this.streamOpen = true;
           this.send(cmd);
           const deadline = Date.now() + Math.min(ANALYZE_TIMEOUT_MS, (opts.maxTimeSec ?? 2) * 1000 + 500);
@@ -278,7 +288,6 @@ export class GtpAdapter implements EngineAdapter {
           this.send(gtpCommands.stop());
           this.analyzing = false;
           this.streamOpen = false;
-          await this.drainAfterStop();
         }
       } finally {
         this.analyzing = false;
@@ -364,14 +373,13 @@ export class GtpAdapter implements EngineAdapter {
     switch (event.type) {
       case 'info': {
         const best = pickBestInfo(event.infos);
-        if (best !== undefined) {
-          this.latestInfos = event.infos;
-          this.latestInfo = best;
-          // 停 hint 流之后的残余 info 不推给 listener；genmove 期间 waitMove 仍在，照常推
-          if (!this.streamOpen && this.waitMove === null) break;
-          const evaluation = this.toEvaluation(best, event.infos);
-          for (const cb of this.evaluationListeners) cb(evaluation);
-        }
+        if (best === undefined) break;
+        // 停流后的残余 info 既不写 latestInfo，也不推 listener；genmove 期间 waitMove 仍在
+        if (!this.streamOpen && this.waitMove === null) break;
+        this.latestInfos = event.infos;
+        this.latestInfo = best;
+        const evaluation = this.toEvaluation(best, event.infos);
+        for (const cb of this.evaluationListeners) cb(evaluation);
         break;
       }
       case 'play': {
@@ -381,23 +389,23 @@ export class GtpAdapter implements EngineAdapter {
         break;
       }
       case 'success':
-        if (this.waitMove !== null && event.text !== '') {
+        if (this.waitMove !== null && event.id === undefined && event.text !== '') {
           const resolve = this.waitMove;
           this.waitMove = null;
           resolve(event.text);
         }
-        if (this.pending !== null) {
+        if (this.pending !== null && gtpRpcOwnsResponse(this.pending.id, event)) {
           this.pending.started = true;
           if (event.text !== '') this.pending.parts.push(event.text);
         }
         break;
       case 'error':
-        if (this.pending !== null) {
+        if (this.pending !== null && gtpRpcOwnsResponse(this.pending.id, event)) {
           const { reject } = this.pending;
           this.pending = null;
           reject(new Error(event.text || 'GTP 错误'));
         }
-        if (this.waitMove !== null) {
+        if (this.waitMove !== null && event.id === undefined) {
           const resolve = this.waitMove;
           this.waitMove = null;
           resolve(null);
@@ -428,17 +436,19 @@ export class GtpAdapter implements EngineAdapter {
           winRate: row.winRate,
           lead: row.lead,
         })),
-      streamId: this.streamSeq > 0 ? this.streamSeq : undefined,
+      streamId: this.liveStreamId > 0 ? this.liveStreamId : undefined,
     };
   }
 
   private rpc(command: string, timeoutMs = RPC_TIMEOUT_MS): Promise<string> {
+    const id = this.nextRpcId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        if (this.pending !== null) this.pending = null;
+        if (this.pending?.id === id) this.pending = null;
         reject(new Error(`GTP 等待超时: ${command}`));
       }, timeoutMs);
       this.pending = {
+        id,
         started: false,
         parts: [],
         resolve: (text) => {
@@ -450,23 +460,8 @@ export class GtpAdapter implements EngineAdapter {
           reject(err);
         },
       };
-      this.send(command);
+      this.send(formatGtpRpc(id, command));
     });
-  }
-
-  /** 已知查询做栅栏：空响应视为 stop 残响，重试直到拿到非空正文 */
-  private async drainAfterStop(): Promise<void> {
-    const probe = this.commands.has('protocol_version')
-      ? gtpCommands.protocolVersion()
-      : gtpCommands.name();
-    for (let i = 0; i < 4; i++) {
-      try {
-        const text = (await this.rpc(probe)).trim();
-        if (text.length > 0) return;
-      } catch {
-        /* 继续探，避免一次错配把整条链打死 */
-      }
-    }
   }
 
   private async applySearchParams(opts: {

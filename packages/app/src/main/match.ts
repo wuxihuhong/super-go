@@ -135,7 +135,8 @@ export class MatchService {
   private lastHintSnapshotAt = 0;
   private hintSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingHintPoints: GoHintPoint[] | null = null;
-  private lastHintStreamId: number | null = null;
+  /** 已预约的 hint 流代次（startAnalysis 时递增，不依赖是否收到过 info） */
+  private hintStreamSeq = 0;
   private minHintStreamId = 0;
   private hintEpoch = 0;
   private strengthTail: Promise<void> = Promise.resolve();
@@ -871,26 +872,21 @@ export class MatchService {
     this.pendingHintPoints = null;
     this.goHintPoints = [];
     this.hintEpoch += 1;
-    if (this.lastHintStreamId !== null) {
-      this.minHintStreamId = this.lastHintStreamId + 1;
-    }
+    this.minHintStreamId = this.hintStreamSeq + 1;
     this.lastForwardedLive = null;
     this.lastLiveDepth = -1;
   }
 
-  /** 适配器换新（重启 / 换路径）后 streamSeq 从 0 再起，旧门槛作废 */
+  /** 适配器换新后抬高门槛，避免旧进程残余帧按旧 id 写回来 */
   private resetHintStreamGate(): void {
-    this.lastHintStreamId = null;
-    this.minHintStreamId = 0;
+    this.minHintStreamId = this.hintStreamSeq + 1;
   }
 
   private acceptHintEvaluation(evaluation: EngineEvaluation): boolean {
     if (!this.hinting) return false;
     const streamId = evaluation.streamId;
     if (streamId === undefined) return this.minHintStreamId === 0;
-    if (streamId < this.minHintStreamId) return false;
-    this.lastHintStreamId = streamId;
-    return true;
+    return streamId >= this.minHintStreamId;
   }
 
   private publishHintPoints(next: GoHintPoint[]): void {
@@ -956,10 +952,12 @@ export class MatchService {
     this.adapter.syncPosition(this.goGame.serialize(this.goTree.positionOf(this.goTree.root)), moves);
     this.hinting = true;
     const analysis = this.goAnalysis();
+    this.hintStreamSeq += 1;
     this.adapter.startAnalysis({
       maxVisits: analysis.maxVisits,
       maxTimeSec: analysis.maxTimeSec,
       wideRootNoise: analysis.wideRootNoise,
+      streamId: this.hintStreamSeq,
     });
   }
 
