@@ -1,0 +1,60 @@
+name: Claude Code Review
+
+on:
+  push:
+    branches:
+      - '**'        # 只匹配分支，自动排除 tag 推送
+
+jobs:
+  fire-routine:
+    # 删除分支时 GitHub 也会发 push 事件，这里跳过
+    if: github.event.deleted == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build payload
+        env:
+          REPO:    ${{ github.repository }}
+          BRANCH:  ${{ github.ref_name }}
+          BEFORE:  ${{ github.event.before }}
+          AFTER:   ${{ github.sha }}
+          FORCED:  ${{ github.event.forced }}
+          CREATED: ${{ github.event.created }}
+          PUSHER:  ${{ github.event.pusher.name }}
+          COMPARE: ${{ github.event.compare }}
+        run: |
+          TEXT=$(cat <<'EOF'
+          本次运行由 GitHub push 事件触发，请对这次推送的代码改动做 code review。
+
+          仓库: __REPO__
+          分支: __BRANCH__
+          推送前 commit (before): __BEFORE__
+          推送后 commit (after): __AFTER__
+          是否为新建分支: __CREATED__
+          是否为 force push: __FORCED__
+          推送者: __PUSHER__
+          对比链接: __COMPARE__
+          EOF
+          )
+          # 用变量替换，避免分支名/用户名里的特殊字符被 shell 解释
+          TEXT=${TEXT//__REPO__/$REPO}
+          TEXT=${TEXT//__BRANCH__/$BRANCH}
+          TEXT=${TEXT//__BEFORE__/$BEFORE}
+          TEXT=${TEXT//__AFTER__/$AFTER}
+          TEXT=${TEXT//__CREATED__/$CREATED}
+          TEXT=${TEXT//__FORCED__/$FORCED}
+          TEXT=${TEXT//__PUSHER__/$PUSHER}
+          TEXT=${TEXT//__COMPARE__/$COMPARE}
+          # 用 jq 安全地编码成 JSON
+          jq -n --arg text "$TEXT" '{text: $text}' > payload.json
+
+      - name: Fire routine
+        env:
+          TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN }}
+        run: |
+          curl -sS --fail-with-body -X POST \
+            "https://api.anthropic.com/v1/claude_code/routines/trig_01FTDMmTKryn1MQ3XbjMHUr7/fire" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+            -H "Content-Type: application/json" \
+            -d @payload.json%      
