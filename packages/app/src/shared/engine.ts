@@ -56,6 +56,8 @@ export interface EngineEvaluation {
   lead?: number;
   /** 本帧全部候选（按引擎 info 原序；围棋选点叠加） */
   candidates?: EngineCandidate[];
+  /** kata-analyze 流代次；stop 之后的残余 info 仍带旧值，hint 通路用来丢弃 */
+  streamId?: number;
 }
 
 /** 强度规格：null = 满强度（不下发任何弱化选项，§5.5 粘滞防线） */

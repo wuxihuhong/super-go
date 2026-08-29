@@ -185,6 +185,7 @@ export function pickBestInfo(infos: readonly GtpInfo[]): GtpInfo | undefined {
 export const gtpCommands = {
   name: () => 'name',
   version: () => 'version',
+  protocolVersion: () => 'protocol_version',
   listCommands: () => 'list_commands',
   boardsize: (n: number) => `boardsize ${n}`,
   komi: (k: number) => `komi ${k}`,

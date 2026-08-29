@@ -135,6 +135,9 @@ export class MatchService {
   private lastHintSnapshotAt = 0;
   private hintSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingHintPoints: GoHintPoint[] | null = null;
+  private lastHintStreamId: number | null = null;
+  private minHintStreamId = 0;
+  private hintEpoch = 0;
   private strengthTail: Promise<void> = Promise.resolve();
   /** 引擎着法落子拦截（连线注入点：§6.1 出招 → 本地先落子 → 再点平台） */
   private engineMoveInterceptor: ((move: XiangqiMove) => Promise<boolean>) | null = null;
@@ -357,6 +360,7 @@ export class MatchService {
       }
       const node = this.goTree.play(move);
       this.finishIfOver();
+      this.stopHintAnalysis();
       this.clearGoHintPoints();
       this.pushSnapshot();
       if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
@@ -396,6 +400,8 @@ export class MatchService {
       return { ok: false, error: '无可悔之着' };
     }
     this.generation++; // 进行中的思考结果作废
+    this.stopHintAnalysis();
+    this.clearGoHintPoints();
     this.adapter?.stopSearch();
     this.setThinking(false);
     this.undoOnce();
@@ -770,6 +776,7 @@ export class MatchService {
       .then(async () => {
         this.adapter = adapter;
         this.launchedPath = key;
+        this.resetHintStreamGate();
         adapter.onExit((code) => this.onEngineExit(adapter, code));
         adapter.onEvaluation((evaluation) => this.onEngineEvaluation(evaluation));
         await adapter.setPonder?.(this.goProviders?.ponder() === true);
@@ -863,6 +870,27 @@ export class MatchService {
     }
     this.pendingHintPoints = null;
     this.goHintPoints = [];
+    this.hintEpoch += 1;
+    if (this.lastHintStreamId !== null) {
+      this.minHintStreamId = this.lastHintStreamId + 1;
+    }
+    this.lastForwardedLive = null;
+    this.lastLiveDepth = -1;
+  }
+
+  /** 适配器换新（重启 / 换路径）后 streamSeq 从 0 再起，旧门槛作废 */
+  private resetHintStreamGate(): void {
+    this.lastHintStreamId = null;
+    this.minHintStreamId = 0;
+  }
+
+  private acceptHintEvaluation(evaluation: EngineEvaluation): boolean {
+    if (!this.hinting) return false;
+    const streamId = evaluation.streamId;
+    if (streamId === undefined) return this.minHintStreamId === 0;
+    if (streamId < this.minHintStreamId) return false;
+    this.lastHintStreamId = streamId;
+    return true;
   }
 
   private publishHintPoints(next: GoHintPoint[]): void {
@@ -878,9 +906,10 @@ export class MatchService {
     }
     this.pendingHintPoints = next;
     if (this.hintSnapshotTimer !== null) return;
+    const epoch = this.hintEpoch;
     this.hintSnapshotTimer = setTimeout(() => {
       this.hintSnapshotTimer = null;
-      if (this.pendingHintPoints === null) return;
+      if (this.hintEpoch !== epoch || this.pendingHintPoints === null) return;
       this.goHintPoints = this.pendingHintPoints;
       this.pendingHintPoints = null;
       this.lastHintSnapshotAt = Date.now();
@@ -935,19 +964,17 @@ export class MatchService {
   }
 
   private onEngineEvaluation(evaluation: EngineEvaluation): void {
-    if (this.kind === 'go' && this.showBestMoveOn()) {
+    if (this.thinking) {
+      this.forwardLiveEval(evaluation);
+      return;
+    }
+    if (this.kind === 'go' && this.showBestMoveOn() && this.acceptHintEvaluation(evaluation)) {
       const next = hintPointsFromCandidates(
         candidatesFromEvaluation(evaluation),
         this.goPositionNow().size,
         this.goAnalysis().fastVisits,
       );
       this.publishHintPoints(next);
-    }
-    if (this.thinking) {
-      this.forwardLiveEval(evaluation);
-      return;
-    }
-    if (this.hinting && this.kind === 'go') {
       this.emitGoLiveEval(evaluation);
     }
   }

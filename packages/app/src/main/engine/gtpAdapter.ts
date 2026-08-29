@@ -77,6 +77,8 @@ export class GtpAdapter implements EngineAdapter {
   private analyzing = false;
   /** 已发出 kata-analyze、引擎还在流式吐 info */
   private streamOpen = false;
+  /** 当前 / 最近一轮流式分析代次；info 帧带上，停流后残余行仍是旧值 */
+  private streamSeq = 0;
   private rpcTail: Promise<void> = Promise.resolve();
   /** 对局强度：分析后需还原，避免 fastVisits 粘滞 */
   private lastStrength: GtpStrengthSpec | null = null;
@@ -225,6 +227,7 @@ export class GtpAdapter implements EngineAdapter {
         wideRootNoise: opts.wideRootNoise,
       });
       if (!this.analyzing) return;
+      this.streamSeq += 1;
       this.streamOpen = true;
       this.send(gtpCommands.kataAnalyze(this.nextColor));
     });
@@ -238,9 +241,7 @@ export class GtpAdapter implements EngineAdapter {
       this.streamOpen = false;
     }
     void this.enqueue(async () => {
-      // 等一拍：pending 为空时丢掉 kata-analyze 收尾空行 + stop 的 = / 空行
-      // 再挂 restoreStrength，避免把残余响应错配到 kata-set-param
-      await this.rpcWaitOptional();
+      await this.drainAfterStop();
       await this.restoreStrength();
     });
   }
@@ -264,6 +265,9 @@ export class GtpAdapter implements EngineAdapter {
         if (useSearch) {
           await this.rpc(cmd, ANALYZE_TIMEOUT_MS);
         } else {
+          // streamOpen 与真实流一致，外部 stopAnalysis 才能发 stop 打断
+          this.streamSeq += 1;
+          this.streamOpen = true;
           this.send(cmd);
           const deadline = Date.now() + Math.min(ANALYZE_TIMEOUT_MS, (opts.maxTimeSec ?? 2) * 1000 + 500);
           while (Date.now() < deadline) {
@@ -274,7 +278,7 @@ export class GtpAdapter implements EngineAdapter {
           this.send(gtpCommands.stop());
           this.analyzing = false;
           this.streamOpen = false;
-          await this.rpcWaitOptional();
+          await this.drainAfterStop();
         }
       } finally {
         this.analyzing = false;
@@ -363,6 +367,8 @@ export class GtpAdapter implements EngineAdapter {
         if (best !== undefined) {
           this.latestInfos = event.infos;
           this.latestInfo = best;
+          // 停 hint 流之后的残余 info 不推给 listener；genmove 期间 waitMove 仍在，照常推
+          if (!this.streamOpen && this.waitMove === null) break;
           const evaluation = this.toEvaluation(best, event.infos);
           for (const cb of this.evaluationListeners) cb(evaluation);
         }
@@ -422,6 +428,7 @@ export class GtpAdapter implements EngineAdapter {
           winRate: row.winRate,
           lead: row.lead,
         })),
+      streamId: this.streamSeq > 0 ? this.streamSeq : undefined,
     };
   }
 
@@ -447,11 +454,18 @@ export class GtpAdapter implements EngineAdapter {
     });
   }
 
-  private async rpcWaitOptional(): Promise<void> {
-    try {
-      await new Promise<void>((resolve) => setTimeout(resolve, 80));
-    } catch {
-      /* ignore */
+  /** 已知查询做栅栏：空响应视为 stop 残响，重试直到拿到非空正文 */
+  private async drainAfterStop(): Promise<void> {
+    const probe = this.commands.has('protocol_version')
+      ? gtpCommands.protocolVersion()
+      : gtpCommands.name();
+    for (let i = 0; i < 4; i++) {
+      try {
+        const text = (await this.rpc(probe)).trim();
+        if (text.length > 0) return;
+      } catch {
+        /* 继续探，避免一次错配把整条链打死 */
+      }
     }
   }
 

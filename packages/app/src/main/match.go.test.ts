@@ -222,6 +222,86 @@ describe('MatchService 围棋', () => {
     match.dispose();
   });
 
+  it('悔棋立刻清空过期 hintPoints', async () => {
+    const adapter = fakeGoAdapter();
+    let emit: ((evaluation: EngineEvaluation) => void) | undefined;
+    adapter.onEvaluation = (cb) => {
+      emit = cb;
+      return () => {
+        emit = undefined;
+      };
+    };
+    const { match, latest } = makeMatch(adapter, { showBestMove: () => true });
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    await match.refreshStrength();
+    expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
+    emit?.({
+      streamId: 1,
+      winRate: 0.55,
+      lead: 2.0,
+      depth: 200,
+      pv: ['D4'],
+      candidates: [{ move: 'D4', visits: 200, lead: 2.0 }],
+    });
+    expect(latest().hintPoints?.length).toBeGreaterThan(0);
+    expect((await match.undo()).ok).toBe(true);
+    expect(latest().hintPoints).toBeUndefined();
+    match.dispose();
+  });
+
+  it('落子后旧 streamId 的残余 info 不写回 hintPoints', async () => {
+    const adapter = fakeGoAdapter();
+    let emit: ((evaluation: EngineEvaluation) => void) | undefined;
+    adapter.onEvaluation = (cb) => {
+      emit = cb;
+      return () => {
+        emit = undefined;
+      };
+    };
+    const { match, latest } = makeMatch(adapter, { showBestMove: () => true });
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    await match.refreshStrength();
+    emit?.({
+      streamId: 1,
+      winRate: 0.55,
+      lead: 2.0,
+      depth: 400,
+      pv: ['Q16'],
+      candidates: [
+        { move: 'Q16', visits: 400, lead: 2.0 },
+        { move: 'D4', visits: 120, lead: 1.1 },
+      ],
+    });
+    expect(latest().hintPoints?.length).toBeGreaterThan(0);
+    expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
+    expect(latest().hintPoints).toBeUndefined();
+    emit?.({
+      streamId: 1,
+      winRate: 0.55,
+      lead: 2.0,
+      depth: 420,
+      pv: ['Q16'],
+      candidates: [
+        { move: 'Q16', visits: 420, lead: 2.0 },
+        { move: 'D4', visits: 130, lead: 1.1 },
+      ],
+    });
+    expect(latest().hintPoints).toBeUndefined();
+    emit?.({
+      streamId: 2,
+      winRate: 0.52,
+      lead: 1.1,
+      depth: 40,
+      pv: ['D4'],
+      candidates: [{ move: 'D4', visits: 40, lead: 1.1 }],
+    });
+    const snap = await waitFor(latest, (s) => (s.hintPoints?.length ?? 0) > 0);
+    expect(snap.hintPoints?.[0]).toMatchObject({ point: { x: 3, y: 15 } });
+    match.dispose();
+  });
+
   it('hint 评估同分同深度不重复推 liveEval', async () => {
     const live: Array<{ winRate?: number; lead?: number; depth?: number }> = [];
     const adapter = fakeGoAdapter();
@@ -266,12 +346,22 @@ describe('MatchService 围棋', () => {
     expect((await match.setKind('go')).ok).toBe(true);
     expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
     await match.refreshStrength();
-    const frame = { winRate: 0.51, lead: 0.4, depth: 80, pv: ['Q16'] };
+    const frame = { streamId: 1, winRate: 0.51, lead: 0.4, depth: 80, pv: ['Q16'] };
     emit?.(frame);
     emit?.(frame);
     emit?.(frame);
     expect(live).toHaveLength(1);
     expect(live[0]).toMatchObject({ winRate: 0.51, lead: 0.4, depth: 80 });
+    emit?.({ streamId: 1, winRate: 0.8, lead: 5, depth: 90, pv: ['Q16'] });
+    expect(live.at(-1)).toMatchObject({ winRate: 0.8, lead: 5, depth: 90 });
+    expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
+    const afterPlay = live.length;
+    emit?.({ streamId: 1, depth: 12, pv: ['D4'] });
+    expect(live.length).toBe(afterPlay);
+    emit?.({ streamId: 2, depth: 12, pv: ['D4'] });
+    expect(live.length).toBe(afterPlay + 1);
+    expect(live.at(-1)?.winRate).toBeUndefined();
+    expect(live.at(-1)?.lead).toBeUndefined();
     match.dispose();
   });
 

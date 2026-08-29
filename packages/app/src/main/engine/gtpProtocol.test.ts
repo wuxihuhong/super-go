@@ -72,6 +72,7 @@ describe('命令构造', () => {
     expect(gtpCommands.kataAnalyze('W', 10)).toBe('kata-analyze W 10');
     expect(gtpCommands.kataSearchAnalyze('B')).toBe('kata-search_analyze B 10');
     expect(gtpCommands.play('B', 'Q16')).toBe('play B Q16');
+    expect(gtpCommands.protocolVersion()).toBe('protocol_version');
     expect(gtpCommands.kataSetParam('ponderingEnabled', true)).toBe(
       'kata-set-param ponderingEnabled true',
     );

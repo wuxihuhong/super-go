@@ -495,7 +495,9 @@ export default function Toolbar(props: ToolbarProps) {
           <IconPin />,
           props.onToggleAlwaysOnTop,
           false,
-          props.alwaysOnTop, // 开启时强调色点亮
+          props.alwaysOnTop,
+          undefined,
+          true,
         )}
       </div>
     </header>
