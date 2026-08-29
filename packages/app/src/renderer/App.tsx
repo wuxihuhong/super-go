@@ -53,6 +53,7 @@ export default function App() {
   const [board3d, setBoard3d] = useState(true);
   const [glFailed, setGlFailed] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const [showBestMove, setShowBestMove] = useState(false);
   // 3D 棋盘在容器内的占比（仅 3D 生效；0.5–2，持久化 view.board3dScale）
   const [board3dScale, setBoard3dScale] = useState(1);
   const [kind, setKind] = useState<GameKind>('xiangqi');
@@ -78,6 +79,7 @@ export default function App() {
       setSoundEnabled(s.sound ?? true);
       setBoard3d(s.view?.board3d ?? true);
       setAlwaysOnTop(s.view?.alwaysOnTop ?? false);
+      setShowBestMove(s.go?.showBestMove === true);
       setBoard3dScale(s.view?.board3dScale ?? 1);
       setKind(s.activeKind === 'go' ? 'go' : 'xiangqi');
     });
@@ -230,6 +232,7 @@ export default function App() {
     setSoundEnabled(next.sound ?? true);
     setBoard3d(next.view?.board3d ?? true);
     setAlwaysOnTop(next.view?.alwaysOnTop ?? false);
+    setShowBestMove(next.go?.showBestMove === true);
     setBoard3dScale(next.view?.board3dScale ?? 1);
     if (next.activeKind === 'go' || next.activeKind === 'xiangqi') setKind(next.activeKind);
   }, []);
@@ -413,6 +416,14 @@ export default function App() {
           });
         }}
         onSettingsChanged={handleSettingsChanged}
+        showBestMove={showBestMove}
+        onToggleBestMove={() => {
+          const next = !showBestMove;
+          setShowBestMove(next);
+          void window.superGo.getSettings().then((s) =>
+            window.superGo.setSettings({ go: { ...s.go, showBestMove: next } }).then(handleSettingsChanged),
+          );
+        }}
         linkerStatus={linkerStatus}
         linkerLogs={linkerLogs}
         onLinkerStart={handleLinkerStart}
@@ -451,6 +462,7 @@ export default function App() {
                   <GoBoard3D
                     position={goPosition}
                     lastPoint={snapshot?.lastPoint}
+                    hintPoints={snapshot?.hintPoints}
                     flip={flip}
                     themeTick={themeTick}
                     interactive={interactive}
@@ -461,6 +473,7 @@ export default function App() {
                   <GoBoard
                     position={goPosition}
                     lastPoint={snapshot?.lastPoint}
+                    hintPoints={snapshot?.hintPoints}
                     flip={flip}
                     themeTick={themeTick}
                     interactive={interactive}

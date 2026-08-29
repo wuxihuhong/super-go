@@ -43,6 +43,8 @@ export interface GameSnapshot {
   lastMove: { from: Point; to: Point } | null;
   /** 围棋最后一手；point=null 表示虚着 */
   lastPoint?: Point | null;
+  /** 引擎候选选点（开启「最佳选点」且已有分析帧；绿=正手，其它色=坏手） */
+  hintPoints?: GoHintPoint[];
   /** 最新可用评估（红方视角，驱动胜率条） */
   redCp?: number;
   redMate?: number;
@@ -52,6 +54,18 @@ export interface GameSnapshot {
   depth?: number;
   boardSize?: number;
   komi?: number;
+}
+
+/** 盘上一个候选交叉点：loss=0 为正手，越大越坏 */
+export interface GoHintPoint {
+  point: Point;
+  /** 相对最佳手的目损 */
+  loss: number;
+  visits: number;
+  /** visits 低于分析快档：淡圈、不写字 */
+  faint: boolean;
+  /** 唯一最优手（蓝色）；并列时取访问量最高的一个 */
+  best: boolean;
 }
 
 export interface NewGameIntent {

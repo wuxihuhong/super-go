@@ -37,6 +37,12 @@ function fakeGoAdapter(opts?: { finalScore?: string; move?: string }): EngineAda
     async setPonder() {
       /* no-op */
     },
+    startAnalysis() {
+      /* no-op */
+    },
+    stopAnalysis() {
+      /* no-op */
+    },
     async finalScore() {
       return opts?.finalScore ?? 'B+3.5';
     },
@@ -46,7 +52,10 @@ function fakeGoAdapter(opts?: { finalScore?: string; move?: string }): EngineAda
   };
 }
 
-function makeMatch(adapter: EngineAdapter): { match: MatchService; latest: () => GameSnapshot } {
+function makeMatch(
+  adapter: EngineAdapter,
+  opts?: { ponder?: () => boolean; showBestMove?: () => boolean },
+): { match: MatchService; latest: () => GameSnapshot } {
   const snapshots: GameSnapshot[] = [];
   const events: MatchEvents = {
     snapshot: (snap) => snapshots.push(snap),
@@ -70,7 +79,8 @@ function makeMatch(adapter: EngineAdapter): { match: MatchService; latest: () =>
         strength: () => normalizeGoStrength({ mode: 'visits', visits: 25 }),
         playDelayMs: () => ({ min: 0, max: 0 }),
         analysis: () => ({ maxVisits: 50, fastVisits: 8, maxTimeSec: 1, wideRootNoise: 0.04 }),
-        ponder: () => false,
+        ponder: opts?.ponder ?? (() => false),
+        showBestMove: opts?.showBestMove ?? (() => false),
         setup: () => ({ boardSize: 19, komi: 7.5, rules: 'chinese' }),
       },
     },
@@ -129,6 +139,73 @@ describe('MatchService 围棋', () => {
       (s) => s.phase === 'ended' && s.result?.winner === 'first' && s.result.reason === 'twoPasses',
     );
     expect(snap.result?.winner).toBe('first');
+    match.dispose();
+  });
+
+  it('开启最佳选点后 refreshStrength 启动局面分析并写入 hintPoints', async () => {
+    let showBestMove = false;
+    const calls: string[] = [];
+    let emit: ((evaluation: EngineEvaluation) => void) | undefined;
+    const adapter = fakeGoAdapter();
+    adapter.onEvaluation = (cb) => {
+      emit = cb;
+      return () => {
+        emit = undefined;
+      };
+    };
+    adapter.startAnalysis = () => {
+      calls.push('start');
+    };
+    adapter.stopAnalysis = () => {
+      calls.push('stop');
+    };
+    const { match, latest } = makeMatch(adapter, { showBestMove: () => showBestMove });
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(calls).toEqual([]);
+    expect(latest().hintPoints).toBeUndefined();
+    showBestMove = true;
+    await match.refreshStrength();
+    expect(calls).toContain('start');
+    emit?.({
+      winRate: 0.55,
+      lead: 2.0,
+      depth: 2800,
+      pv: ['Q16'],
+      candidates: [
+        { move: 'Q16', visits: 2800, winRate: 0.55, lead: 2.0 },
+        { move: 'D4', visits: 400, winRate: 0.48, lead: 0.8 },
+        { move: 'C3', visits: 3, winRate: 0.3, lead: -2.0 },
+      ],
+    });
+    expect(latest().hintPoints).toHaveLength(3);
+    expect(latest().hintPoints?.[0]).toMatchObject({
+      point: { x: 15, y: 3 },
+      loss: 0,
+      faint: false,
+      best: true,
+    });
+    expect(latest().hintPoints?.filter((p) => p.best)).toHaveLength(1);
+    expect(latest().hintPoints?.[1]?.loss).toBeCloseTo(1.2, 5);
+    expect(latest().hintPoints?.[2]?.faint).toBe(true);
+    match.dispose();
+    expect(calls).toContain('stop');
+  });
+
+  it('对局中 refreshStrength 把闲时思考下发给适配器', async () => {
+    let ponder = false;
+    const calls: boolean[] = [];
+    const adapter = fakeGoAdapter();
+    adapter.setPonder = async (enabled) => {
+      calls.push(enabled);
+    };
+    const { match } = makeMatch(adapter, { ponder: () => ponder });
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(calls.at(-1)).toBe(false);
+    ponder = true;
+    await match.refreshStrength();
+    expect(calls.at(-1)).toBe(true);
     match.dispose();
   });
 

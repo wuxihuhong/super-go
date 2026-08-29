@@ -221,6 +221,8 @@ export default {
   'toolbar.kind.confirm.ok': '切换',
   'toolbar.pass': '虚着',
   'toolbar.pass.hint': '本手不落子，连续两手虚着终局',
+  'toolbar.bestMove': '最佳选点',
+  'toolbar.bestMove.hint': '盘上标出引擎候选：蓝色为唯一最优手，绿色为接近正手，其它颜色为坏手',
   'toolbar.score': '算目',
   'toolbar.score.hint': '按当前规则本地算目；引擎空闲时再问 KataGo',
   'toolbar.score.local': '本地',
@@ -277,6 +279,6 @@ export default {
   'settings.go.analysis.noise': '宽根噪声',
   'settings.go.komi': '默认贴目',
   'settings.go.rules': '默认规则',
-  'panel.engine.winRate': '胜率',
-  'eval.lead': '目差',
+  'panel.engine.winRate': '黑胜率',
+  'eval.lead': '黑目差',
 } as const;

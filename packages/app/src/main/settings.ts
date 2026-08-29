@@ -27,6 +27,7 @@ const DEFAULTS: AppSettings = {
   go: {
     strength: {},
     ponder: false,
+    showBestMove: false,
     moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
     moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
     rules: 'chinese',

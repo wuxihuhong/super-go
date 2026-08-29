@@ -3,14 +3,17 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { GoPosition, Point } from '@super-go/core';
 import { cellAt } from '@super-go/core';
+import type { GoHintPoint } from '@shared/game';
+import { uniqueBestHint } from '@shared/goBestMove';
 import { grooveLine } from '../lib/boardDraw';
-import { hoshiPoints } from '../lib/goBoardDraw';
+import { drawHintLabel, hintDotVisual, hoshiPoints } from '../lib/goBoardDraw';
 import { cssColor } from '../lib/theme';
 import { useElementSize } from '../lib/useElementSize';
 
 export interface GoBoard3DProps {
   position: GoPosition;
   lastPoint?: Point | null;
+  hintPoints?: readonly GoHintPoint[];
   flip: boolean;
   themeTick: number;
   interactive: boolean;
@@ -237,11 +240,13 @@ interface GoSceneHandle {
   schedule: () => void;
   frameCamera: (flip: boolean) => void;
   rebuildStones: () => void;
+  drawHintOverlay: () => void;
 }
 
 export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
   const { ref, width, height } = useElementSize<HTMLDivElement>();
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLCanvasElement | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
   const sceneRef = useRef<GoSceneHandle | null>(null);
@@ -430,11 +435,13 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       while (stones.children.length > 0) {
         const child = stones.children[0]!;
         stones.remove(child);
-        if (child instanceof THREE.Mesh && child.geometry !== stoneGeo) {
-          child.geometry.dispose();
+        if (child instanceof THREE.Mesh) {
+          if (child.geometry !== stoneGeo) child.geometry.dispose();
           const mat = child.material;
-          if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
-          else mat.dispose();
+          const extras = (Array.isArray(mat) ? mat : [mat]).filter(
+            (m) => m !== blackMat && m !== whiteMat,
+          );
+          extras.forEach((m) => m.dispose());
         }
       }
       const step = GRID / (n - 1);
@@ -468,7 +475,76 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
           }
         }
       }
+      const hintList = p.hintPoints ?? [];
+      const bestHint = uniqueBestHint(hintList);
+      for (const hint of hintList) {
+        if (cellAt(pos, hint.point) !== null) continue;
+        if (
+          p.lastPoint !== undefined &&
+          p.lastPoint !== null &&
+          p.lastPoint.x === hint.point.x &&
+          p.lastPoint.y === hint.point.y
+        ) {
+          continue;
+        }
+        const at = gridToWorld(hint.point.x, hint.point.y, n);
+        const vis = hintDotVisual(stoneR, hint, bestHint);
+        const disc = new THREE.Mesh(
+          new THREE.CircleGeometry(vis.radius, 32),
+          new THREE.MeshBasicMaterial({
+            color: new THREE.Color(vis.color),
+            transparent: true,
+            opacity: vis.alpha,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          }),
+        );
+        disc.rotation.x = -Math.PI / 2;
+        disc.position.set(at.x, 0.08, at.z);
+        stones.add(disc);
+      }
       schedule();
+      drawHintOverlay();
+    };
+
+    const drawHintOverlay = (): void => {
+      const canvas = overlayRef.current;
+      if (canvas === null) return;
+      const rect = host.getBoundingClientRect();
+      const cssW = rect.width;
+      const cssH = rect.height;
+      if (cssW <= 0 || cssH <= 0) return;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
+      const ctx = canvas.getContext('2d');
+      if (ctx === null) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+      const p = propsRef.current;
+      const pos = p.position;
+      const n = pos.size;
+      const step = GRID / (n - 1);
+      const ndc = new THREE.Vector3();
+      const neighbor = new THREE.Vector3();
+      const overlayHints = p.hintPoints ?? [];
+      const overlayBest = uniqueBestHint(overlayHints);
+      for (const hint of overlayHints) {
+        if (cellAt(pos, hint.point) !== null) continue;
+        if (hint.faint) continue;
+        const vis = hintDotVisual(1, hint, overlayBest);
+        if (!vis.good) continue;
+        const at = gridToWorld(hint.point.x, hint.point.y, n);
+        ndc.set(at.x, 0.1, at.z).project(camera);
+        if (ndc.z < -1 || ndc.z > 1) continue;
+        const sx = (ndc.x * 0.5 + 0.5) * cssW;
+        const sy = (-ndc.y * 0.5 + 0.5) * cssH;
+        neighbor.set(at.x + step, 0.1, at.z).project(camera);
+        const screenR = Math.abs((neighbor.x - ndc.x) * 0.5 * cssW) * 0.46;
+        drawHintLabel(ctx, sx, sy, Math.max(8, screenR), hint, vis.good);
+      }
     };
 
     const handle: GoSceneHandle = {
@@ -485,6 +561,7 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       schedule,
       frameCamera,
       rebuildStones,
+      drawHintOverlay,
     };
     sceneRef.current = handle;
     frameCamera(propsRef.current.flip);
@@ -517,6 +594,7 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
     s.camera.aspect = width / height;
     s.frameCamera(propsRef.current.flip);
     s.schedule();
+    s.drawHintOverlay();
   }, [width, height]);
 
   useEffect(() => {
@@ -524,15 +602,17 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
     if (s === null) return;
     s.frameCamera(props.flip);
     s.schedule();
+    s.drawHintOverlay();
   }, [props.flip]);
 
   useEffect(() => {
     sceneRef.current?.rebuildStones();
-  }, [props.position, props.lastPoint, props.themeTick]);
+  }, [props.position, props.lastPoint, props.hintPoints, props.themeTick]);
 
   return (
     <div ref={ref} className="relative h-full w-full">
       <div ref={hostRef} className="absolute inset-0" />
+      <canvas ref={overlayRef} className="pointer-events-none absolute inset-0" />
     </div>
   );
 }

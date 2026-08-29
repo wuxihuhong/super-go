@@ -44,6 +44,12 @@
   --stone-white-hi: #ffffff;
   --stone-white-rim: #c8c2b6;
   --go-hoshi: #5c4a2a;
+  /* 候选选点：蓝=唯一最优，绿=接近正手，黄/橙/红=坏手 */
+  --go-hint-best: #2563eb;
+  --go-hint-good: #1a9a4a;
+  --go-hint-ok: #c9a227;
+  --go-hint-poor: #d4652f;
+  --go-hint-bad: #c43c2c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -79,6 +85,11 @@
     --stone-white-hi: #f7f4ee;
     --stone-white-rim: #9a9488;
     --go-hoshi: #c4b48a;
+    --go-hint-best: #5b9fff;
+    --go-hint-good: #3dcc6e;
+    --go-hint-ok: #e0b94a;
+    --go-hint-poor: #e8844a;
+    --go-hint-bad: #f07a6e;
   }
 }
 
@@ -113,6 +124,11 @@ html.theme-dark {
   --stone-white-hi: #f7f4ee;
   --stone-white-rim: #9a9488;
   --go-hoshi: #c4b48a;
+  --go-hint-best: #5b9fff;
+  --go-hint-good: #3dcc6e;
+  --go-hint-ok: #e0b94a;
+  --go-hint-poor: #e8844a;
+  --go-hint-bad: #f07a6e;
 }
 
 html.theme-light {
@@ -145,4 +161,9 @@ html.theme-light {
   --stone-white-hi: #ffffff;
   --stone-white-rim: #c8c2b6;
   --go-hoshi: #5c4a2a;
+  --go-hint-best: #2563eb;
+  --go-hint-good: #1a9a4a;
+  --go-hint-ok: #c9a227;
+  --go-hint-poor: #d4652f;
+  --go-hint-bad: #c43c2c;
 }

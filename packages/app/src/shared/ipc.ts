@@ -155,6 +155,8 @@ export interface GoGameSettings {
   configPath?: string;
   strength: Partial<GoStrengthConfig>;
   ponder?: boolean;
+  /** 盘上显示引擎候选选点（绿=正手+得分，其它色=坏手；默认关） */
+  showBestMove?: boolean;
   moveDelayMinSec?: number;
   moveDelayMaxSec?: number;
   rules?: RuleSet;

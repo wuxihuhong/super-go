@@ -16,6 +16,7 @@ import LinkerPanel from './LinkerPanel';
 import SettingsPanel from './SettingsPanel';
 import SetupPanel from './SetupPanel';
 import {
+  IconBestMove,
   IconFlag,
   IconGame,
   IconGear,
@@ -68,6 +69,9 @@ export interface ToolbarProps {
   onToggleAlwaysOnTop: () => void;
   onTogglePanel: () => void;
   onSettingsChanged: (next: AppSettings) => void;
+  /** 围棋：盘上显示引擎最佳选点 */
+  showBestMove: boolean;
+  onToggleBestMove: () => void;
   /** 3D 棋盘缩放（仅 3D 可用；2D/回退时禁用） */
   boardZoomDisabled: boolean;
   board3dScale: number;
@@ -120,6 +124,7 @@ function ToolButton(props: {  label: string;
         type="button"
         style={NO_DRAG}
         aria-label={props.label}
+        aria-pressed={props.accent === true}
         disabled={props.disabled}
         onClick={props.onClick}
         className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-transparent ${
@@ -343,6 +348,14 @@ export default function Toolbar(props: ToolbarProps) {
       {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.canResign)}
       {props.kind === 'go' &&
         iconButton('toolbar.pass', <span className="text-[11px] font-medium">P</span>, props.onPass, !props.playing)}
+      {props.kind === 'go' &&
+        iconButton(
+          'toolbar.bestMove',
+          <IconBestMove />,
+          props.onToggleBestMove,
+          false,
+          props.showBestMove,
+        )}
       {props.kind === 'go' && (
         <div className="relative">
           {iconButton(

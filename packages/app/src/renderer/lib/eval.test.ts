@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from '../i18n';
-import { evalFromBottom, evalValueText, resolveDisplayedEval } from './eval';
+import {
+  evalFromBottom,
+  evalValueText,
+  goLeadText,
+  goWinRateText,
+  resolveDisplayedEval,
+} from './eval';
 
 const t = ((key: string): string => {
   if (key === 'eval.mateN') return '{attacker}{n}步杀{defender}';
@@ -35,6 +41,18 @@ describe('evalValueText', () => {
     expect(evalValueText(t, undefined, -4).text).toBe('黑4步杀红');
     expect(evalValueText(t, undefined, 3, true).text).toBe('红3步杀黑');
     expect(evalValueText(t, undefined, -1, true).text).toBe('黑1步杀红');
+  });
+});
+
+describe('goWinRateText / goLeadText', () => {
+  it('胜率百分数、目差带符号（黑方视角）', () => {
+    expect(goWinRateText(0.003)).toBe('0.3%');
+    expect(goWinRateText(0.55)).toBe('55.0%');
+    expect(goWinRateText(undefined)).toBe('—');
+    expect(goLeadText(-19.8)).toBe('−19.8');
+    expect(goLeadText(3.2)).toBe('+3.2');
+    expect(goLeadText(0)).toBe('0.0');
+    expect(goLeadText(undefined)).toBe('—');
   });
 });
 

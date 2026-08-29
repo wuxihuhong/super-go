@@ -1,5 +1,12 @@
 import type { GoPosition, Point } from '@super-go/core';
 import { cellAt } from '@super-go/core';
+import type { GoHintPoint } from '@shared/game';
+import {
+  formatHintLoss,
+  formatHintVisits,
+  sameHintPoint,
+  uniqueBestHint,
+} from '@shared/goBestMove';
 import { cssColor } from './theme';
 
 export interface GoBoardLayout {
@@ -53,6 +60,7 @@ export function drawGoBoard(
   opts: {
     flip: boolean;
     lastPoint?: Point | null;
+    hintPoints?: readonly GoHintPoint[];
     hover?: Point | null;
     turn: 'first' | 'second';
   },
@@ -124,12 +132,128 @@ export function drawGoBoard(
     /* pass：无盘面标记 */
   }
 
+  drawHintPoints(
+    ctx,
+    pos,
+    layout,
+    opts.hintPoints ?? [],
+    opts.flip,
+    r,
+    opts.lastPoint,
+  );
+
   if (opts.hover !== null && opts.hover !== undefined && cellAt(pos, opts.hover) === null) {
     const p = goToPx(layout, opts.hover.x, opts.hover.y, opts.flip);
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = 0.48;
     drawStone(ctx, p, r, opts.turn === 'first');
     ctx.globalAlpha = 1;
   }
+}
+
+/** 目损色阶：蓝=唯一 +0.0，绿=接近正手，黄/橙/红=坏手 */
+export function hintColorToken(hint: GoHintPoint, bestHint?: GoHintPoint): string {
+  const isBest =
+    bestHint !== undefined ? sameHintPoint(hint, bestHint) : hint.best && formatHintLoss(hint.loss) === '+0.0';
+  if (isBest) return '--go-hint-best';
+  if (hint.loss < 0.5) return '--go-hint-good';
+  if (hint.loss < 1.5) return '--go-hint-ok';
+  if (hint.loss < 3) return '--go-hint-poor';
+  return '--go-hint-bad';
+}
+
+/** KaTrain 实心圆：HINT_SCALE 0.98 / 不确定 0.7；透明度略低于其 0.8 / 0.6 */
+export function hintDotVisual(
+  stoneR: number,
+  hint: GoHintPoint,
+  bestHint?: GoHintPoint,
+): { isBest: boolean; good: boolean; radius: number; alpha: number; color: string } {
+  const isBest =
+    bestHint !== undefined ? sameHintPoint(hint, bestHint) : hint.best && formatHintLoss(hint.loss) === '+0.0';
+  const good = isBest || hint.loss < 0.5;
+  return {
+    isBest,
+    good,
+    radius: stoneR * (hint.faint ? 0.7 : 0.98),
+    alpha: hint.faint ? 0.42 : 0.66,
+    color: cssColor(hintColorToken(hint, bestHint)),
+  };
+}
+
+export function drawHintPoints(
+  ctx: CanvasRenderingContext2D,
+  pos: GoPosition,
+  layout: GoBoardLayout,
+  hints: readonly GoHintPoint[],
+  flip: boolean,
+  stoneR: number,
+  lastPoint?: Point | null,
+): void {
+  const bestHint = uniqueBestHint(hints);
+  for (const hint of hints) {
+    if (cellAt(pos, hint.point) !== null) continue;
+    if (
+      lastPoint !== undefined &&
+      lastPoint !== null &&
+      lastPoint.x === hint.point.x &&
+      lastPoint.y === hint.point.y
+    ) {
+      continue;
+    }
+    const at = goToPx(layout, hint.point.x, hint.point.y, flip);
+    drawHintDot(ctx, at.x, at.y, stoneR, hint, bestHint);
+  }
+}
+
+export function drawHintDot(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  stoneR: number,
+  hint: GoHintPoint,
+  bestHint?: GoHintPoint,
+): void {
+  const { good, radius, alpha, color } = hintDotVisual(stoneR, hint, bestHint);
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  if (hint.faint || !good) return;
+  drawHintLabel(ctx, x, y, stoneR, hint, good);
+}
+
+export function drawHintLabel(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  stoneR: number,
+  hint: GoHintPoint,
+  good: boolean,
+): void {
+  const loss = formatHintLoss(hint.loss);
+  const visits = formatHintVisits(hint.visits);
+  const font = Math.max(9, Math.round(stoneR * (good ? 0.46 : 0.4)));
+  const gap = font * 0.46;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(1.4, font * 0.14);
+  ctx.strokeStyle = cssColor('--stone-black');
+  ctx.fillStyle = cssColor('--stone-white');
+  ctx.font = `400 ${font}px ui-sans-serif, system-ui`;
+  ctx.globalAlpha = 0.45;
+  ctx.strokeText(loss, x, y - gap);
+  ctx.globalAlpha = 0.82;
+  ctx.fillText(loss, x, y - gap);
+  ctx.font = `400 ${Math.max(8, font - 1)}px ui-sans-serif, system-ui`;
+  ctx.globalAlpha = 0.4;
+  ctx.strokeText(visits, x, y + gap);
+  ctx.globalAlpha = 0.72;
+  ctx.fillText(visits, x, y + gap);
+  ctx.restore();
 }
 
 function flipIndex(i: number, size: number, flip: boolean): number {

@@ -96,6 +96,15 @@ export const IconZoomIn = base(
   </>,
 );
 
+/** 最佳选点（准星） */
+export const IconBestMove = base(
+  <>
+    <circle cx="12" cy="12" r="7" />
+    <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+    <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+  </>,
+);
+
 /** 缩小棋盘（放大镜 − 减号） */
 export const IconZoomOut = base(
   <>

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GoPosition, Point } from '@super-go/core';
+import type { GoHintPoint } from '@shared/game';
 import { drawGoBoard, goLayout, pxToGo } from '../lib/goBoardDraw';
 import { useElementSize } from '../lib/useElementSize';
 
 export interface GoBoardProps {
   position: GoPosition;
   lastPoint?: Point | null;
+  hintPoints?: readonly GoHintPoint[];
   flip: boolean;
   themeTick: number;
   interactive: boolean;
@@ -33,10 +35,11 @@ export default function GoBoard(props: GoBoardProps): React.JSX.Element {
     drawGoBoard(ctx, props.position, layout, {
       flip: props.flip,
       lastPoint: props.lastPoint,
+      hintPoints: props.hintPoints,
       hover: props.interactive ? hover : null,
       turn: props.position.turn,
     });
-  }, [props.position, props.lastPoint, props.flip, props.themeTick, props.interactive, hover, width, height]);
+  }, [props.position, props.lastPoint, props.hintPoints, props.flip, props.themeTick, props.interactive, hover, width, height]);
 
   const eventPoint = (e: React.PointerEvent<HTMLCanvasElement>): Point | null => {
     const canvas = canvasRef.current;

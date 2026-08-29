@@ -12,6 +12,7 @@ import {
   defaultKomi,
   GameStateMachine,
   GoGame,
+  cellAt,
   goMoveToGtp,
   isInCheck,
   MoveTree,
@@ -29,6 +30,7 @@ import {
   type GoMove,
   type GoPosition,
   type Player,
+  type Point,
   type XiangqiMove,
   type XiangqiPosition,
 } from '@super-go/core';
@@ -45,6 +47,7 @@ import { LINKER_SETTINGS_DEFAULT, type ActiveWindowPick } from '@shared/linker';
 import { MOVE_DELAY_DEFAULT, pickMoveDelayMs } from '@shared/moveDelay';
 import type {
   GameSnapshot,
+  GoHintPoint,
   IntentResult,
   LiveEval,
   MainlineItem,
@@ -168,6 +171,21 @@ function createMockApi(): SuperGoApi {
       notationPos = goTree.positionOf(node);
     }
     const pos = goTree.positionOf(goTree.cursor);
+    const mockHintPoints = (): GoHintPoint[] | undefined => {
+      if (settings.go.showBestMove !== true) return undefined;
+      const samples: GoHintPoint[] = [
+        { point: { x: 15, y: 3 }, loss: 0, visits: 2800, faint: false, best: true },
+        { point: { x: 3, y: 3 }, loss: 0.3, visits: 1200, faint: false, best: false },
+        { point: { x: 15, y: 15 }, loss: 0.9, visits: 420, faint: false, best: false },
+        { point: { x: 3, y: 15 }, loss: 1.8, visits: 210, faint: false, best: false },
+        { point: { x: 16, y: 5 }, loss: 2.6, visits: 140, faint: false, best: false },
+        { point: { x: 2, y: 5 }, loss: 4.2, visits: 40, faint: true, best: false },
+        { point: { x: 9, y: 2 }, loss: 5.1, visits: 22, faint: true, best: false },
+        { point: { x: 10, y: 16 }, loss: 3.4, visits: 90, faint: false, best: false },
+      ];
+      const hints = samples.filter((s) => cellAt(pos, s.point) === null);
+      return hints.length > 0 ? hints : undefined;
+    };
     const snap = goState.snapshot;
     return {
       kind: 'go',
@@ -185,6 +203,7 @@ function createMockApi(): SuperGoApi {
       inCheck: false,
       lastMove: null,
       lastPoint: goTree.cursor.move === null ? undefined : goTree.cursor.move.point,
+      hintPoints: mockHintPoints(),
       winRate: items.at(-1)?.winRate,
       lead: items.at(-1)?.lead,
       depth: items.at(-1)?.depth,
@@ -397,6 +416,7 @@ function createMockApi(): SuperGoApi {
       }),
     getSettings: () => Promise.resolve({ ...settings }),
     setSettings: (patch) => {
+      const prevBest = settings.go.showBestMove === true;
       const xiangqi = patch.xiangqi
         ? {
             ...patch.xiangqi,
@@ -431,6 +451,7 @@ function createMockApi(): SuperGoApi {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       applyThemeClass();
       notifyTheme();
+      if (prevBest !== (settings.go.showBestMove === true)) pushSnapshot();
       return Promise.resolve(JSON.parse(JSON.stringify(settings)) as AppSettings);
     },
     onThemeChanged: (cb) => {
@@ -729,6 +750,7 @@ function loadSettings(): AppSettings {
           },
           go: {
             ponder: false,
+            showBestMove: false,
             moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
             moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
             rules: 'chinese',
@@ -757,6 +779,7 @@ function loadSettings(): AppSettings {
     go: {
       strength: {},
       ponder: false,
+      showBestMove: false,
       moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
       moveDelayMaxSec: MOVE_DELAY_DEFAULT.maxSec,
       rules: 'chinese',

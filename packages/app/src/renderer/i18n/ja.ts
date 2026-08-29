@@ -217,6 +217,8 @@ export default {
   'toolbar.kind.confirm.ok': '切り替える',
   'toolbar.pass': 'パス',
   'toolbar.pass.hint': 'この手は打たない。連続パスで終局',
+  'toolbar.bestMove': '候補点',
+  'toolbar.bestMove.hint': '候補を盤上に表示。青は唯一の最善手、緑はそれに近い手、他色は悪手',
   'toolbar.score': '目算',
   'toolbar.score.hint': '現行ルールでローカル計算。エンジン空きなら KataGo にも聞く',
   'toolbar.score.local': 'ローカル',
@@ -273,6 +275,6 @@ export default {
   'settings.go.analysis.noise': 'Wide-root ノイズ',
   'settings.go.komi': '既定コミ',
   'settings.go.rules': '既定ルール',
-  'panel.engine.winRate': '勝率',
-  'eval.lead': '目差',
+  'panel.engine.winRate': '黒勝率',
+  'eval.lead': '黒目差',
 } as const;

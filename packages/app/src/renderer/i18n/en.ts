@@ -221,6 +221,8 @@ export default {
   'toolbar.kind.confirm.ok': 'Switch',
   'toolbar.pass': 'Pass',
   'toolbar.pass.hint': 'Skip this turn; two consecutive passes end the game',
+  'toolbar.bestMove': 'Top moves',
+  'toolbar.bestMove.hint': 'Show engine candidates: blue is the single best move, green is close, other colours mark worse moves',
   'toolbar.score': 'Score',
   'toolbar.score.hint': 'Local scoring by current rules; ask KataGo when the engine is idle',
   'toolbar.score.local': 'Local',
@@ -277,6 +279,6 @@ export default {
   'settings.go.analysis.noise': 'Wide-root noise',
   'settings.go.komi': 'Default komi',
   'settings.go.rules': 'Default rules',
-  'panel.engine.winRate': 'Win rate',
-  'eval.lead': 'Lead',
+  'panel.engine.winRate': 'Black WR',
+  'eval.lead': 'Black score',
 } as const;

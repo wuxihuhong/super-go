@@ -65,6 +65,7 @@ export class GtpAdapter implements EngineAdapter {
   private launched = false;
   private commands = new Set<string>();
   private latestInfo: GtpInfo | undefined;
+  private latestInfos: GtpInfo[] = [];
   private waitMove: ((move: string | null) => void) | null = null;
   private pending: {
     resolve: (text: string) => void;
@@ -180,6 +181,7 @@ export class GtpAdapter implements EngineAdapter {
     });
     this.status = 'thinking';
     this.latestInfo = undefined;
+    this.latestInfos = [];
     const color = req.color ?? this.nextColor;
     const cmd = this.commands.has('kata-genmove_analyze')
       ? gtpCommands.kataGenmoveAnalyze(color)
@@ -205,7 +207,8 @@ export class GtpAdapter implements EngineAdapter {
     this.nextColor = color === 'B' ? 'W' : 'B';
     return {
       move: move.toLowerCase() === 'pass' ? 'pass' : move,
-      evaluation: this.latestInfo === undefined ? undefined : this.toEvaluation(this.latestInfo),
+      evaluation:
+        this.latestInfo === undefined ? undefined : this.toEvaluation(this.latestInfo, this.latestInfos),
     };
   }
 
@@ -213,11 +216,13 @@ export class GtpAdapter implements EngineAdapter {
     if (this.proc === null) return;
     this.analyzing = true;
     void this.enqueue(async () => {
+      if (!this.analyzing) return;
       await this.applySearchParams({
         maxVisits: opts.maxVisits,
         maxTimeSec: opts.maxTimeSec,
         wideRootNoise: opts.wideRootNoise,
       });
+      if (!this.analyzing) return;
       this.send(gtpCommands.kataAnalyze(this.nextColor));
     });
   }
@@ -226,6 +231,9 @@ export class GtpAdapter implements EngineAdapter {
     if (!this.analyzing) return;
     this.analyzing = false;
     this.send(gtpCommands.stop());
+    void this.enqueue(async () => {
+      await this.restoreStrength();
+    });
   }
 
   async analyzeOnce(opts: AnalyzeRequest): Promise<EngineEvaluation | undefined> {
@@ -263,7 +271,9 @@ export class GtpAdapter implements EngineAdapter {
         if (this.status === 'thinking') this.status = 'ready';
         await this.restoreStrength();
       }
-      return this.latestInfo === undefined ? undefined : this.toEvaluation(this.latestInfo);
+      return this.latestInfo === undefined
+        ? undefined
+        : this.toEvaluation(this.latestInfo, this.latestInfos);
     });
   }
 
@@ -340,8 +350,9 @@ export class GtpAdapter implements EngineAdapter {
       case 'info': {
         const best = pickBestInfo(event.infos);
         if (best !== undefined) {
+          this.latestInfos = event.infos;
           this.latestInfo = best;
-          const evaluation = this.toEvaluation(best);
+          const evaluation = this.toEvaluation(best, event.infos);
           for (const cb of this.evaluationListeners) cb(evaluation);
         }
         break;
@@ -385,12 +396,21 @@ export class GtpAdapter implements EngineAdapter {
     }
   }
 
-  private toEvaluation(info: GtpInfo): EngineEvaluation {
+  private toEvaluation(info: GtpInfo, infos: readonly GtpInfo[] = []): EngineEvaluation {
+    const list = infos.length > 0 ? infos : info.move !== undefined ? [info] : [];
     return {
       depth: info.visits,
       winRate: info.winRate,
       lead: info.lead,
-      pv: info.pv,
+      pv: info.pv ?? (info.move !== undefined ? [info.move] : undefined),
+      candidates: list
+        .filter((row): row is GtpInfo & { move: string } => row.move !== undefined)
+        .map((row) => ({
+          move: row.move,
+          visits: row.visits,
+          winRate: row.winRate,
+          lead: row.lead,
+        })),
     };
   }
 

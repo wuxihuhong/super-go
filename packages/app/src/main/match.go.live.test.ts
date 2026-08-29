@@ -60,6 +60,7 @@ describe.skipIf(binary === null || model === null)('KataGo brew 零配置闭环'
           playDelayMs: () => ({ min: 50, max: 80 }),
           analysis: () => ({ maxVisits: 8, fastVisits: 4, maxTimeSec: 2, wideRootNoise: 0.04 }),
           ponder: () => false,
+          showBestMove: () => false,
           setup: () => ({ boardSize: 19, komi: 7.5, rules: 'chinese' }),
         },
       },

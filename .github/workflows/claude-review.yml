@@ -7,8 +7,9 @@ on:
 
 jobs:
   fire-routine:
-    # 删除分支时 GitHub 也会发 push 事件，这里跳过
-    if: github.event.deleted == false
+    # 删除分支跳过；只对 GitHub 账号 wuxihuhong 的推送跑 review
+    # github.actor = 触发 workflow 的登录名（push 即推送者），不是 commit 里的 email
+    if: github.event.deleted == false && github.actor == 'wuxihuhong'
     runs-on: ubuntu-latest
     steps:
       - name: Build payload

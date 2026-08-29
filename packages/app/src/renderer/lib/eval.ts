@@ -80,12 +80,18 @@ export function resolveDisplayedEval(
   };
 }
 
-export function goEvalText(winRate?: number, lead?: number): string {
-  if (winRate === undefined && lead === undefined) return '—';
-  const pct = winRate === undefined ? '—' : `${(winRate * 100).toFixed(1)}%`;
-  if (lead === undefined) return pct;
-  const sign = lead > 0 ? '+' : lead < 0 ? '' : '';
-  return `${pct} ${sign}${lead.toFixed(1)}`;
+/** 围棋胜率：快照已换算为黑方视角（正 = 黑优） */
+export function goWinRateText(winRate?: number): string {
+  if (winRate === undefined) return '—';
+  return `${(winRate * 100).toFixed(1)}%`;
+}
+
+/** 围棋目差：黑方视角，正 = 黑领先 */
+export function goLeadText(lead?: number): string {
+  if (lead === undefined) return '—';
+  if (lead === 0) return '0.0';
+  const sign = lead > 0 ? '+' : '−';
+  return `${sign}${Math.abs(lead).toFixed(1)}`;
 }
 
 export function resolveGoEval(

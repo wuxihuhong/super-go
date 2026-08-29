@@ -37,6 +37,7 @@ import {
   type GoStrengthConfig,
   type MoveNode,
   type Player,
+  type Point,
   type StrengthProfile,
   type XiangqiMove,
   type XiangqiPosition,
@@ -54,12 +55,18 @@ import type {
   EstimateScoreResult,
   GameSnapshot,
   GoEngineScore,
+  GoHintPoint,
   IntentResult,
   LiveEval,
   MainlineItem,
   NewGameIntent,
   PlayMoveIntent,
 } from '../shared/game';
+import {
+  candidatesFromEvaluation,
+  hintPointsFromCandidates,
+  hintsSignature,
+} from '../shared/goBestMove';
 import { GO_ANALYSIS_DEFAULT, type GoAnalysisSettings } from '../shared/ipc';
 import { moveDelayMs, pickDelayMs } from '../shared/moveDelay';
 import { toBlackPerspective, toRedPerspective } from '../shared/score';
@@ -80,6 +87,7 @@ export interface MatchGoProviders {
   playDelayMs: () => { min: number; max: number };
   analysis: () => GoAnalysisSettings;
   ponder: () => boolean;
+  showBestMove: () => boolean;
   setup: () => GameSetup;
 }
 
@@ -121,6 +129,9 @@ export class MatchService {
   private lastForwardedLive: LiveEval | null = null;
   /** 拟人延迟秒数（思考仍为 true，UI 用这个区分「计算中」与「延迟中」） */
   private playDelaySec: number | undefined;
+  /** 围棋候选选点（hint 分析或 genmove 帧） */
+  private goHintPoints: GoHintPoint[] = [];
+  private hinting = false;
   private strengthTail: Promise<void> = Promise.resolve();
   /** 引擎着法落子拦截（连线注入点：§6.1 出招 → 本地先落子 → 再点平台） */
   private engineMoveInterceptor: ((move: XiangqiMove) => Promise<boolean>) | null = null;
@@ -169,6 +180,8 @@ export class MatchService {
       return { ok: true };
     }
     this.generation++;
+    this.stopHintAnalysis();
+    this.goHintPoints = [];
     this.adapter?.stopSearch();
     this.setThinking(false);
     this.paused = false;
@@ -236,6 +249,8 @@ export class MatchService {
       this.abortThinking();
     } else if (this.engineToMoveNow()) {
       void this.engineTurn();
+    } else {
+      this.refreshHintAnalysis();
     }
     this.pushSnapshot();
     return { ok: true };
@@ -311,8 +326,10 @@ export class MatchService {
     this.liveState.start({ engineSide, strength: profile });
     this.lastEngineSide = engineSide;
     this.lastStrength = profile;
+    this.goHintPoints = [];
     this.pushSnapshot();
     if (this.engineToMoveNow()) void this.engineTurn();
+    else this.refreshHintAnalysis();
     return { ok: true };
   }
 
@@ -341,7 +358,8 @@ export class MatchService {
       if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
         void this.engineTurn();
       } else if (this.liveState.phase === 'playing') {
-        void this.goAnalyzeNode(node, 'fast');
+        if (this.showBestMoveOn()) this.refreshHintAnalysis();
+        else void this.goAnalyzeNode(node, 'fast');
       }
       return { ok: true };
     }
@@ -388,6 +406,7 @@ export class MatchService {
     }
     this.pushSnapshot();
     if (!this.paused && this.engineToMoveNow()) void this.engineTurn(); // 引擎执先时重下第一着
+    else this.refreshHintAnalysis();
     return { ok: true };
   }
 
@@ -399,6 +418,8 @@ export class MatchService {
       return { ok: false, error: '观战模式不可认输（可开新对局结束）' };
     }
     this.generation++;
+    this.stopHintAnalysis();
+    this.goHintPoints = [];
     this.adapter?.stopSearch();
     this.setThinking(false);
     const engineSide = (this.liveState.engineSide ?? 'first') as Player;
@@ -425,6 +446,7 @@ export class MatchService {
     this.lastEngineSide = engineSide;
     this.pushSnapshot();
     if (!this.paused && this.engineToMoveNow()) void this.engineTurn();
+    else this.refreshHintAnalysis();
     return { ok: true };
   }
 
@@ -437,6 +459,7 @@ export class MatchService {
         this.lastStrength = profile;
         await this.applyStrength(this.strengthSpecOf(profile));
         await this.adapter?.setPonder?.(this.goProviders?.ponder() === true);
+        this.refreshHintAnalysis();
         this.pushSnapshot();
         return;
       }
@@ -491,6 +514,7 @@ export class MatchService {
       return { ok: true, score: { local } };
     }
 
+    this.stopHintAnalysis();
     try {
       const root = this.goTree.positionOf(this.goTree.root);
       const moves = this.goTree
@@ -531,11 +555,14 @@ export class MatchService {
       return { ok: true, score: { local, engine } };
     } catch {
       return { ok: true, score: { local } };
+    } finally {
+      this.refreshHintAnalysis();
     }
   }
 
   dispose(): void {
     this.generation++;
+    this.stopHintAnalysis();
     this.adapter?.quit();
     this.adapter = null;
     this.launchedPath = null;
@@ -561,6 +588,7 @@ export class MatchService {
 
   private async engineTurn(): Promise<void> {
     const gen = ++this.generation;
+    this.stopHintAnalysis();
     this.setThinking(true);
     this.pushEngineStatus('thinking');
     this.pushSnapshot();
@@ -647,6 +675,8 @@ export class MatchService {
       const pos = this.goPositionNow();
       const result = this.goGame.isGameOver(pos, [pos]);
       if (result === null) return false;
+      this.stopHintAnalysis();
+      this.goHintPoints = [];
       this.liveState.end(result);
       void this.resetStrength();
       void this.refineGoFinalScore();
@@ -692,7 +722,7 @@ export class MatchService {
         this.adapter = adapter;
         this.launchedPath = binaryPath;
         adapter.onExit((code) => this.onEngineExit(adapter, code));
-        adapter.onEvaluation((evaluation) => this.forwardLiveEval(evaluation));
+        adapter.onEvaluation((evaluation) => this.onEngineEvaluation(evaluation));
         this.pushEngineStatus('ready');
       })
       .catch((err: unknown) => {
@@ -736,7 +766,7 @@ export class MatchService {
         this.adapter = adapter;
         this.launchedPath = key;
         adapter.onExit((code) => this.onEngineExit(adapter, code));
-        adapter.onEvaluation((evaluation) => this.forwardLiveEval(evaluation));
+        adapter.onEvaluation((evaluation) => this.onEngineEvaluation(evaluation));
         await adapter.setPonder?.(this.goProviders?.ponder() === true);
         this.pushEngineStatus('ready');
       })
@@ -809,6 +839,72 @@ export class MatchService {
   /** 强度复位（唯一入口：所有离开对局的转移都调这里） */
   private resetStrength(): Promise<void> {
     return this.applyStrength(null);
+  }
+
+  private showBestMoveOn(): boolean {
+    return this.kind === 'go' && this.goProviders?.showBestMove() === true;
+  }
+
+  private stopHintAnalysis(): void {
+    if (!this.hinting) return;
+    this.hinting = false;
+    this.adapter?.stopAnalysis?.();
+  }
+
+  private refreshHintAnalysis(): void {
+    this.stopHintAnalysis();
+    if (!this.showBestMoveOn()) {
+      if (this.goHintPoints.length > 0) {
+        this.goHintPoints = [];
+        this.pushSnapshot();
+      }
+      return;
+    }
+    if (this.liveState.phase !== 'playing' || this.thinking) return;
+    if (this.adapter === null || this.adapter.startAnalysis === undefined) return;
+    const pos = this.goPositionNow();
+    const moves = this.goTree
+      .pathOf(this.goTree.cursor)
+      .slice(1)
+      .map((node) => goMoveToGtp(node.move!, pos.size));
+    this.adapter.syncPosition(this.goGame.serialize(this.goTree.positionOf(this.goTree.root)), moves);
+    this.hinting = true;
+    const analysis = this.goAnalysis();
+    this.adapter.startAnalysis({
+      maxVisits: analysis.maxVisits,
+      maxTimeSec: analysis.maxTimeSec,
+      wideRootNoise: analysis.wideRootNoise,
+    });
+  }
+
+  private onEngineEvaluation(evaluation: EngineEvaluation): void {
+    if (this.kind === 'go' && this.showBestMoveOn()) {
+      const next = hintPointsFromCandidates(
+        candidatesFromEvaluation(evaluation),
+        this.goPositionNow().size,
+        this.goAnalysis().fastVisits,
+      );
+      if (hintsSignature(next) !== hintsSignature(this.goHintPoints)) {
+        this.goHintPoints = next;
+        this.pushSnapshot();
+      }
+    }
+    if (this.thinking) {
+      this.forwardLiveEval(evaluation);
+      return;
+    }
+    if (this.hinting && this.kind === 'go') {
+      const { winRate, lead } = toBlackPerspective(
+        this.turnNow(),
+        evaluation.winRate,
+        evaluation.lead,
+      );
+      this.events.liveEval({
+        winRate,
+        lead,
+        depth: evaluation.depth,
+      });
+    }
   }
 
   private forwardLiveEval(evaluation: EngineEvaluation): void {
@@ -969,6 +1065,7 @@ export class MatchService {
       inCheck: false,
       lastMove: null,
       lastPoint: cursor.move === null ? undefined : cursor.move.point,
+      hintPoints: this.goHintPoints.length > 0 ? this.goHintPoints : undefined,
       winRate,
       lead,
       depth,
@@ -1113,6 +1210,8 @@ export class MatchService {
     this.pushSnapshot();
     if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
       void this.engineTurn();
+    } else {
+      this.refreshHintAnalysis();
     }
   }
 

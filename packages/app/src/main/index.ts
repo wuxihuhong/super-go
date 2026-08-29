@@ -205,6 +205,7 @@ void app.whenReady().then(() => {
         playDelayMs: () => moveDelayMs(settings.get().go),
         analysis: () => ({ ...GO_ANALYSIS_DEFAULT, ...settings.get().go.analysis }),
         ponder: () => settings.get().go.ponder === true,
+        showBestMove: () => settings.get().go.showBestMove === true,
         setup: () => ({
           boardSize: 19,
           komi: settings.get().go.komi,

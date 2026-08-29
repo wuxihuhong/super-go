@@ -36,6 +36,14 @@ export interface GenMoveRequest {
   color?: 'B' | 'W';
 }
 
+/** kata-analyze 一段 info（一手候选） */
+export interface EngineCandidate {
+  move: string;
+  visits?: number;
+  winRate?: number;
+  lead?: number;
+}
+
 /** 引擎评估帧（info 行提炼；cp 为走子方视角厘兵；围棋为胜率+目差） */
 export interface EngineEvaluation {
   depth?: number;
@@ -46,6 +54,8 @@ export interface EngineEvaluation {
   winRate?: number;
   /** 走子方目差（围棋） */
   lead?: number;
+  /** 本帧全部候选（按引擎 info 原序；围棋选点叠加） */
+  candidates?: EngineCandidate[];
 }
 
 /** 强度规格：null = 满强度（不下发任何弱化选项，§5.5 粘滞防线） */

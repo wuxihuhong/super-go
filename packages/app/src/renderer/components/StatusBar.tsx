@@ -1,7 +1,13 @@
 import type { GameSnapshot } from '@shared/game';
 import type { EngineStatusPayload, LiveEval } from '@shared/ipc';
 import { engineStatusText } from '../lib/engineStatusText';
-import { evalValueText, goEvalText, resolveDisplayedEval, resolveGoEval } from '../lib/eval';
+import {
+  evalValueText,
+  goLeadText,
+  goWinRateText,
+  resolveDisplayedEval,
+  resolveGoEval,
+} from '../lib/eval';
 import type { TFunction } from '../i18n';
 
 export interface StatusBarProps {
@@ -12,14 +18,14 @@ export interface StatusBarProps {
   boardFlipped: boolean;
 }
 
-/** 窗口底栏：引擎 / 状态 / 强度 / 深度 / 优势（侧栏不再竖排这些字段） */
+/** 窗口底栏：引擎 / 状态 / 强度 / 深度或访问量 / 评估（围棋拆成黑胜率 + 目差） */
 export default function StatusBar(props: StatusBarProps): React.JSX.Element {
   const { t, snapshot, engineStatus } = props;
   const isGo = snapshot?.kind === 'go';
   const shown = resolveDisplayedEval(props.liveEval, snapshot);
   const goShown = resolveGoEval(props.liveEval, snapshot);
   const evalText = isGo
-    ? { text: goEvalText(goShown.winRate, goShown.lead) }
+    ? null
     : evalValueText(t, shown.redCp, shown.redMate, props.boardFlipped);
   const depth = (isGo ? goShown.depth : shown.depth) !== undefined
     ? String(isGo ? goShown.depth : shown.depth)
@@ -36,7 +42,12 @@ export default function StatusBar(props: StatusBarProps): React.JSX.Element {
       value: snapshot?.strengthLabel ?? t('panel.engine.unlimited'),
     },
     { label: t(isGo ? 'settings.go.strength.visits' : 'panel.engine.depth'), value: depth },
-    { label: t(isGo ? 'panel.engine.winRate' : 'panel.engine.eval'), value: evalText.text },
+    ...(isGo
+      ? [
+          { label: t('panel.engine.winRate'), value: goWinRateText(goShown.winRate) },
+          { label: t('eval.lead'), value: goLeadText(goShown.lead) },
+        ]
+      : [{ label: t('panel.engine.eval'), value: evalText?.text ?? '—' }]),
   ];
 
   return (
