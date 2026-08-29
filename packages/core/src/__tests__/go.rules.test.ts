@@ -11,6 +11,7 @@ import {
   isLegalGoMove,
   legalGoMoves,
   pointToGtp,
+  isLocalScoreClosed,
   scoreGo,
   scoreJapanese,
   scoreTrompTaylor,
@@ -188,6 +189,8 @@ describe('虚着与终局', () => {
     expect(score.white).toBe(36);
     expect(score.margin).toBe(9);
     expect(score.method).toBe('area');
+    expect(score.openEmpty).toBe(0);
+    expect(isLocalScoreClosed(score, 0)).toBe(true);
     const jpFull = scoreJapanese({ ...pos, rules: 'japanese' });
     expect(jpFull.black).toBe(0);
     expect(jpFull.white).toBe(0);

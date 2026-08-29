@@ -122,6 +122,7 @@ export {
   diffGo,
   isGoGameOver,
   isLegalGoMove,
+  isLocalScoreClosed,
   legalGoMoves,
   neighbors as goNeighbors,
   resultFromScore,

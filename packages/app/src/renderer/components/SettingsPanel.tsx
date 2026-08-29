@@ -4,6 +4,7 @@ import {
   GO_VISITS_PRESETS,
   normalizeGoStrength,
   normalizeXiangqiStrength,
+  type GameKind,
   type GoStrengthConfig,
   type XiangqiStrengthConfig,
 } from '@super-go/core';
@@ -24,13 +25,15 @@ type SettingsTab = 'common' | 'xiangqi' | 'go' | 'linker';
 
 export interface SettingsPanelProps {
   t: TFunction;
+  /** 当前棋盘棋种：连线页共用，两击间隔仅象棋有效 */
+  kind: GameKind;
   /** 语言切换需 App 同步本地 lang 状态（即时生效，§7.5） */
   onSettingsChanged: (next: AppSettings) => void;
 }
 
 /**
  * 设置（固有配置，§7.5 + 用户定义的配置模型）：
- * 三个 Tab：通用 / 象棋 / 象棋连线。棋力对局中实时生效。
+ * 四个 Tab：通用 / 象棋引擎 / 围棋引擎 / 连线。棋力对局中实时生效。
  */
 export default function SettingsPanel(props: SettingsPanelProps) {
   const [settings, setSettingsState] = useState<AppSettings | null>(null);
@@ -85,7 +88,13 @@ export default function SettingsPanel(props: SettingsPanelProps) {
     min: number,
     max: number,
     onCommit: (v: number) => void,
-    opts: { step?: number; widthClass?: string; ariaLabel?: string; inputKey: string },
+    opts: {
+      step?: number;
+      widthClass?: string;
+      ariaLabel?: string;
+      inputKey: string;
+      disabled?: boolean;
+    },
   ): React.JSX.Element => {
     const step = opts.step ?? 1;
     return (
@@ -97,12 +106,16 @@ export default function SettingsPanel(props: SettingsPanelProps) {
         defaultValue={value}
         key={opts.inputKey}
         aria-label={opts.ariaLabel}
+        disabled={opts.disabled}
         onBlur={(e) => {
+          if (opts.disabled) return;
           const next = commitNumberInput(e.target.value, value, min, max, step);
           e.target.value = String(next);
           if (next !== value) onCommit(next);
         }}
-        className={`${opts.widthClass ?? 'w-20'} rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums`}
+        className={`${opts.widthClass ?? 'w-20'} rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums ${
+          opts.disabled ? 'cursor-not-allowed opacity-40' : ''
+        }`}
       />
     );
   };
@@ -439,9 +452,18 @@ export default function SettingsPanel(props: SettingsPanelProps) {
           {numberField(props.t('settings.linker.holdMs'), linker.clickHoldMs, 0, 500, (v) =>
             patchLinker({ clickHoldMs: v }),
           )}
-          {numberField(props.t('settings.linker.betweenMs'), linker.clickBetweenMs, 0, 2000, (v) =>
-            patchLinker({ clickBetweenMs: v }),
-          )}
+          <Row
+            label={props.t('settings.linker.betweenMs')}
+            hint={
+              props.kind === 'go' ? props.t('settings.linker.betweenMs.goUnused') : undefined
+            }
+          >
+            {numberInput(linker.clickBetweenMs, 0, 2000, (v) => patchLinker({ clickBetweenMs: v }), {
+              inputKey: `between-${linker.clickBetweenMs}`,
+              disabled: props.kind === 'go',
+              ariaLabel: props.t('settings.linker.betweenMs'),
+            })}
+          </Row>
           <Row
             label={props.t('settings.linker.animation')}
             hint={props.t('settings.linker.animation.hint')}

@@ -237,13 +237,49 @@ export default function App() {
     if (next.activeKind === 'go' || next.activeKind === 'xiangqi') setKind(next.activeKind);
   }, []);
 
+  const persistShowBestMove = useCallback(
+    (next: boolean) => {
+      setShowBestMove(next);
+      void window.superGo.getSettings().then((s) =>
+        window.superGo.setSettings({ go: { ...s.go, showBestMove: next } }).then(handleSettingsChanged),
+      );
+    },
+    [handleSettingsChanged],
+  );
+
   /** 工具栏快速切换窗口置顶（走设置通道：持久化 + main 即时生效） */
   const handleToggleAlwaysOnTop = useCallback(() => {
     void window.superGo.setSettings({ view: { alwaysOnTop: !alwaysOnTop } });
     setAlwaysOnTop(!alwaysOnTop);
   }, [alwaysOnTop]);
 
-  // ---- 快捷键：⌘/Ctrl+N 新对局 · ⌘Z 悔棋 · ⌘, 设置 · 空格 暂停/继续 · ⌘B 侧栏 ----
+  const handleToggleEngineSide = useCallback(
+    (side: 'first' | 'second'): void => {
+      const redOn = engineSide === 'first' || engineSide === 'both';
+      const blackOn = engineSide === 'second' || engineSide === 'both';
+      const nextRed = side === 'first' ? !redOn : redOn;
+      const nextBlack = side === 'second' ? !blackOn : blackOn;
+      const next: EngineSide =
+        nextRed && nextBlack ? 'both' : nextRed ? 'first' : nextBlack ? 'second' : null;
+      runIntent(() => window.superGo.setEngineSide(next));
+    },
+    [engineSide, runIntent],
+  );
+
+  const handleBoard3dScale = useCallback((scale: number): void => {
+    const clamped = clampBoard3dScale(scale);
+    setBoard3dScale(clamped);
+    if (board3dScaleTimer.current !== null) window.clearTimeout(board3dScaleTimer.current);
+    board3dScaleTimer.current = window.setTimeout(() => {
+      void window.superGo.setSettings({ view: { board3dScale: clamped } });
+    }, 400);
+  }, []);
+
+  const togglePopover = useCallback((which: Popover): void => {
+    setPopover((cur) => (cur === which ? 'none' : which));
+  }, []);
+
+  // ---- 快捷键：与工具栏按钮一一对应（输入框内不拦截）----
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement | null;
@@ -253,31 +289,93 @@ export default function App() {
       ) {
         return;
       }
+      const playing = snapshot?.phase === 'playing';
+      const canUndo =
+        (playing || snapshot?.phase === 'ended') && (snapshot?.moves.length ?? 0) > 0 && !linkerActive;
+      const canResign = playing && engineSide !== 'both' && !linkerActive;
+      const zoomOk = board3d && !glFailed;
+      const key = e.key.toLowerCase();
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === 'n') {
+
+      if (e.key === ' ' && !mod) {
         e.preventDefault();
-        setPopover((cur) => (cur === 'setup' ? 'none' : 'setup'));
-      } else if (mod && e.key.toLowerCase() === 'z') {
+        if (playing) runIntent(() => window.superGo.togglePause());
+        return;
+      }
+      if (!mod) return;
+
+      if (key === 'n') {
         e.preventDefault();
-        runIntent(() => window.superGo.undoMove());
-      } else if (mod && e.key === ',') {
+        togglePopover('setup');
+      } else if (key === 'z') {
         e.preventDefault();
-        setPopover((cur) => (cur === 'settings' ? 'none' : 'settings'));
-      } else if (mod && e.key.toLowerCase() === 'b') {
+        if (canUndo) runIntent(() => window.superGo.undoMove());
+      } else if (e.key === ',') {
+        e.preventDefault();
+        togglePopover('settings');
+      } else if (key === 'b') {
         e.preventDefault();
         setPanelOpen((v) => {
           const next = !v;
           userClosedPanel.current = !next;
           return next;
         });
-      } else if (e.key === ' ' && !mod) {
+      } else if (key === 'r' && e.shiftKey) {
         e.preventDefault();
-        runIntent(() => window.superGo.togglePause());
+        if (canResign) runIntent(() => window.superGo.resign());
+      } else if (key === 'p') {
+        e.preventDefault();
+        if (kind === 'go' && playing) runIntent(() => window.superGo.playMove({ point: null }));
+      } else if (key === 'm') {
+        e.preventDefault();
+        if (kind === 'go') persistShowBestMove(!showBestMove);
+      } else if (key === 'e') {
+        e.preventDefault();
+        if (kind === 'go') togglePopover('score');
+      } else if (key === 'g') {
+        e.preventDefault();
+        if (playing) togglePopover('game');
+      } else if (e.key === '1') {
+        e.preventDefault();
+        if (playing) handleToggleEngineSide('first');
+      } else if (e.key === '2') {
+        e.preventDefault();
+        if (playing) handleToggleEngineSide('second');
+      } else if (key === 'l') {
+        e.preventDefault();
+        togglePopover('linker');
+      } else if (key === 't') {
+        e.preventDefault();
+        handleToggleAlwaysOnTop();
+      } else if (key === '=' || key === '+') {
+        e.preventDefault();
+        if (zoomOk) handleBoard3dScale(board3dScale + BOARD3D_SCALE.step);
+      } else if (key === '-' || key === '_') {
+        e.preventDefault();
+        if (zoomOk) handleBoard3dScale(board3dScale - BOARD3D_SCALE.step);
+      } else if (e.key === '0') {
+        e.preventDefault();
+        if (zoomOk) handleBoard3dScale(1);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [runIntent]);
+  }, [
+    runIntent,
+    snapshot,
+    linkerActive,
+    engineSide,
+    kind,
+    showBestMove,
+    persistShowBestMove,
+    board3d,
+    glFailed,
+    board3dScale,
+    handleBoard3dScale,
+    handleToggleEngineSide,
+    handleToggleAlwaysOnTop,
+    togglePopover,
+  ]);
 
   // 棋盘方位（执方与视角解耦，2026-08-26 定稿）——hooks 区实现：
   // 新对局弹窗选的执方只作开局视角锚定（选中颜色朝下），不设置引擎执方；
@@ -310,7 +408,8 @@ export default function App() {
     setFlip((cur) => nextBoardFlip(cur, { type: 'platformView', reversed: linkerStatus.reversed }));
   }, [linkerActive, linkerStatus]);
 
-  // 只在首次进入待介入/出错时打开侧栏；定位中不抢焦点，尊重用户关掉
+  // 只在首次进入待介入/出错时打开侧栏；定位中不抢焦点，尊重用户关掉。
+  // 连线从进行中离开（停止 / 急停 / 终局）→ 关掉最佳选点。
   useEffect(() => {
     const phase = linkerStatus?.phase;
     const prev = prevLinkerPhase.current;
@@ -322,7 +421,18 @@ export default function App() {
       userClosedPanel.current = false;
       setPanelOpen(true);
     }
-  }, [linkerStatus?.phase]);
+    const leftLinker =
+      prev !== undefined &&
+      isLinkerActivePhase(prev) &&
+      (phase === undefined || !isLinkerActivePhase(phase));
+    if (leftLinker && showBestMove) persistShowBestMove(false);
+  }, [linkerStatus?.phase, showBestMove, persistShowBestMove]);
+
+  // 引擎离场（执方双关 / 转观战）→ 关掉最佳选点。等快照到位再判，避免首帧抢关。
+  useEffect(() => {
+    if (snapshot === null || engineSide !== null || !showBestMove) return;
+    persistShowBestMove(false);
+  }, [snapshot, engineSide, showBestMove, persistShowBestMove]);
 
   // 新对局后清掉已停止连线的残留横幅（error 留给用户点关闭）
   useEffect(() => {
@@ -336,27 +446,6 @@ export default function App() {
   const t = createT(lang);
 
   const playing = snapshot?.phase === 'playing';
-  /** 工具栏执方开关：红/黑各自切换引擎托管（双开=互搏，双关=无引擎） */
-  const handleToggleEngineSide = (side: 'first' | 'second'): void => {
-    const redOn = engineSide === 'first' || engineSide === 'both';
-    const blackOn = engineSide === 'second' || engineSide === 'both';
-    const nextRed = side === 'first' ? !redOn : redOn;
-    const nextBlack = side === 'second' ? !blackOn : blackOn;
-    const next: EngineSide =
-      nextRed && nextBlack ? 'both' : nextRed ? 'first' : nextBlack ? 'second' : null;
-    // 不翻转棋盘：对局中转 180° 是灾难性体验，且互搏/人执双方这些状态下"翻转"无语义
-    runIntent(() => window.superGo.setEngineSide(next));
-  };
-
-  /** 3D 棋盘缩放（+/- 步进 10%）：本地即时生效，持久化防抖 400ms */
-  const handleBoard3dScale = (scale: number): void => {
-    const clamped = clampBoard3dScale(scale);
-    setBoard3dScale(clamped);
-    if (board3dScaleTimer.current !== null) window.clearTimeout(board3dScaleTimer.current);
-    board3dScaleTimer.current = window.setTimeout(() => {
-      void window.superGo.setSettings({ view: { board3dScale: clamped } });
-    }, 400);
-  };
 
   /** 连线启动：未置顶时提示（不强制，用户自己决定）。普通函数：位于条件
    * return 之后，不可用 useCallback（hooks 顺序违规，React #310） */
@@ -417,13 +506,7 @@ export default function App() {
         }}
         onSettingsChanged={handleSettingsChanged}
         showBestMove={showBestMove}
-        onToggleBestMove={() => {
-          const next = !showBestMove;
-          setShowBestMove(next);
-          void window.superGo.getSettings().then((s) =>
-            window.superGo.setSettings({ go: { ...s.go, showBestMove: next } }).then(handleSettingsChanged),
-          );
-        }}
+        onToggleBestMove={() => persistShowBestMove(!showBestMove)}
         linkerStatus={linkerStatus}
         linkerLogs={linkerLogs}
         onLinkerStart={handleLinkerStart}

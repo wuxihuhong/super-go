@@ -5,6 +5,9 @@
  * 这里只管连线资源（native/模型）、IPC 命令、事件转发、急停热键、
  * mac 权限检查；扫描循环在 LinkerSession（经 LinkerMatchBridge 驱动对局）。
  * 引擎进程与强度生命周期复用 MatchService（连线启动前对弈须空闲）。
+ *
+ * 截图与点击一律复用 ElectronLinkerNative（§6.3：mac 前台/后台捕获 + nut.js；
+ * win PrintWindow + PostMessage）。围棋只换识别器（经典 CV），不另开通路。
  */
 import { globalShortcut } from 'electron';
 import type {
@@ -90,26 +93,31 @@ export class LinkerController {
       };
     }
 
-    const settings = this.getSettings();
-    const modelPath = this.modelLocator();
-    if (modelPath === null) {
-      return { ok: false, error: '未找到识别模型（engines/vision/yolov11.onnx）' };
-    }
-    if (this.yolo === null) {
-      try {
-        this.yolo = await YoloSession.create(modelPath, settings.inferThreads);
-      } catch (err) {
-        return { ok: false, error: `识别模型加载失败: ${String(err)}` };
-      }
-    }
-
     const windows = await this.native.listWindows();
     const win = windows.find((w) => w.id === intent.windowId) ?? null;
     if (win === null) return { ok: false, error: '目标窗口不存在' };
 
+    const kind = intent.kind ?? 'xiangqi';
+    await this.match.setKind(kind);
+
+    const settings = this.getSettings();
+    if (kind === 'xiangqi') {
+      const modelPath = this.modelLocator();
+      if (modelPath === null) {
+        return { ok: false, error: '未找到识别模型（engines/vision/yolov11.onnx）' };
+      }
+      if (this.yolo === null) {
+        try {
+          this.yolo = await YoloSession.create(modelPath, settings.inferThreads);
+        } catch (err) {
+          return { ok: false, error: `识别模型加载失败: ${String(err)}` };
+        }
+      }
+    }
+
     this.session = new LinkerSession({
       native: this.native,
-      infer: this.yolo,
+      infer: kind === 'xiangqi' ? this.yolo ?? undefined : undefined,
       match: this.match,
       window: win,
       settings: this.getSettings,
@@ -117,6 +125,7 @@ export class LinkerController {
         status: (s) => this.events.status(s),
         log: (e) => this.events.log(e),
       },
+      kind,
     });
     this.session.start();
     this.registerStopShortcut();

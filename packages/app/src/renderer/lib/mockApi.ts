@@ -22,6 +22,7 @@ import {
   pieceAt,
   pieceTypeOf,
   pieceSide,
+  isLocalScoreClosed,
   scoreGo,
   XiangqiGame,
   type EngineSide,
@@ -144,6 +145,12 @@ function createMockApi(): SuperGoApi {
     for (const cb of themeListeners) cb(effectiveDark());
   };
   applyThemeClass();
+  const persistBestMoveOff = (): void => {
+    if (settings.go.showBestMove !== true) return;
+    settings = { ...settings, go: { ...settings.go, showBestMove: false } };
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    pushSnapshot();
+  };
   media.addEventListener('change', () => {
     if (settings.theme === 'system') notifyTheme();
   });
@@ -171,8 +178,9 @@ function createMockApi(): SuperGoApi {
       notationPos = goTree.positionOf(node);
     }
     const pos = goTree.positionOf(goTree.cursor);
+    const snap = goState.snapshot;
     const mockHintPoints = (): GoHintPoint[] | undefined => {
-      if (settings.go.showBestMove !== true) return undefined;
+      if (settings.go.showBestMove !== true || snap.engineSide === null) return undefined;
       const samples: GoHintPoint[] = [
         { point: { x: 15, y: 3 }, loss: 0, visits: 2800, faint: false, best: true },
         { point: { x: 3, y: 3 }, loss: 0.3, visits: 1200, faint: false, best: false },
@@ -186,7 +194,6 @@ function createMockApi(): SuperGoApi {
       const hints = samples.filter((s) => cellAt(pos, s.point) === null);
       return hints.length > 0 ? hints : undefined;
     };
-    const snap = goState.snapshot;
     return {
       kind: 'go',
       phase: snap.phase,
@@ -578,6 +585,7 @@ function createMockApi(): SuperGoApi {
       clearThinking();
       liveState().setEngineSide(side);
       lastEngineSide = side;
+      if (side === null) persistBestMoveOff();
       pushSnapshot();
       if (!paused && engineToMoveNow()) fakeEngineTurn();
       return Promise.resolve({ ok: true });
@@ -601,9 +609,11 @@ function createMockApi(): SuperGoApi {
     pickGoConfigPath: () => Promise.resolve(null),
     estimateScore: () => {
       if (kind !== 'go') return Promise.resolve({ ok: false, error: '仅围棋可算目' });
+      const pos = goTree.positionOf(goTree.cursor);
+      const local = scoreGo(pos);
       return Promise.resolve({
         ok: true,
-        score: { local: scoreGo(goTree.positionOf(goTree.cursor)) },
+        score: { local, localClosed: isLocalScoreClosed(local, pos.consecutivePasses) },
       });
     },
     setKind: (next) => {
@@ -670,13 +680,21 @@ function createMockApi(): SuperGoApi {
       linkerWindowTitle = win.title;
       linkerPhase = 'scanning';
       pushLinkerStatus();
-      pushLinkerLog('info', 'mock linker started (browser dev mode)');
-      // 连线 = 重开一局：走 mock 对弈通路（initialFen 用平台识别局面的模拟）
-      const r = await api.newGame({
-        engineSide: null, // 连线后引擎不控制，执方由工具栏按钮设置
-        initialFen: 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1',
-      });
-      if (!r.ok) return Promise.resolve(r);
+      pushLinkerLog('info', `mock linker started (browser dev mode) kind=${intent.kind ?? 'xiangqi'}`);
+      if (intent.kind === 'go') {
+        await api.setKind('go');
+        const r = await api.newGame({
+          engineSide: null,
+          goSetup: { boardSize: 19, komi: 7.5 },
+        });
+        if (!r.ok) return Promise.resolve(r);
+      } else {
+        const r = await api.newGame({
+          engineSide: null,
+          initialFen: 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1',
+        });
+        if (!r.ok) return Promise.resolve(r);
+      }
       let tick = 0;
       linkerTimer = window.setInterval(() => {
         tick++;
@@ -692,6 +710,7 @@ function createMockApi(): SuperGoApi {
         linkerTimer = null;
       }
       linkerPhase = 'idle';
+      persistBestMoveOff();
       pushLinkerStatus();
       pushLinkerLog('info', 'mock linker stopped');
     },

@@ -7,7 +7,7 @@
  *   引擎应招经拦截器：本地棋盘先落子，再点击平台等它跟上；
  * - 连线中可用引擎执红/执黑按钮（setEngineSide）换边，与普通对弈同语义；
  * - 轮值：能从初始局面一步解释的（含执黑时红已走中炮）当场判定；
- *   否则等平台走出一步；超时仍判不了则先开局，用户点引擎执方时按该方走。
+ *   中局看不出则引擎执方即行棋方，尚未选执方则先按红/黑先，用户点执方后再纠正。
  *
  * 失败处理（§6.6，2026-08-25 重构）：走子失败**先自愈**——重新标定网格、退避重点、
  * 重新确认；自愈耗尽才转入 `attention`（待人工介入）。attention 下连线不退出：
@@ -17,7 +17,12 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  serializeGo,
   toFen,
+  type EngineSide,
+  type GameKind,
+  type GoMove,
+  type GoPosition,
   type Player,
   type RecognizedBoard,
   type XiangqiMove,
@@ -37,6 +42,15 @@ import type { GameSnapshot, IntentResult, NewGameIntent } from '../../shared/gam
 import { flipPoint, gridPoint, type BoardGrid } from './boardGeometry';
 import { boardsEqual, diffBoards, inferTurnFromBoard, toPosition } from './diff';
 import {
+  diffGoBoards,
+  explainStepFromGo,
+  inferGoTurn,
+  isInitialGoBoard,
+  recognizedToGoPosition,
+} from './go/goDiff';
+import { goBoardAscii, recognizeGoFrame, type RecognizedGoFrame } from './go/recognize';
+import type { GoGrid } from './go/goGrid';
+import {
   isInitialBoard,
   recognizeFrame,
   refineLocateHint,
@@ -50,13 +64,15 @@ import type { RawImage } from './types';
 export interface LinkerMatchBridge {
   newGame(intent: NewGameIntent): Promise<IntentResult>;
   /** 以平台观测为准落子（绕过轮值/thinking 门禁，平台是事实源） */
-  playObserved(move: XiangqiMove): IntentResult;
+  playObserved(move: XiangqiMove | GoMove): IntentResult;
   /** 幂等置位暂停（连线的冻结/解冻与用户暂停共用） */
   setPaused(paused: boolean): IntentResult;
   setEngineSide(side: import('@super-go/core').EngineSide): IntentResult;
   snapshot(): GameSnapshot;
   currentPosition(): XiangqiPosition;
-  setEngineMoveInterceptor(fn: ((move: XiangqiMove) => Promise<boolean>) | null): void;
+  currentGoPosition(): GoPosition;
+  setKind(kind: GameKind): Promise<IntentResult>;
+  setEngineMoveInterceptor(fn: ((move: XiangqiMove | GoMove) => Promise<boolean>) | null): void;
 }
 
 /** 识别推理端口（YoloSession 实现；单测注入） */
@@ -71,11 +87,14 @@ export interface LinkerSessionEvents {
 
 export interface LinkerSessionOptions {
   native: LinkerNative;
-  infer: LinkerInfer;
+  /** 象棋 YOLO；围棋走经典 CV，不需要 */
+  infer?: LinkerInfer;
   match: LinkerMatchBridge;
   window: TargetWindow;
   settings: () => LinkerSettings;
   events: LinkerSessionEvents;
+  /** 缺省象棋。围棋同样装出招拦截器：本地先落子，再点交叉点（一击）。 */
+  kind?: GameKind;
 }
 
 const LOCATE_RETRY_MS = 1000;
@@ -87,7 +106,6 @@ const CLICK_BACKOFF_MS = 250;
 /** pending-sync 兜底重点上限（**连续**计数，非累计） */
 const CLICK_RETRY_LIMIT = 3;
 const ANIM_CONFIRM_MAX_FRAMES = 10;
-const ARM_TIMEOUT_MS = 5000;
 /** 取"稳定帧"的最多尝试次数（连续两帧盘面一致即稳定） */
 const STABLE_MAX_TRIES = 20;
 /**
@@ -180,11 +198,20 @@ export class LinkerSession {
     resolveOnSync: boolean;
   } | null = null;
 
+  private readonly kind: GameKind;
+
   /** 最近识别帧的点击网格与点击基准（同帧，两者共同构成点击标定） */
   private grid: BoardGrid | null = null;
   private anchor: ClickAnchor | null = null;
   /** 最近一帧的识别盘（"以平台局面重开"用） */
   private lastBoard: RecognizedBoard | null = null;
+  private lastGo: RecognizedGoFrame | null = null;
+  private goGrid: GoGrid | null = null;
+  /** 锁定网格时的截图像素尺寸；变了说明窗口缩放，必须重标 */
+  private goCaptureW = 0;
+  private goCaptureH = 0;
+  /** 正在向平台注入点击：扫描循环不得并行再点，避免双击 */
+  private injecting = false;
   /** 诊断：上次打印过的盘面（只在变化时打印） */
   private lastAscii = '';
   /** 开局基准对不上时已自动重开的次数（见 MAX_EMPTY_REARMS；一旦同步成功即清零） */
@@ -192,14 +219,16 @@ export class LinkerSession {
   /** 本会话是否已经向 MatchService 开过一局（再开局时保留用户已选的引擎执方） */
   private gameArmed = false;
   /**
-   * 中局无法从盘面判定轮值、超时按红先兜底。用户点引擎执红/执黑且盘面仍同步时，
-   * 按该方纠正轮值（执黑连线：红已走、平台在等黑，最常见死锁）。
+   * 中局无法从盘面判定轮值时：有引擎执方则该方行棋；否则先按红/黑先并标记不确定。
+   * 用户之后点执红/执黑（围棋执黑/执白）且盘面仍同步、尚无本地着法时，按该方纠正轮值。
    */
   private turnUncertain = false;
   /** 开局定位首次失败已提示过（成功识别后清掉 locateHint，不再重复刷） */
   private locateMissReported = false;
 
-  constructor(private readonly opts: LinkerSessionOptions) {}
+  constructor(private readonly opts: LinkerSessionOptions) {
+    this.kind = opts.kind ?? 'xiangqi';
+  }
 
   get isRunning(): boolean {
     return this.running;
@@ -220,7 +249,7 @@ export class LinkerSession {
     this.message = null;
     this.lastPushed = null;
     this.opts.match.setEngineMoveInterceptor((move) => this.interceptEngineMove(move));
-    this.log('info', `session start: window="${this.opts.window.title}"`);
+    this.log('info', `session start: kind=${this.kind} window="${this.opts.window.title}"`);
     void this.outerLoop(++this.generation);
   }
 
@@ -230,6 +259,7 @@ export class LinkerSession {
     // 若此处因 !running 直接返回，UI 会卡在「待人工介入」，停止按钮看起来无效。
     this.generation++;
     this.running = false;
+    this.injecting = false;
     this.attention = null;
     this.opts.match.setPaused(this.paused);
     this.opts.match.setEngineMoveInterceptor(null);
@@ -255,8 +285,16 @@ export class LinkerSession {
   private stopIfGameOver(): boolean {
     const snap = this.opts.match.snapshot();
     if (snap.phase !== 'ended') return false;
-    const kind = snap.result?.reason === 'stalemate' ? '困毙' : '绝杀';
-    this.stop('gameOver', kind);
+    const reason = snap.result?.reason;
+    const label =
+      reason === 'twoPasses'
+        ? '双虚着'
+        : reason === 'stalemate'
+          ? '困毙'
+          : reason === 'mate'
+            ? '绝杀'
+            : '对局结束';
+    this.stop('gameOver', label);
     return true;
   }
 
@@ -274,7 +312,13 @@ export class LinkerSession {
     if (!this.running || this.attention === null) return;
     switch (resolution) {
       case 'retry':
-        this.exitAttention('user retry: resuming auto play');
+        this.injecting = true;
+        try {
+          this.exitAttention('user retry: resuming auto play');
+          await this.replayPendingPlatformMove();
+        } finally {
+          this.injecting = false;
+        }
         break;
       case 'spectate':
         this.opts.match.setEngineSide(null);
@@ -311,6 +355,28 @@ export class LinkerSession {
 
   /** 以平台当前识别局面重开一局（丢弃本地着法树，用户显式决断才走这条） */
   private async resyncFromPlatform(): Promise<void> {
+    if (this.kind === 'go') {
+      const frame = this.lastGo;
+      if (frame === null) {
+        this.log('warn', 'resync skipped: no recognized frame yet');
+        return;
+      }
+      const turn: Player = isInitialGoBoard(frame.cells, frame.size)
+        ? 'first'
+        : this.opts.match.currentGoPosition().turn;
+      const pos = recognizedToGoPosition(frame.cells, frame.size, turn);
+      const result = await this.opts.match.newGame({
+        engineSide: null,
+        initialFen: serializeGo(pos),
+        goSetup: { boardSize: pos.size, komi: pos.komi, rules: pos.rules },
+      });
+      if (!result.ok) {
+        this.log('error', `resync failed: ${result.error}`);
+        return;
+      }
+      this.exitAttention(`resynced from platform (turn=${turn})`);
+      return;
+    }
     const board = this.lastBoard;
     if (board === null) {
       this.log('warn', 'resync skipped: no recognized frame yet');
@@ -339,6 +405,14 @@ export class LinkerSession {
       while (this.alive(gen)) {
         this.setPhase('locating', null);
         this.locateMissReported = false;
+        if (this.kind === 'go') {
+          const base = await this.locateGoBoard(gen);
+          if (base === null || !this.alive(gen)) continue;
+          await this.armGoGame(gen, base);
+          if (!this.alive(gen)) break;
+          await this.innerGoLoop(gen, base);
+          continue;
+        }
         const base = await this.locateBoard(gen);
         if (base === null || !this.alive(gen)) continue;
         await this.armGame(gen, base);
@@ -389,7 +463,7 @@ export class LinkerSession {
   /**
    * 以平台局面重开一局（连线 = 重开一局的核心）：
    * - 能从初始局面解释轮值（标准开局，或红/黑已多走恰一步）→ 当场开局；
-   * - 否则等平台再走一步定轮值；超时仍判不了则先开局并标记 turnUncertain。
+   * - 中局看不出时：引擎已执一方则该方行棋，否则先按红先并标记 turnUncertain。
    */
   private async armGame(gen: number, base: RecognizedFrame): Promise<void> {
     // 重开一局作废一切旧分歧：残留的 attention 会让引擎被永久冻结在新局里
@@ -407,44 +481,29 @@ export class LinkerSession {
       );
       return;
     }
-    // 中途接入且无法一步还原：以 base 为参照等首步（走子方 = 首步前的轮值方）；
-    // 超时兜底：识别误差会让新局被误当中途接入而永远等首步
-    this.setPhase('scanning', null);
-    this.log('info', 'joined mid-game; waiting for first move to determine turn');
-    const armDeadline = Date.now() + ARM_TIMEOUT_MS;
-    let frame = base;
-    while (this.alive(gen)) {
-      if (this.paused) {
-        await sleep(200);
-        continue;
-      }
-      const stepped = this.explainStepFrom(frame.board, base.board);
-      if (stepped !== null) {
-        const { move, mover } = stepped;
-        this.turnUncertain = false;
-        if (!(await this.startGame(toPosition(base.board, mover)))) return;
-        this.opts.match.playObserved(move);
-        this.log('info', `game armed: first move by ${mover} determines turn`);
-        return;
-      }
-      if (Date.now() > armDeadline) {
-        this.turnUncertain = true;
-        if (!(await this.startGame(toPosition(frame.board, 'first')))) return;
-        this.log('info', 'no first move observed; starting with uncertain turn (default red)');
-        return;
-      }
-      await sleep(this.opts.settings().scanIntervalMs);
-      frame = (await this.captureStable(gen)) ?? frame;
-    }
+    const { turn, engineSide } = this.midGameTurn();
+    this.turnUncertain = engineSide === null;
+    if (!(await this.startGame(toPosition(base.board, turn), engineSide ?? undefined))) return;
+    this.log(
+      'info',
+      engineSide !== null
+        ? `mid-game turn taken from engine side (${turn})`
+        : 'mid-game turn unknown; default red (set engine side to correct)',
+    );
   }
 
   /**
    * 开局。失败即终止会话——没有本地对局，连线的一切（识别跟盘、人工接管）
    * 都无从谈起，转"待人工介入"没有意义，只能明确报错让用户去修引擎设置。
    */
-  private async startGame(position: XiangqiPosition): Promise<boolean> {
-    // 首次开局引擎不上场（§6.1）；本会话再开局（纠轮值 / 空树重开）保留已选执方
-    const keepSide = this.gameArmed ? (this.opts.match.snapshot().engineSide ?? null) : null;
+  private async startGame(position: XiangqiPosition, forceSide?: EngineSide): Promise<boolean> {
+    // 首次开局默认观战；中局按引擎执方开局时传入 forceSide。本会话再开局保留已选执方
+    const keepSide =
+      forceSide !== undefined
+        ? forceSide
+        : this.gameArmed
+          ? (this.opts.match.snapshot().engineSide ?? null)
+          : null;
     const result = await this.opts.match.newGame({
       engineSide: keepSide,
       initialFen: toFen(position),
@@ -456,6 +515,243 @@ export class LinkerSession {
     this.gameArmed = true;
     diag(`game armed with ${toFen(position)}`);
     return true;
+  }
+
+  private async startGoGame(position: GoPosition, forceSide?: EngineSide): Promise<boolean> {
+    const keepSide =
+      forceSide !== undefined
+        ? forceSide
+        : this.gameArmed
+          ? (this.opts.match.snapshot().engineSide ?? null)
+          : null;
+    const result = await this.opts.match.newGame({
+      engineSide: keepSide,
+      initialFen: serializeGo(position),
+      goSetup: { boardSize: position.size, komi: position.komi, rules: position.rules },
+    });
+    if (!result.ok) {
+      this.stop('engineUnavailable', result.error);
+      return false;
+    }
+    this.gameArmed = true;
+    diag(`go game armed size=${position.size} turn=${position.turn}`);
+    return true;
+  }
+
+  private async locateGoBoard(gen: number): Promise<RecognizedGoFrame | null> {
+    while (this.alive(gen)) {
+      const frame = await this.captureGoStable(gen);
+      if (frame !== null) return frame;
+      await sleep(LOCATE_RETRY_MS);
+    }
+    return null;
+  }
+
+  private async captureGoStable(gen: number): Promise<RecognizedGoFrame | null> {
+    let prev = await this.captureGoOnce(gen);
+    for (let i = 1; i < STABLE_MAX_TRIES; i++) {
+      if (!this.alive(gen)) return null;
+      await sleep(this.opts.settings().scanIntervalMs);
+      const next = await this.captureGoOnce(gen);
+      if (next === null) continue;
+      if (prev !== null && goCellsMatch(next.cells, prev.cells)) return next;
+      prev = next;
+    }
+    if (prev !== null) this.log('warn', 'board never settled; using the latest frame');
+    return prev;
+  }
+
+  private async armGoGame(gen: number, base: RecognizedGoFrame): Promise<void> {
+    this.exitAttention('new game supersedes the pending issue');
+    this.setPhase('initializing', null);
+    this.turnUncertain = false;
+    const inferred = inferGoTurn(base.cells, base.size);
+    if (inferred !== null) {
+      if (!(await this.startGoGame(recognizedToGoPosition(base.cells, base.size, inferred)))) return;
+      this.log(
+        'info',
+        isInitialGoBoard(base.cells, base.size)
+          ? `new go game from platform (${base.size} empty/handicap)`
+          : `new go game from platform (inferred turn=${inferred})`,
+      );
+      return;
+    }
+    const { turn, engineSide } = this.midGameTurn();
+    this.turnUncertain = engineSide === null;
+    if (
+      !(await this.startGoGame(
+        recognizedToGoPosition(base.cells, base.size, turn),
+        engineSide ?? undefined,
+      ))
+    ) {
+      return;
+    }
+    this.log(
+      'info',
+      engineSide !== null
+        ? `mid-game turn taken from engine side (${turn})`
+        : 'mid-game turn unknown; default black (set engine side to correct)',
+    );
+  }
+
+  /** 中局看不出轮值：引擎已执一方则该方走，否则红/黑先。 */
+  private midGameTurn(): { turn: Player; engineSide: Player | null } {
+    const side = this.opts.match.snapshot().engineSide;
+    if (side === 'first' || side === 'second') return { turn: side, engineSide: side };
+    return { turn: 'first', engineSide: null };
+  }
+
+  private async innerGoLoop(gen: number, firstFrame: RecognizedGoFrame): Promise<void> {
+    let frame = firstFrame;
+    let unknownCount = 0;
+    let pendingClicks = 0;
+    let lostFrames = 0;
+    while (this.alive(gen)) {
+      if (this.stopIfGameOver()) return;
+      if (this.paused) {
+        await sleep(200);
+        continue;
+      }
+      if (this.injecting) {
+        await sleep(this.opts.settings().scanIntervalMs);
+        continue;
+      }
+      // 思考/拟人延迟期间仍刷新锁网与 ClickAnchor，避免落子时拿数秒前的旧原点
+      if (this.opts.match.snapshot().thinking) {
+        const next = await this.captureGoOnce(gen);
+        if (next !== null) frame = next;
+        await sleep(this.opts.settings().scanIntervalMs);
+        continue;
+      }
+
+      const local = this.opts.match.currentGoPosition();
+      const diff = diffGoBoards(frame.cells, local);
+      switch (diff.type) {
+        case 'sync':
+          unknownCount = 0;
+          pendingClicks = 0;
+          this.emptyReArms = 0;
+          if (this.attention?.resolveOnSync === true) {
+            this.exitAttention('platform back in sync');
+          }
+          await this.adoptGoEngineTurnIfNeeded();
+          break;
+
+        case 'opponent-move': {
+          unknownCount = 0;
+          pendingClicks = 0;
+          const confirmed = this.opts.settings().animationConfirm
+            ? await this.confirmGoAnimation(gen, frame)
+            : frame;
+          if (confirmed === null) break;
+          frame = confirmed;
+          const rediff = diffGoBoards(confirmed.cells, this.opts.match.currentGoPosition());
+          if (rediff.type !== 'opponent-move') break;
+          let rejected = false;
+          for (const move of rediff.moves) {
+            const r = this.opts.match.playObserved(move);
+            if (!r.ok) {
+              this.log('warn', `playObserved rejected: ${r.error}`);
+              rejected = true;
+              break;
+            }
+          }
+          if (rejected) break;
+          this.exitAttention('move observed on platform');
+          if (this.stopIfGameOver()) return;
+          break;
+        }
+
+        case 'pending-sync': {
+          unknownCount = 0;
+          if (this.attention !== null || this.injecting) break;
+          await sleep(Math.max(2 * this.opts.settings().scanIntervalMs, 200));
+          const fresh = await this.captureGoOnce(gen);
+          if (fresh === null) break;
+          frame = fresh;
+          const re = diffGoBoards(fresh.cells, this.opts.match.currentGoPosition());
+          if (re.type === 'sync') {
+            pendingClicks = 0;
+            break;
+          }
+          if (re.type === 'opponent-move') {
+            pendingClicks = 0;
+            for (const move of re.moves) this.opts.match.playObserved(move);
+            if (this.stopIfGameOver()) return;
+            break;
+          }
+          if (re.type !== 'pending-sync') break;
+          pendingClicks++;
+          if (pendingClicks > CLICK_RETRY_LIMIT) {
+            pendingClicks = 0;
+            this.enterAttention(
+              'platformUnresponsive',
+              `平台连续 ${CLICK_RETRY_LIMIT} 次未跟上本地着法`,
+            );
+            break;
+          }
+          this.log('warn', `platform lagging; re-click ${pendingClicks}/${CLICK_RETRY_LIMIT}`);
+          await this.clickGoMove(gen, re.move);
+          break;
+        }
+
+        case 'unknown':
+          unknownCount++;
+          if (unknownCount > NEW_GAME_UNKNOWN_LIMIT) {
+            unknownCount = 0;
+            if (isInitialGoBoard(frame.cells, frame.size)) {
+              this.log('info', 'platform shows a fresh go board; restarting game');
+              return;
+            }
+            if (
+              this.opts.match.snapshot().moves.length === 0 &&
+              this.emptyReArms < MAX_EMPTY_REARMS
+            ) {
+              this.emptyReArms++;
+              this.log(
+                'warn',
+                `armed position never matched the platform; re-arming (${this.emptyReArms}/${MAX_EMPTY_REARMS})`,
+              );
+              return;
+            }
+            this.enterAttention(
+              'boardMismatch',
+              '本地局面与平台对不上（平台可能悔棋或识别有误）',
+            );
+          }
+          break;
+      }
+
+      await sleep(this.opts.settings().scanIntervalMs);
+      const next = await this.captureGoOnce(gen);
+      if (next === null) {
+        lostFrames++;
+        if (lostFrames > BOARD_LOST_LIMIT) {
+          this.enterAttention('boardLost', '连续识别不到棋盘（目标窗口被遮挡或最小化？）');
+        }
+      } else {
+        lostFrames = 0;
+        if (this.attention?.reason === 'boardLost') this.exitAttention('board visible again');
+        frame = next;
+      }
+    }
+  }
+
+  private async confirmGoAnimation(
+    gen: number,
+    current: RecognizedGoFrame,
+  ): Promise<RecognizedGoFrame | null> {
+    let prev = current;
+    for (let i = 0; i < ANIM_CONFIRM_MAX_FRAMES; i++) {
+      if (!this.alive(gen)) return null;
+      await sleep(this.opts.settings().scanIntervalMs);
+      const next = await this.captureGoOnce(gen);
+      if (next === null) continue;
+      if (goCellsMatch(next.cells, prev.cells)) return next;
+      prev = next;
+    }
+    this.log('warn', 'animation did not settle; dropping frame');
+    return null;
   }
 
   /**
@@ -479,6 +775,27 @@ export class LinkerSession {
     }
     this.turnUncertain = false;
     if (await this.startGame(toPosition(local.board, side))) {
+      this.log('info', `turn adopted from engine side (${side})`);
+    }
+  }
+
+  private async adoptGoEngineTurnIfNeeded(): Promise<void> {
+    if (!this.turnUncertain) return;
+    const snap = this.opts.match.snapshot();
+    if (snap.phase !== 'playing' || snap.thinking || snap.moves.length > 0) return;
+    const side = snap.engineSide;
+    if (side !== 'first' && side !== 'second') return;
+    const local = this.opts.match.currentGoPosition();
+    if (isInitialGoBoard(local.cells, local.size)) {
+      this.turnUncertain = false;
+      return;
+    }
+    if (local.turn === side) {
+      this.turnUncertain = false;
+      return;
+    }
+    this.turnUncertain = false;
+    if (await this.startGoGame(recognizedToGoPosition(local.cells, local.size, side))) {
       this.log('info', `turn adopted from engine side (${side})`);
     }
   }
@@ -508,8 +825,14 @@ export class LinkerSession {
         await sleep(200);
         continue;
       }
-      // 引擎思考中不识别（CPU 让给引擎；此刻识别帧无意义）
+      if (this.injecting) {
+        await sleep(this.opts.settings().scanIntervalMs);
+        continue;
+      }
+      // 思考/拟人延迟期间仍刷新网格与 ClickAnchor，避免落子时拿数秒前的旧原点
       if (this.opts.match.snapshot().thinking) {
+        const next = await this.captureOnce(gen);
+        if (next !== null) frame = next;
         await sleep(this.opts.settings().scanIntervalMs);
         continue;
       }
@@ -550,7 +873,7 @@ export class LinkerSession {
 
         case 'pending-sync': {
           unknownCount = 0;
-          if (this.attention !== null) break; // 待介入期间不自动点击
+          if (this.attention !== null || this.injecting) break; // 待介入期间不自动点击
           // 引擎回合期间识别帧过时：重抓确认仍落后才重试点击
           await sleep(Math.max(2 * this.opts.settings().scanIntervalMs, 200));
           const fresh = await this.captureOnce(gen);
@@ -654,14 +977,120 @@ export class LinkerSession {
   // -------------------------------------------------------------------------
 
   /** 本地已落子之后：点击平台并等它跟上本地局面 */
-  private async interceptEngineMove(move: XiangqiMove): Promise<boolean> {
+  private async interceptEngineMove(move: XiangqiMove | GoMove): Promise<boolean> {
     if (!this.running || this.paused || this.attention !== null) return false;
+    this.injecting = true;
+    try {
+      const gen = this.generation;
+      this.setPhase('clicking', null);
+      const ok =
+        move.kind === 'go' ? await this.playGoOnPlatform(gen, move) : await this.playOnPlatform(gen, move);
+      if (ok) this.setPhase('scanning', null);
+      this.stopIfGameOver();
+      return ok;
+    } finally {
+      this.injecting = false;
+    }
+  }
+
+  /** 「重试自动走子」：立刻再点本地已超前、平台尚未跟上的那一步 */
+  private async replayPendingPlatformMove(): Promise<void> {
+    if (!this.running || this.paused || this.attention !== null) return;
     const gen = this.generation;
     this.setPhase('clicking', null);
-    const ok = await this.playOnPlatform(gen, move);
+    if (this.kind === 'go') {
+      const frame = await this.captureGoOnce(gen);
+      if (frame === null) {
+        this.setPhase('scanning', null);
+        return;
+      }
+      const diff = diffGoBoards(frame.cells, this.opts.match.currentGoPosition());
+      if (diff.type !== 'pending-sync') {
+        this.setPhase('scanning', null);
+        return;
+      }
+      const ok = await this.playGoOnPlatform(gen, diff.move);
+      if (ok) this.setPhase('scanning', null);
+      this.stopIfGameOver();
+      return;
+    }
+    const frame = await this.captureOnce(gen);
+    if (frame === null) {
+      this.setPhase('scanning', null);
+      return;
+    }
+    const diff = diffBoards(frame.board, this.opts.match.currentPosition());
+    if (diff.type !== 'pending-sync') {
+      this.setPhase('scanning', null);
+      return;
+    }
+    const ok = await this.playOnPlatform(gen, diff.move);
     if (ok) this.setPhase('scanning', null);
     this.stopIfGameOver();
-    return ok;
+  }
+
+  /** 围棋一击交叉点（虚着不点盘，平台过按钮不统一） */
+  private async playGoOnPlatform(gen: number, move: GoMove): Promise<boolean> {
+    if (move.point === null) {
+      this.log('info', 'engine pass: no board click');
+      return true;
+    }
+    let channelFailed = false;
+    for (let attempt = 1; attempt <= CLICK_ATTEMPTS; attempt++) {
+      if (!this.alive(gen) || this.paused) return false;
+      if (attempt > 1) {
+        await sleep(CLICK_BACKOFF_MS * (attempt - 1));
+        if ((await this.captureGoOnce(gen)) === null) continue;
+        if (await this.platformGoCaughtUp(gen)) return true;
+      }
+      const clicked = await this.clickGoMove(gen, move);
+      if (!clicked) {
+        channelFailed = true;
+        this.log('warn', `click channel unavailable (${attempt}/${CLICK_ATTEMPTS})`);
+        continue;
+      }
+      channelFailed = false;
+      if (await this.awaitPlatformGoCaughtUp(gen)) return true;
+      this.log('warn', `platform did not render the move (${attempt}/${CLICK_ATTEMPTS})`);
+    }
+    if (!this.alive(gen)) return false;
+    this.enterAttention(
+      channelFailed ? 'clickChannel' : 'platformUnresponsive',
+      channelFailed
+        ? '无法向平台注入点击（窗口已关闭或权限被撤销）'
+        : `已重试 ${CLICK_ATTEMPTS} 次，平台仍未走出这一步`,
+    );
+    return false;
+  }
+
+  private async awaitPlatformGoCaughtUp(gen: number): Promise<boolean> {
+    const deadline = Date.now() + Math.max(6 * this.opts.settings().scanIntervalMs, 1200);
+    while (this.alive(gen) && Date.now() < deadline) {
+      await sleep(this.opts.settings().scanIntervalMs);
+      if (await this.platformGoCaughtUp(gen)) return true;
+    }
+    return false;
+  }
+
+  private async platformGoCaughtUp(gen: number): Promise<boolean> {
+    const frame = await this.captureGoOnce(gen);
+    if (frame === null) return false;
+    return goCellsMatch(frame.cells, this.opts.match.currentGoPosition().cells);
+  }
+
+  private async clickGoMove(gen: number, move: GoMove): Promise<boolean> {
+    if (move.point === null) return true;
+    const grid = this.goGrid ?? this.grid;
+    if (grid === null) return false;
+    const { clickHoldMs } = this.opts.settings();
+    const pt = gridPoint(grid, move.point.x, move.point.y);
+    this.log(
+      'info',
+      `click go (${move.point.x},${move.point.y}) img=(${pt.x.toFixed(0)},${pt.y.toFixed(0)})`,
+    );
+    if (!this.alive(gen)) return false;
+    // 锁网图像坐标 + 最近一帧同源 anchor（思考中扫描会持续刷新，禁止落子前重标）
+    return this.opts.native.click(this.opts.window, pt.x, pt.y, { holdMs: clickHoldMs }, this.anchor);
   }
 
   /**
@@ -769,7 +1198,12 @@ export class LinkerSession {
       return null;
     }
     diag(`capture ${cap.image.width}x${cap.image.height}`);
-    const { detections, inferMs, peakScore = 0 } = await this.opts.infer.detect(cap.image);
+    const infer = this.opts.infer;
+    if (infer === undefined) {
+      this.reportLocateMiss(gen, 'noBoard', ' xiangqi infer missing');
+      return null;
+    }
+    const { detections, inferMs, peakScore = 0 } = await infer.detect(cap.image);
     if (!this.alive(gen)) return null;
     this.inferMs = inferMs;
     const fpsNow = 1000 / Math.max(1, inferMs);
@@ -805,6 +1239,53 @@ export class LinkerSession {
     return frame;
   }
 
+  private async captureGoOnce(gen: number): Promise<RecognizedGoFrame | null> {
+    const cap = await this.opts.native.captureWindow(this.opts.window);
+    if (!this.alive(gen)) return null;
+    if (cap === null) {
+      this.log('warn', 'capture failed (window minimized / permission?)');
+      this.reportLocateMiss(gen, 'captureFailed', '');
+      this.invalidateCalibration();
+      return null;
+    }
+    const prevGrid =
+      this.goGrid !== null &&
+      this.goCaptureW === cap.image.width &&
+      this.goCaptureH === cap.image.height
+        ? this.goGrid
+        : null;
+    this.goCaptureW = cap.image.width;
+    this.goCaptureH = cap.image.height;
+    const t0 = performance.now();
+    const rec = recognizeGoFrame(cap.image, prevGrid);
+    const inferMs = performance.now() - t0;
+    if (!this.alive(gen)) return null;
+    this.inferMs = inferMs;
+    const fpsNow = 1000 / Math.max(1, inferMs);
+    this.fps = this.fps === 0 ? fpsNow : this.fps * 0.8 + fpsNow * 0.2;
+
+    if (!rec.ok) {
+      this.reportLocateMiss(gen, rec.kind, ` ${cap.image.width}x${cap.image.height}`);
+      return null;
+    }
+    const frame = rec.frame;
+    this.clearLocateHint();
+    if (DIAG) {
+      const ascii = goBoardAscii(frame.cells, frame.size);
+      if (ascii !== this.lastAscii) {
+        this.lastAscii = ascii;
+        console.log(`[diag:go] ${frame.size} ${ascii}`);
+      }
+    }
+    this.lastGo = frame;
+    this.goGrid = frame.goGrid;
+    this.grid = frame.grid;
+    this.anchor = cap.anchor;
+    this.reversed = false;
+    this.pushStatus();
+    return frame;
+  }
+
   /** 更新点击标定：取景不变时对精修网格做跨帧平滑，取景变了直接改用新网格 */
   private calibrate(frame: RecognizedFrame, anchor: ClickAnchor): void {
     this.lastBoard = frame.board;
@@ -822,6 +1303,9 @@ export class LinkerSession {
   private invalidateCalibration(): void {
     this.grid = null;
     this.anchor = null;
+    this.goGrid = null;
+    this.goCaptureW = 0;
+    this.goCaptureH = 0;
   }
 
   // -------------------------------------------------------------------------
@@ -896,6 +1380,14 @@ function sameFraming(a: BoardGrid, b: BoardGrid): boolean {
     Math.abs(a.stepX - b.stepX) <= a.stepX * 0.1 &&
     Math.abs(a.stepY - b.stepY) <= a.stepY * 0.1
   );
+}
+
+function goCellsMatch(a: readonly (string | null)[], b: readonly (string | null)[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if ((a[i] ?? null) !== (b[i] ?? null)) return false;
+  }
+  return true;
 }
 
 function emaGrid(prev: BoardGrid, next: BoardGrid, alpha: number): BoardGrid {

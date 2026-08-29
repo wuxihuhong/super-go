@@ -224,6 +224,7 @@ describe.skipIf(binary === null)('MatchService 人机对弈闭环', () => {
     );
     const intercepted: string[] = [];
     match.setEngineMoveInterceptor(async (move) => {
+      if (move.kind !== 'xiangqi') return false;
       intercepted.push(moveToIccs(move));
       return true; // 模拟平台点击成功
     });

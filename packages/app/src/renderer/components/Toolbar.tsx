@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { GameKind, GameSetup, GoScore, Player } from '@super-go/core';
+import type { GameKind, GameSetup, Player } from '@super-go/core';
+import { formatGtpScoreRaw, formatScoreSideMargin } from '@shared/goScoreFormat';
 import type {
   AppSettings,
   EngineStatusPayload,
@@ -159,11 +160,13 @@ function ToolButton(props: {  label: string;
 function EngineSideButton(props: {
   label: string;
   hint?: string;
+  shortcut?: string;
   color: 'red' | 'black' | 'white';
   active: boolean;
   disabled?: boolean;
   onClick: () => void;
 }): React.JSX.Element {
+  const shortcutText = props.shortcut === undefined ? undefined : `${MOD}${props.shortcut}`;
   return (
     <span className="group relative">
       <button
@@ -188,7 +191,14 @@ function EngineSideButton(props: {
         />
       </button>
       <span className="pointer-events-none absolute top-full left-1/2 z-50 mt-1.5 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-[11px] leading-tight whitespace-nowrap text-background opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-hover:delay-250">
-        <span className="font-medium">{props.label}</span>
+        <span className="font-medium">
+          {props.label}
+          {shortcutText !== undefined && (
+            <kbd className="ml-1.5 rounded border border-background/30 px-1 py-px font-sans">
+              {shortcutText}
+            </kbd>
+          )}
+        </span>
         {props.hint !== undefined && <span className="block text-background/70">{props.hint}</span>}
       </span>
     </span>
@@ -349,9 +359,16 @@ export default function Toolbar(props: ToolbarProps) {
           false,
           ' ',
         )}
-      {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.canResign)}
+      {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.canResign, false, 'Shift+R')}
       {props.kind === 'go' &&
-        iconButton('toolbar.pass', <span className="text-[11px] font-medium">P</span>, props.onPass, !props.playing)}
+        iconButton(
+          'toolbar.pass',
+          <span className="text-[11px] font-medium">P</span>,
+          props.onPass,
+          !props.playing,
+          false,
+          'P',
+        )}
       {props.kind === 'go' &&
         iconButton(
           'toolbar.bestMove',
@@ -359,7 +376,7 @@ export default function Toolbar(props: ToolbarProps) {
           props.onToggleBestMove,
           false,
           props.showBestMove,
-          undefined,
+          'M',
           true,
         )}
       {props.kind === 'go' && (
@@ -368,6 +385,9 @@ export default function Toolbar(props: ToolbarProps) {
             'toolbar.score',
             <span className="text-[11px] font-medium">目</span>,
             () => props.onPopoverChange(props.popover === 'score' ? 'none' : 'score'),
+            false,
+            false,
+            'E',
           )}
           {popoverLayer(
             'score',
@@ -394,8 +414,13 @@ export default function Toolbar(props: ToolbarProps) {
         </span>
         {props.playing && (
           <div className="relative">
-            {iconButton('toolbar.game', <IconGame />, () =>
-              props.onPopoverChange(props.popover === 'game' ? 'none' : 'game'),
+            {iconButton(
+              'toolbar.game',
+              <IconGame />,
+              () => props.onPopoverChange(props.popover === 'game' ? 'none' : 'game'),
+              false,
+              false,
+              'G',
             )}
             {popoverLayer(
               'game',
@@ -409,6 +434,7 @@ export default function Toolbar(props: ToolbarProps) {
         <EngineSideButton
           label={props.t(props.kind === 'go' ? 'toolbar.engineBlackGo' : 'toolbar.engineRed')}
           hint={props.t(props.kind === 'go' ? 'toolbar.engineBlackGo.hint' : 'toolbar.engineRed.hint')}
+          shortcut="1"
           color={props.kind === 'go' ? 'black' : 'red'}
           active={
             props.snapshot?.engineSide === 'first' || props.snapshot?.engineSide === 'both'
@@ -419,6 +445,7 @@ export default function Toolbar(props: ToolbarProps) {
         <EngineSideButton
           label={props.t(props.kind === 'go' ? 'toolbar.engineWhiteGo' : 'toolbar.engineBlack')}
           hint={props.t(props.kind === 'go' ? 'toolbar.engineWhiteGo.hint' : 'toolbar.engineBlack.hint')}
+          shortcut="2"
           color={props.kind === 'go' ? 'white' : 'black'}
           active={
             props.snapshot?.engineSide === 'second' || props.snapshot?.engineSide === 'both'
@@ -426,7 +453,6 @@ export default function Toolbar(props: ToolbarProps) {
           disabled={!props.playing}
           onClick={() => props.onToggleEngineSide('second')}
         />
-        {props.kind !== 'go' && (
         <div className="relative">
           {iconButton(
             'toolbar.linker',
@@ -434,6 +460,7 @@ export default function Toolbar(props: ToolbarProps) {
             () => props.onPopoverChange(props.popover === 'linker' ? 'none' : 'linker'),
             false,
             props.linkerStatus !== null && isLinkerActivePhase(props.linkerStatus.phase),
+            'L',
           )}
           {popoverLayer(
             'linker',
@@ -441,6 +468,7 @@ export default function Toolbar(props: ToolbarProps) {
               t={props.t}
               status={props.linkerStatus}
               logs={props.linkerLogs}
+              kind={props.kind}
               onStart={props.onLinkerStart}
               onStop={props.onLinkerStop}
               onPauseToggle={props.onLinkerPauseToggle}
@@ -449,7 +477,6 @@ export default function Toolbar(props: ToolbarProps) {
             'right',
           )}
         </div>
-        )}
         <div className="relative">
           {iconButton(
             'toolbar.boardZoom',
@@ -459,6 +486,8 @@ export default function Toolbar(props: ToolbarProps) {
               props.onPopoverChange(props.popover === 'zoom' ? 'none' : 'zoom');
             },
             props.boardZoomDisabled,
+            false,
+            '=',
           )}
           {popoverLayer(
             'zoom',
@@ -485,7 +514,11 @@ export default function Toolbar(props: ToolbarProps) {
           )}
           {popoverLayer(
             'settings',
-            <SettingsPanel t={props.t} onSettingsChanged={props.onSettingsChanged} />,
+            <SettingsPanel
+              t={props.t}
+              kind={props.kind}
+              onSettingsChanged={props.onSettingsChanged}
+            />,
             'right',
           )}
         </div>
@@ -496,18 +529,12 @@ export default function Toolbar(props: ToolbarProps) {
           props.onToggleAlwaysOnTop,
           false,
           props.alwaysOnTop,
-          undefined,
+          'T',
           true,
         )}
       </div>
     </header>
   );
-}
-
-function signed(n: number): string {
-  if (Object.is(n, -0) || n === 0) return '0';
-  const rounded = Math.round(n * 10) / 10;
-  return `${rounded > 0 ? '+' : ''}${rounded}`;
 }
 
 function ScoreEstimatePanel(props: {
@@ -535,7 +562,13 @@ function ScoreEstimatePanel(props: {
     <div className="w-80 rounded-xl border border-border bg-surface p-3 text-foreground shadow-xl">
       <h2 className="mb-1 px-1 text-xs font-semibold">{props.t('toolbar.score')}</h2>
       <p className="mb-3 px-1 text-[11px] leading-relaxed text-muted-foreground">
-        {props.thinking ? props.t('toolbar.score.busy') : props.t('toolbar.score.note')}
+        {props.thinking
+          ? props.t(
+              result !== null && result.ok && result.score.engine !== undefined
+                ? 'toolbar.score.busyCached'
+                : 'toolbar.score.busy',
+            )
+          : props.t('toolbar.score.note')}
       </p>
       {loading ? (
         <p className="px-1 text-xs text-muted-foreground">{props.t('toolbar.score.loading')}</p>
@@ -548,91 +581,54 @@ function ScoreEstimatePanel(props: {
   );
 }
 
-function ScoreBreakdown(props: { t: TFunction; score: GoScoreEstimate }): React.JSX.Element {
-  const { local, engine } = props.score;
-  const method =
-    local.method === 'territory' ? props.t('toolbar.score.territory') : props.t('toolbar.score.area');
-  return (
-    <div className="space-y-3">
-      <section>
-        <h3 className="mb-1.5 px-1 text-[11px] font-medium text-muted-foreground">
-          {props.t('toolbar.score.local')} · {method}
-        </h3>
-        <ScoreSide
-          t={props.t}
-          label={props.t('toolbar.score.black')}
-          total={local.black}
-          local={local}
-          side="black"
-        />
-        <ScoreSide
-          t={props.t}
-          label={props.t('toolbar.score.white')}
-          total={local.white}
-          local={local}
-          side="white"
-        />
-        <div className="mt-1 flex justify-between px-1 text-xs">
-          <span className="text-muted-foreground">{props.t('toolbar.score.margin')}</span>
-          <span className="tabular-nums">{signed(local.margin)}</span>
-        </div>
-      </section>
-      {engine !== undefined && (
-        <section>
-          <h3 className="mb-1.5 px-1 text-[11px] font-medium text-muted-foreground">
-            {props.t('toolbar.score.engine')} · {props.t('toolbar.score.engineFinal')}
-          </h3>
-          {engine.raw !== '' && (
-            <div className="flex justify-between px-1 text-xs">
-              <span className="text-muted-foreground">{props.t('toolbar.score.margin')}</span>
-              <span className="tabular-nums">
-                {engine.raw} ({signed(engine.margin)})
-              </span>
-            </div>
-          )}
-          {engine.lead !== undefined && (
-            <div className="flex justify-between px-1 text-xs">
-              <span className="text-muted-foreground">{props.t('toolbar.score.lead')}</span>
-              <span className="tabular-nums">{signed(engine.lead)}</span>
-            </div>
-          )}
-          {engine.winRate !== undefined && (
-            <div className="flex justify-between px-1 text-xs">
-              <span className="text-muted-foreground">{props.t('toolbar.score.winRate')}</span>
-              <span className="tabular-nums">{Math.round(engine.winRate * 1000) / 10}%</span>
-            </div>
-          )}
-        </section>
-      )}
-    </div>
-  );
+function scoreLabels(t: TFunction): {
+  black: string;
+  white: string;
+  draw: string;
+  resign: string;
+  timeout: string;
+} {
+  return {
+    black: t('toolbar.score.black'),
+    white: t('toolbar.score.white'),
+    draw: t('toolbar.score.draw'),
+    resign: t('toolbar.score.resign'),
+    timeout: t('toolbar.score.timeout'),
+  };
 }
 
-function ScoreSide(props: {
-  t: TFunction;
-  label: string;
-  total: number;
-  local: GoScore;
-  side: 'black' | 'white';
-}): React.JSX.Element {
-  const stones = props.side === 'black' ? props.local.blackStones : props.local.whiteStones;
-  const empty = props.side === 'black' ? props.local.blackTerritory : props.local.whiteTerritory;
-  const caps = props.side === 'black' ? props.local.capturedByBlack : props.local.capturedByWhite;
-  const parts =
-    props.local.method === 'area'
-      ? `${props.t('toolbar.score.stones')} ${stones} + ${props.t('toolbar.score.emptyPts')} ${empty}${
-          props.side === 'white' ? ` + ${props.t('toolbar.score.komi')} ${props.local.komi}` : ''
-        }`
-      : `${props.t('toolbar.score.emptyPts')} ${empty} + ${props.t('toolbar.score.captures')} ${caps}${
-          props.side === 'white' ? ` + ${props.t('toolbar.score.komi')} ${props.local.komi}` : ''
-        }`;
+function ScoreBreakdown(props: { t: TFunction; score: GoScoreEstimate }): React.JSX.Element {
+  const { engine } = props.score;
+  const labels = scoreLabels(props.t);
+  if (engine === undefined) {
+    return <p className="px-1 text-xs text-muted-foreground">{props.t('toolbar.score.noEngine')}</p>;
+  }
+  const marginText =
+    engine.raw !== ''
+      ? formatGtpScoreRaw(engine.raw, labels)
+      : formatScoreSideMargin(engine.margin, labels.black, labels.white);
   return (
-    <div className="flex items-baseline justify-between gap-2 px-1 text-xs">
-      <span className="text-muted-foreground">
-        {props.label}
-        <span className="ml-1 text-[11px]">({parts})</span>
-      </span>
-      <span className="shrink-0 tabular-nums">{props.total}</span>
+    <div className="space-y-1">
+      {marginText !== '' && (
+        <div className="flex justify-between px-1 text-xs">
+          <span className="text-muted-foreground">{props.t('toolbar.score.margin')}</span>
+          <span className="tabular-nums">{marginText}</span>
+        </div>
+      )}
+      {engine.lead !== undefined && (
+        <div className="flex justify-between px-1 text-xs">
+          <span className="text-muted-foreground">{props.t('toolbar.score.lead')}</span>
+          <span className="tabular-nums">
+            {formatScoreSideMargin(engine.lead, labels.black, labels.white)}
+          </span>
+        </div>
+      )}
+      {engine.winRate !== undefined && (
+        <div className="flex justify-between px-1 text-xs">
+          <span className="text-muted-foreground">{props.t('toolbar.score.winRate')}</span>
+          <span className="tabular-nums">{Math.round(engine.winRate * 1000) / 10}%</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -674,6 +670,7 @@ function ZoomBar(props: {
         className="ml-1 shrink-0 whitespace-nowrap rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
       >
         {props.t('toolbar.boardZoom.reset')}
+        <kbd className="ml-1 font-sans text-[10px] opacity-70">{MOD}0</kbd>
       </button>
     </div>
   );

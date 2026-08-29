@@ -7,12 +7,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyMove,
+  emptyCells,
   INITIAL_FEN,
+  makeGoPosition,
   moveToIccs,
   parseFen,
   toFen,
   XiangqiGame,
   type EngineSide,
+  type GameKind,
   type XiangqiMove,
   type XiangqiPiece,
   type XiangqiPosition,
@@ -128,12 +131,26 @@ function makeFakeMatch(engineReplies: string[]) {
     },
     // 平台是事实源：不设轮值/thinking 门禁，只做规则校验
     playObserved: (move) => {
+      if (move.kind !== 'xiangqi') return { ok: false, error: '非法着法' };
       if (!game.isLegal(tree.current(), move)) return { ok: false, error: '非法着法' };
       thinking = false;
       tree.play(move);
       void maybeEngineTurn();
       return { ok: true };
     },
+    currentGoPosition: () =>
+      makeGoPosition({
+        size: 19,
+        cells: emptyCells(19),
+        turn: 'first',
+        komi: 7.5,
+        handicap: 0,
+        rules: 'chinese',
+        koPoint: null,
+        consecutivePasses: 0,
+        captured: [0, 0],
+      }),
+    setKind: async (_kind: GameKind) => ({ ok: true }),
     setPaused: (paused) => {
       if (matchPaused === paused) return { ok: true };
       matchPaused = paused;
@@ -363,20 +380,20 @@ describe('LinkerSession 连线 = 重开一局（执红）', () => {
     h.session.stop('user');
   }, 10_000);
 
-  it('中途接入超时兜底：识别盘有少量识别误差时按新局直接开局（红先）', async () => {
-    // 识别盘 = 初始局面但漏检一枚黑车（识别误差 → 非标准初始 → 走 armed 分支）
+  it('中途接入无法判轮值：识别盘有少量误差时按红先开局', async () => {
+    // 识别盘 = 初始局面但漏检一枚黑车（识别误差 → 非标准初始 → 走中局默认红先）
     const board = parseFen(INITIAL_FEN).board.slice();
     board[0] = null;
     const h = makeHarness(['b2e2']);
     h.setRawBoard(board);
     h.session.start();
-    await waitFor(() => h.newGames.length >= 1, 7000);
+    await waitFor(() => h.newGames.length >= 1);
     expect(h.newGames[0]!.engineSide).toBe(null);
     h.setEngineSide('first');
     // 红先开局 → 引擎立即出招并点击平台
-    await waitFor(() => h.clicks.length >= 2, 5000);
+    await waitFor(() => h.clicks.length >= 2);
     h.session.stop('user');
-  }, 12_000);
+  }, 10_000);
 });
 
 describe('LinkerSession 开局基准（局面同步的地基）', () => {
@@ -647,7 +664,7 @@ describe('LinkerSession 引擎执黑', () => {
     h.session.stop('user');
   }, 10_000);
 
-  it('无法一步还原的中局：超时后点引擎执黑，按黑方纠正轮值并出招', async () => {
+  it('无法一步还原的中局：无引擎时默认红先；再点执黑按黑方纠正并出招', async () => {
     const afterBoth = applyMove(AFTER_CANNON, BLACK_KNIGHT).position;
     // 再让红走一步，盘面距初始两步以上，inferTurn 无法判定
     const mid = applyMove(afterBoth, { kind: 'xiangqi', from: { x: 7, y: 9 }, to: { x: 6, y: 7 } })
@@ -655,14 +672,29 @@ describe('LinkerSession 引擎执黑', () => {
     const h = makeHarness(['h9g7']);
     h.setBoard(mid);
     h.session.start();
-    await waitFor(() => h.newGames.length >= 1, 7000);
-    expect(h.newGames[0]!.initialFen!.split(' ')[1]).toBe('w'); // 超时默认红先
+    await waitFor(() => h.newGames.length >= 1);
+    expect(h.newGames[0]!.initialFen!.split(' ')[1]).toBe('w');
     h.setEngineSide('second');
     await waitFor(() => h.newGames.length >= 2);
     expect(h.newGames.at(-1)!.initialFen!.split(' ')[1]).toBe('b');
     await waitFor(() => h.clicks.length >= 2);
     h.session.stop('user');
-  }, 15_000);
+  }, 10_000);
+
+  it('无法一步还原的中局：已选引擎执黑 → 黑走并出招', async () => {
+    const afterBoth = applyMove(AFTER_CANNON, BLACK_KNIGHT).position;
+    const mid = applyMove(afterBoth, { kind: 'xiangqi', from: { x: 7, y: 9 }, to: { x: 6, y: 7 } })
+      .position;
+    const h = makeHarness(['h9g7']);
+    h.setBoard(mid);
+    h.setEngineSide('second');
+    h.session.start();
+    await waitFor(() => h.newGames.length >= 1);
+    expect(h.newGames[0]!.engineSide).toBe('second');
+    expect(h.newGames[0]!.initialFen!.split(' ')[1]).toBe('b');
+    await waitFor(() => h.clicks.length >= 2);
+    h.session.stop('user');
+  }, 10_000);
 });
 
 describe('LinkerSession 翻转视角（黑在下）', () => {

@@ -239,6 +239,8 @@ export interface GoScore {
   /** 白提黑子数 */
   capturedByWhite: number;
   komi: number;
+  /** 邻接双方或未封闭的空点（公气）。中盘很多，此时本地目差只是子数差 */
+  openEmpty: number;
 }
 
 function boardStats(pos: GoPosition): {
@@ -300,6 +302,8 @@ function withCaptures(pos: GoPosition, stats: ReturnType<typeof boardStats>, ext
   white: number;
 }): GoScore {
   const [capturedByBlack, capturedByWhite] = pos.captured;
+  const occupied =
+    stats.blackStones + stats.whiteStones + stats.blackTerritory + stats.whiteTerritory;
   return {
     ...extras,
     ...stats,
@@ -307,7 +311,24 @@ function withCaptures(pos: GoPosition, stats: ReturnType<typeof boardStats>, ext
     capturedByBlack,
     capturedByWhite,
     komi: pos.komi,
+    openEmpty: pos.size * pos.size - occupied,
   };
+}
+
+/**
+ * 空点基本收完或已经双虚着，本地数子/地盘才配叫目差。
+ * 中盘公气一大片时，115 vs 106.5 只是「子数+贴目」，会和引擎终局假设对不上。
+ */
+export function isLocalScoreClosed(score: GoScore, consecutivePasses: number): boolean {
+  if (consecutivePasses >= 2) return true;
+  const board =
+    score.blackStones +
+    score.whiteStones +
+    score.blackTerritory +
+    score.whiteTerritory +
+    score.openEmpty;
+  if (board <= 0) return false;
+  return score.openEmpty <= Math.max(6, Math.round(board * 0.06));
 }
 
 /**

@@ -7,7 +7,10 @@ import {
   sameHintPoint,
   uniqueBestHint,
 } from '@shared/goBestMove';
+import { snapGridIndex } from './goSnap';
 import { cssColor } from './theme';
+
+export { GO_SNAP_MAX_OFF, snapGridIndex } from './goSnap';
 
 export interface GoBoardLayout {
   size: number;
@@ -31,9 +34,9 @@ export function goToPx(layout: GoBoardLayout, x: number, y: number, flip: boolea
 }
 
 export function pxToGo(layout: GoBoardLayout, px: number, py: number, flip: boolean): Point | null {
-  const gx = Math.round((px - layout.pad) / layout.cell);
-  const gy = Math.round((py - layout.pad) / layout.cell);
-  if (gx < 0 || gy < 0 || gx >= layout.size || gy >= layout.size) return null;
+  const gx = snapGridIndex(px, layout.pad, layout.cell, layout.size);
+  const gy = snapGridIndex(py, layout.pad, layout.cell, layout.size);
+  if (gx === null || gy === null) return null;
   const x = flip ? layout.size - 1 - gx : gx;
   const y = flip ? layout.size - 1 - gy : gy;
   return { x, y };

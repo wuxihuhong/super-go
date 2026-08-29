@@ -7,6 +7,7 @@ import type { GoHintPoint } from '@shared/game';
 import { uniqueBestHint } from '@shared/goBestMove';
 import { grooveLine } from '../lib/boardDraw';
 import { drawHintLabel, hintDotVisual, hoshiPoints } from '../lib/goBoardDraw';
+import { snapGridIndex } from '../lib/goSnap';
 import { cssColor } from '../lib/theme';
 import { useElementSize } from '../lib/useElementSize';
 
@@ -41,9 +42,9 @@ function gridToWorld(x: number, y: number, n: number): THREE.Vector3 {
 function worldToGrid(hit: THREE.Vector3, n: number): Point | null {
   const step = GRID / (n - 1);
   const origin = -GRID / 2;
-  const gx = Math.round((hit.x - origin) / step);
-  const gy = Math.round((hit.z - origin) / step);
-  if (gx < 0 || gy < 0 || gx >= n || gy >= n) return null;
+  const gx = snapGridIndex(hit.x, origin, step, n);
+  const gy = snapGridIndex(hit.z, origin, step, n);
+  if (gx === null || gy === null) return null;
   return { x: gx, y: gy };
 }
 
@@ -410,6 +411,11 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       if (!p.interactive || moved > 6) return;
       const rect = renderer.domElement.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) return;
+      const aspect = rect.width / rect.height;
+      if (Math.abs(camera.aspect - aspect) > 1e-4) {
+        camera.aspect = aspect;
+        camera.updateProjectionMatrix();
+      }
       const ndc = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
         -((e.clientY - rect.top) / rect.height) * 2 + 1,

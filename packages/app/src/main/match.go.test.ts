@@ -129,6 +129,40 @@ describe('MatchService 围棋', () => {
     match.dispose();
   });
 
+  it('playObserved 喂入平台着法并触发分析', async () => {
+    const { match, latest } = makeMatch(fakeGoAdapter());
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(match.playObserved({ kind: 'go', point: gtpToPoint('Q16', 19) }).ok).toBe(true);
+    const snap = await waitFor(latest, (s) => s.kind === 'go' && s.moves.length >= 1);
+    expect(snap.moves[0]?.iccs.toUpperCase()).toBe('Q16');
+    expect(match.playObserved({ kind: 'xiangqi', from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }).ok).toBe(
+      false,
+    );
+    match.dispose();
+  });
+
+  it('连线拦截器：引擎应招先本地落子再回调', async () => {
+    const { match, latest } = makeMatch(fakeGoAdapter());
+    const intercepted: string[] = [];
+    match.setEngineMoveInterceptor(async (move) => {
+      if (move.kind !== 'go') return false;
+      intercepted.push(move.point === null ? 'pass' : `${move.point.x},${move.point.y}`);
+      return true;
+    });
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: 'second', goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
+    const snap = await waitFor(
+      latest,
+      (s) => s.kind === 'go' && s.moves.length >= 2 && s.thinking === false,
+    );
+    expect(snap.moves[1]?.iccs.toUpperCase()).toBe('D4');
+    expect(intercepted).toHaveLength(1);
+    expect(intercepted[0]).toBe(`${gtpToPoint('D4', 19).x},${gtpToPoint('D4', 19).y}`);
+    match.dispose();
+  });
+
   it('双虚着后以引擎 final_score 覆盖本地数子', async () => {
     const { match, latest } = makeMatch(fakeGoAdapter({ finalScore: 'B+3.5' }));
     expect((await match.setKind('go')).ok).toBe(true);
@@ -165,7 +199,7 @@ describe('MatchService 围棋', () => {
     };
     const { match, latest } = makeMatch(adapter, { showBestMove: () => showBestMove });
     expect((await match.setKind('go')).ok).toBe(true);
-    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect((await match.newGame({ engineSide: 'second', goSetup: { boardSize: 19 } })).ok).toBe(true);
     expect(calls).toEqual([]);
     expect(latest().hintPoints).toBeUndefined();
     showBestMove = true;
@@ -205,6 +239,46 @@ describe('MatchService 围棋', () => {
     expect(calls).toContain('stop');
   });
 
+  it('无引擎上场时开启最佳选点也不启动局面分析', async () => {
+    const calls: string[] = [];
+    const adapter = fakeGoAdapter();
+    adapter.startAnalysis = () => {
+      calls.push('start');
+    };
+    const { match } = makeMatch(adapter, { showBestMove: () => true });
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    await match.refreshStrength();
+    expect(calls).toEqual([]);
+    match.dispose();
+  });
+
+  it('引擎离场后立刻清掉 hintPoints', async () => {
+    const adapter = fakeGoAdapter();
+    let emit: ((evaluation: EngineEvaluation) => void) | undefined;
+    adapter.onEvaluation = (cb) => {
+      emit = cb;
+      return () => {
+        emit = undefined;
+      };
+    };
+    const { match, latest } = makeMatch(adapter, { showBestMove: () => true });
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: 'second', goSetup: { boardSize: 19 } })).ok).toBe(true);
+    emit?.({
+      streamId: adapter.lastStartStreamId,
+      winRate: 0.55,
+      lead: 2.0,
+      depth: 400,
+      pv: ['Q16'],
+      candidates: [{ move: 'Q16', visits: 400, lead: 2.0 }],
+    });
+    expect(latest().hintPoints?.length).toBeGreaterThan(0);
+    expect(match.setEngineSide(null).ok).toBe(true);
+    expect(latest().hintPoints).toBeUndefined();
+    match.dispose();
+  });
+
   it('落子立刻清空过期 hintPoints，再等新分析', async () => {
     let showBestMove = true;
     const adapter = fakeGoAdapter();
@@ -217,7 +291,8 @@ describe('MatchService 围棋', () => {
     };
     const { match, latest } = makeMatch(adapter, { showBestMove: () => showBestMove });
     expect((await match.setKind('go')).ok).toBe(true);
-    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect((await match.newGame({ engineSide: 'second', goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(match.setPaused(true).ok).toBe(true);
     await match.refreshStrength();
     emit?.({
       streamId: adapter.lastStartStreamId,
@@ -247,7 +322,8 @@ describe('MatchService 围棋', () => {
     };
     const { match, latest } = makeMatch(adapter, { showBestMove: () => true });
     expect((await match.setKind('go')).ok).toBe(true);
-    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect((await match.newGame({ engineSide: 'second', goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(match.setPaused(true).ok).toBe(true);
     await match.refreshStrength();
     expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
     emit?.({
@@ -275,7 +351,8 @@ describe('MatchService 围棋', () => {
     };
     const { match, latest } = makeMatch(adapter, { showBestMove: () => true });
     expect((await match.setKind('go')).ok).toBe(true);
-    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect((await match.newGame({ engineSide: 'second', goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(match.setPaused(true).ok).toBe(true);
     await match.refreshStrength();
     const firstStream = adapter.lastStartStreamId;
     emit?.({
@@ -328,26 +405,15 @@ describe('MatchService 围棋', () => {
     };
     const { match, latest } = makeMatch(adapter, { showBestMove: () => true });
     expect((await match.setKind('go')).ok).toBe(true);
-    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect((await match.newGame({ engineSide: 'second', goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(match.setPaused(true).ok).toBe(true);
     const stream1 = adapter.lastStartStreamId;
-    emit?.({
-      streamId: stream1,
-      winRate: 0.55,
-      lead: 2.0,
-      depth: 200,
-      pv: ['Q16'],
-      candidates: [{ move: 'Q16', visits: 200, lead: 2.0 }],
-    });
-    expect(latest().hintPoints?.length).toBeGreaterThan(0);
     expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
     const stream2 = adapter.lastStartStreamId;
     expect(stream2).not.toBe(stream1);
     expect(latest().hintPoints).toBeUndefined();
-    expect(match.playMove({ point: gtpToPoint('D4', 19) }).ok).toBe(true);
-    const stream3 = adapter.lastStartStreamId;
-    expect(stream3).not.toBe(stream2);
     emit?.({
-      streamId: stream2,
+      streamId: stream1,
       winRate: 0.54,
       lead: 1.8,
       depth: 240,
@@ -356,7 +422,7 @@ describe('MatchService 围棋', () => {
     });
     expect(latest().hintPoints).toBeUndefined();
     emit?.({
-      streamId: stream3,
+      streamId: stream2,
       winRate: 0.5,
       lead: 0.4,
       depth: 30,
@@ -410,7 +476,8 @@ describe('MatchService 围棋', () => {
       },
     );
     expect((await match.setKind('go')).ok).toBe(true);
-    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect((await match.newGame({ engineSide: 'second', goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(match.setPaused(true).ok).toBe(true);
     await match.refreshStrength();
     const stream1 = adapter.lastStartStreamId;
     const frame = { streamId: stream1, winRate: 0.51, lead: 0.4, depth: 80, pv: ['Q16'] };
@@ -466,6 +533,30 @@ describe('MatchService 围棋', () => {
     expect(r.score.engine?.lead).toBeCloseTo(0.4);
     expect((await match.setKind('xiangqi')).ok).toBe(true);
     expect((await match.estimateScore()).ok).toBe(false);
+    match.dispose();
+  });
+
+  it('思考中回最近一次引擎目差，不打断 genmove', async () => {
+    let release!: (value: { move: string; evaluation: EngineEvaluation }) => void;
+    const hung = new Promise<{ move: string; evaluation: EngineEvaluation }>((resolve) => {
+      release = resolve;
+    });
+    const adapter = fakeGoAdapter({ finalScore: 'W+64.5' });
+    adapter.genmove = () => hung;
+    const { match, latest } = makeMatch(adapter);
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19, komi: 7.5 } })).ok).toBe(
+      true,
+    );
+    const first = await match.estimateScore();
+    expect(first.ok).toBe(true);
+    if (first.ok) expect(first.score.engine?.raw).toBe('W+64.5');
+    expect(match.setEngineSide('first').ok).toBe(true);
+    await waitFor(latest, (s) => s.thinking === true);
+    const during = await match.estimateScore();
+    expect(during.ok).toBe(true);
+    if (during.ok) expect(during.score.engine?.raw).toBe('W+64.5');
+    release({ move: 'D4', evaluation: { winRate: 0.4, lead: -2, depth: 6 } });
     match.dispose();
   });
 });

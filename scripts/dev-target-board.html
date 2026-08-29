@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <title>Mock 棋盘平台（连线测试靶）</title>
+<script>window.__KIND = new URLSearchParams(location.search).get('kind') === 'go' ? 'go' : 'xiangqi';</script>
 <style>
   body {
     margin: 0;
@@ -26,13 +27,141 @@
 <div class="wrap">
   <canvas id="board" width="900" height="1000"></canvas>
   <div class="row">
+    <a href="?kind=xiangqi" id="toXq" style="color:#ddd;text-decoration:none;border:1px solid #666;padding:4px 10px;border-radius:6px;">象棋</a>
+    <a href="?kind=go" id="toGo" style="color:#ddd;text-decoration:none;border:1px solid #666;padding:4px 10px;border-radius:6px;">围棋</a>
     <span>自动应手（模拟对手）<button id="auto" class="on">开</button></span>
-    <span>走子动画 <button id="anim" class="on">开</button></span>
+    <span id="xqAnim">走子动画 <button id="anim" class="on">开</button></span>
+    <span id="goExtra" hidden>
+      <span>路数
+        <button data-size="9">9</button>
+        <button data-size="13">13</button>
+        <button data-size="19" class="on">19</button>
+      </span>
+      <span>标记<button id="mark" class="on">圈</button></span>
+    </span>
     <button id="reset">重开一局</button>
     <span id="status">红方行棋 · 两击走子（先点起点再点终点）</span>
   </div>
 </div>
 <script>
+if (window.__KIND === 'go') {
+  document.getElementById('goExtra').hidden = false;
+  document.getElementById('xqAnim').hidden = true;
+}
+document.getElementById(window.__KIND === 'go' ? 'toGo' : 'toXq').classList.add('on');
+if (window.__KIND === 'go') {
+/**
+ * 围棋测试靶：木色 9/13/19 路 + 坐标 + 星位 + 最后一手圈标（KaTrain 口径）。
+ * 单击交叉点落子；自动应手随机下一手。截图由 Super Go LinkerNative 抓窗。
+ */
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+const COLS = 'ABCDEFGHJKLMNOPQRST';
+let size = 19, cells = [], turn = 'first', last = null, autoReply = true, markOn = true;
+
+function resetGo() {
+  cells = Array(size * size).fill(null);
+  turn = 'first'; last = null;
+  canvas.width = canvas.height = 40 + 36 * (size - 1) + 40;
+  updateStatus();
+}
+function updateStatus(msg) {
+  document.getElementById('status').textContent =
+    msg ?? ((turn === 'first' ? '黑' : '白') + '行棋 · 单击交叉点落子');
+}
+function origin() { return 40; }
+function step() { return (canvas.width - 80) / (size - 1); }
+function pt(x, y) { const o = origin(), s = step(); return { x: o + x * s, y: o + y * s }; }
+function gridOf(px, py) {
+  const o = origin(), s = step();
+  const gx = Math.round((px - o) / s), gy = Math.round((py - o) / s);
+  if (gx < 0 || gy < 0 || gx >= size || gy >= size) return null;
+  const p = pt(gx, gy);
+  if (Math.hypot(px - p.x, py - p.y) > s * 0.4) return null;
+  return { x: gx, y: gy };
+}
+function hoshi() {
+  const h = size <= 9 ? 3 : 4, far = size + 1 - h, mid = Math.ceil(size / 2);
+  const pts = [[h, h], [far, far], [h, far], [far, h]];
+  if (size >= 13) pts.push([h, mid], [far, mid], [mid, h], [mid, far], [mid, mid]);
+  else pts.push([mid, mid]);
+  return pts.map(([c, r]) => ({ x: c - 1, y: size - r }));
+}
+function draw() {
+  const w = canvas.width, o = origin(), s = step();
+  const bg = ctx.createLinearGradient(0, 0, w, w);
+  bg.addColorStop(0, '#dcb35c'); bg.addColorStop(1, '#c4923c');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, w);
+  ctx.strokeStyle = '#20180c'; ctx.lineWidth = 1.2;
+  for (let i = 0; i < size; i++) {
+    const a = pt(0, i), b = pt(size - 1, i), c = pt(i, 0), d = pt(i, size - 1);
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.stroke();
+  }
+  ctx.fillStyle = '#20180c';
+  for (const p of hoshi()) { const q = pt(p.x, p.y); ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(2, s * 0.08), 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = '#3c2a14'; ctx.font = `600 ${Math.round(s * 0.38)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < size; i++) {
+    ctx.fillText(COLS[i], pt(i, 0).x, o - s * 0.55);
+    ctx.fillText(String(size - i), o - s * 0.55, pt(0, i).y);
+  }
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const c = cells[y * size + x]; if (!c) continue;
+    const p = pt(x, y);
+    ctx.beginPath(); ctx.arc(p.x, p.y, s * 0.44, 0, Math.PI * 2);
+    ctx.fillStyle = c === 'first' ? '#141210' : '#f8f6f0'; ctx.fill();
+    ctx.strokeStyle = c === 'first' ? '#000' : '#bbb'; ctx.stroke();
+  }
+  if (markOn && last) {
+    const p = pt(last.x, last.y);
+    const on = cells[last.y * size + last.x];
+    ctx.beginPath(); ctx.arc(p.x, p.y, s * 0.2, 0, Math.PI * 2);
+    ctx.strokeStyle = on === 'first' ? '#fff' : '#111'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  requestAnimationFrame(draw);
+}
+function playAt(g) {
+  if (cells[g.y * size + g.x]) return;
+  cells[g.y * size + g.x] = turn;
+  last = g;
+  turn = turn === 'first' ? 'second' : 'first';
+  updateStatus();
+  if (autoReply && turn === 'second') setTimeout(autoGo, 400);
+}
+function autoGo() {
+  if (turn !== 'second') return;
+  const empties = [];
+  for (let i = 0; i < cells.length; i++) if (!cells[i]) empties.push(i);
+  if (!empties.length) return;
+  const i = empties[Math.floor(Math.random() * empties.length)];
+  playAt({ x: i % size, y: Math.floor(i / size) });
+}
+canvas.addEventListener('click', (e) => {
+  const r = canvas.getBoundingClientRect();
+  const g = gridOf(e.clientX - r.left, e.clientY - r.top);
+  if (g) playAt(g);
+});
+document.getElementById('auto').onclick = (e) => {
+  autoReply = !autoReply; e.target.textContent = autoReply ? '开' : '关'; e.target.classList.toggle('on', autoReply);
+};
+document.getElementById('mark').onclick = (e) => {
+  markOn = !markOn; e.target.textContent = markOn ? '圈' : '关'; e.target.classList.toggle('on', markOn);
+};
+document.getElementById('reset').onclick = () => resetGo();
+document.querySelectorAll('#goExtra [data-size]').forEach((btn) => {
+  btn.onclick = () => {
+    size = Number(btn.dataset.size);
+    document.querySelectorAll('#goExtra [data-size]').forEach((b) => b.classList.toggle('on', b === btn));
+    resetGo();
+  };
+});
+resetGo();
+draw();
+}
+</script>
+<script>
+if (window.__KIND !== 'go') {
+
 /**
  * 连线测试靶：模拟第三方平台棋盘。
  * - 视觉口径对齐常见平台：木色盘面、9×10 交叉点、圆片棋子 + 汉字；
@@ -200,6 +329,7 @@ document.getElementById('reset').onclick = () => { reset(); };
 
 reset();
 draw();
+}
 </script>
 </body>
 </html>

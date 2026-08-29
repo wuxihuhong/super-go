@@ -112,6 +112,8 @@ export interface GoEngineScore {
 export interface GoScoreEstimate {
   local: GoScore;
   engine?: GoEngineScore;
+  /** 空点已收完或双虚着：本地目差才展示。中盘只报子数 */
+  localClosed: boolean;
 }
 
 export type EstimateScoreResult =

@@ -25,6 +25,7 @@ import {
   MoveTree,
   moveToIccs,
   parseGtpMove,
+  isLocalScoreClosed,
   scoreGo,
   xiangqiThreadCap,
   XiangqiGame,
@@ -135,13 +136,15 @@ export class MatchService {
   private lastHintSnapshotAt = 0;
   private hintSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingHintPoints: GoHintPoint[] | null = null;
+  /** 最近一次引擎算目（思考中不打断 genmove，面板沿用这个） */
+  private lastGoEngineScore: GoEngineScore | null = null;
   /** 已预约的 hint 流代次（startAnalysis 时递增，不依赖是否收到过 info） */
   private hintStreamSeq = 0;
   private minHintStreamId = 0;
   private hintEpoch = 0;
   private strengthTail: Promise<void> = Promise.resolve();
   /** 引擎着法落子拦截（连线注入点：§6.1 出招 → 本地先落子 → 再点平台） */
-  private engineMoveInterceptor: ((move: XiangqiMove) => Promise<boolean>) | null = null;
+  private engineMoveInterceptor: ((move: XiangqiMove | GoMove) => Promise<boolean>) | null = null;
   private readonly createAdapter: () => EngineAdapter;
   private readonly createGoAdapter: () => EngineAdapter;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -171,13 +174,18 @@ export class MatchService {
   }
 
   /** 连线会话注入/移除落子拦截（null = 移除） */
-  setEngineMoveInterceptor(fn: ((move: XiangqiMove) => Promise<boolean>) | null): void {
+  setEngineMoveInterceptor(fn: ((move: XiangqiMove | GoMove) => Promise<boolean>) | null): void {
     this.engineMoveInterceptor = fn;
   }
 
-  /** 连线 diff 基准：当前游标局面（仅象棋） */
+  /** 连线 diff 基准：当前游标局面（象棋） */
   currentPosition(): XiangqiPosition {
     return this.xiangqiPositionNow();
+  }
+
+  /** 连线 diff 基准：当前游标局面（围棋） */
+  currentGoPosition(): GoPosition {
+    return this.goPositionNow();
   }
 
   /** 切换棋种：中止当前对局、关掉旧引擎、空闲到新棋种 */
@@ -187,6 +195,7 @@ export class MatchService {
       return { ok: true };
     }
     this.generation++;
+    this.lastGoEngineScore = null;
     this.stopHintAnalysis();
     this.clearGoHintPoints();
     this.adapter?.stopSearch();
@@ -222,13 +231,32 @@ export class MatchService {
    * 发生的事实不容本地拒绝——包括用户在待人工介入时替引擎手工走掉的那一步，
    * 以及引擎回合内对方抢先落子。仍走规则校验，非法着法照样拒绝（识别防线）。
    */
-  playObserved(move: XiangqiMove): IntentResult {
+  playObserved(move: XiangqiMove | GoMove): IntentResult {
     if (this.liveState.phase !== 'playing') {
       return { ok: false, error: '对局未在进行中' };
     }
-    if (this.kind !== 'xiangqi') {
-      return { ok: false, error: '连线仅支持象棋' };
+    if (this.kind === 'go') {
+      if (move.kind !== 'go') return { ok: false, error: '棋种不匹配' };
+      if (!this.goGame.isLegal(this.goPositionNow(), move)) {
+        return { ok: false, error: '非法着法' };
+      }
+      this.generation++;
+      this.adapter?.stopSearch();
+      this.setThinking(false);
+      const node = this.goTree.play(move);
+      this.finishIfOver();
+      this.stopHintAnalysis();
+      this.clearGoHintPoints();
+      this.pushSnapshot();
+      if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
+        void this.engineTurn();
+      } else if (this.liveState.phase === 'playing') {
+        if (this.showBestMoveOn()) this.refreshHintAnalysis();
+        else void this.goAnalyzeNode(node, 'fast');
+      }
+      return { ok: true };
     }
+    if (move.kind !== 'xiangqi') return { ok: false, error: '棋种不匹配' };
     if (!this.game.isLegal(this.xiangqiPositionNow(), move)) {
       return { ok: false, error: '非法着法' };
     }
@@ -293,6 +321,7 @@ export class MatchService {
 
   async newGame(intent: NewGameIntent): Promise<IntentResult> {
     this.generation++;
+    this.lastGoEngineScore = null;
     this.adapter?.stopSearch();
     this.setThinking(false);
     this.paused = false;
@@ -456,6 +485,12 @@ export class MatchService {
     this.liveState.setEngineSide(engineSide);
     this.lastEngineSide = engineSide;
     this.pushSnapshot();
+    if (engineSide === null) {
+      this.stopHintAnalysis();
+      this.clearGoHintPoints();
+      this.pushSnapshot();
+      return { ok: true };
+    }
     if (!this.paused && this.engineToMoveNow()) void this.engineTurn();
     else this.refreshHintAnalysis();
     return { ok: true };
@@ -513,16 +548,18 @@ export class MatchService {
   }
 
   /**
-   * 围棋算目：本地按规则数子/地盘；引擎空闲且未思考时再问 `final_score` 与快分析。
-   * 思考中不打断 genmove，只回本地结果。
+   * 围棋算目：引擎空闲时问 `final_score` 与快分析。
+   * 思考中不打断 genmove，回最近一次引擎结果（算目缓存，否则上一手分析形势）。
    */
   async estimateScore(): Promise<EstimateScoreResult> {
     if (this.kind !== 'go') return { ok: false, error: '仅围棋可算目' };
-    const local = scoreGo(this.goPositionNow());
+    const pos = this.goPositionNow();
+    const local = scoreGo(pos);
+    const localClosed = isLocalScoreClosed(local, pos.consecutivePasses);
     const adapter = this.adapter;
     const finalScore = adapter?.finalScore;
     if (this.thinking || adapter === null || adapter.getStatus() !== 'ready' || finalScore === undefined) {
-      return { ok: true, score: { local } };
+      return { ok: true, score: { local, localClosed, engine: this.recentGoEngineScore() } };
     }
 
     this.stopHintAnalysis();
@@ -563,16 +600,38 @@ export class MatchService {
         }
       }
 
-      return { ok: true, score: { local, engine } };
+      this.rememberGoEngineScore(engine);
+      return { ok: true, score: { local, localClosed, engine: engine ?? this.recentGoEngineScore() } };
     } catch {
-      return { ok: true, score: { local } };
+      return { ok: true, score: { local, localClosed, engine: this.recentGoEngineScore() } };
     } finally {
       this.refreshHintAnalysis();
     }
   }
 
+  private rememberGoEngineScore(engine: GoEngineScore | undefined): void {
+    if (engine === undefined) return;
+    if (engine.raw === '' && engine.lead === undefined && engine.winRate === undefined) return;
+    this.lastGoEngineScore = engine;
+  }
+
+  /** 算目缓存，没有则退回盘上最近一手的分析形势 */
+  private recentGoEngineScore(): GoEngineScore | undefined {
+    if (this.lastGoEngineScore !== null) return this.lastGoEngineScore;
+    const snap = this.buildGoSnapshot();
+    if (snap.winRate === undefined && snap.lead === undefined) return undefined;
+    return {
+      margin: snap.lead ?? 0,
+      raw: '',
+      winRate: snap.winRate,
+      lead: snap.lead,
+      visits: snap.depth,
+    };
+  }
+
   dispose(): void {
     this.generation++;
+    this.lastGoEngineScore = null;
     this.stopHintAnalysis();
     this.clearGoHintPoints();
     this.adapter?.quit();
@@ -855,7 +914,11 @@ export class MatchService {
   }
 
   private showBestMoveOn(): boolean {
-    return this.kind === 'go' && this.goProviders?.showBestMove() === true;
+    return (
+      this.kind === 'go' &&
+      this.goProviders?.showBestMove() === true &&
+      this.liveState.engineSide !== null
+    );
   }
 
   private stopHintAnalysis(): void {
@@ -1261,6 +1324,16 @@ export class MatchService {
     this.finishIfOver();
     this.clearGoHintPoints();
     this.pushSnapshot();
+
+    if (this.engineMoveInterceptor !== null) {
+      try {
+        await this.engineMoveInterceptor(engineMove);
+      } catch (err) {
+        console.warn('[match] 平台落子失败（本地着法已留下）', err);
+      }
+      if (gen !== this.generation) return;
+    }
+
     this.setThinking(false);
     this.pushSnapshot();
     if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {

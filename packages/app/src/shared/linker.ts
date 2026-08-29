@@ -164,9 +164,11 @@ export type LinkerResolution =
   /** 转为观战：引擎不再控制任何一方，只识别跟盘 */
   | 'spectate';
 
-/** 连线启动意图：只选窗口——引擎执方由工具栏按钮另行设置（连线后默认引擎不控制） */
+/** 连线启动意图：选窗口 + 棋种。开局默认观战，工具栏执黑/执白后引擎代打。 */
 export interface LinkerStartIntent {
   windowId: number;
+  /** 缺省象棋。截图/点击复用同一 LinkerNative（Win/mac），只换识别器。 */
+  kind?: 'xiangqi' | 'go';
 }
 
 /** macOS 连线所需系统权限（§6.3 / §10 风险#4） */

@@ -9,6 +9,7 @@ import type {
   LinkerStatus,
   TargetWindow,
 } from '@shared/ipc';
+import type { GameKind } from '@super-go/core';
 import type { MessageKey, TFunction } from '../i18n';
 import { visibleWindows } from '../lib/windowFilter';
 import { LinkerResolveActions, linkerPhaseActive } from './LinkerLiveStatus';
@@ -17,6 +18,8 @@ export interface LinkerPanelProps {
   t: TFunction;
   status: LinkerStatus | null;
   logs: LinkerLogEntry[];
+  /** 当前棋盘棋种；连线不再单独选棋种 */
+  kind: GameKind;
   onStart: (intent: LinkerStartIntent) => void;
   onStop: () => void;
   onPauseToggle: () => void;
@@ -126,7 +129,7 @@ export default function LinkerPanel(props: LinkerPanelProps) {
 
   const start = (): void => {
     if (!canStart || windowId === null) return;
-    props.onStart({ windowId });
+    props.onStart({ windowId, kind: props.kind });
   };
 
   const emptyText =
