@@ -885,8 +885,7 @@ export class MatchService {
   private acceptHintEvaluation(evaluation: EngineEvaluation): boolean {
     if (!this.hinting) return false;
     const streamId = evaluation.streamId;
-    if (streamId === undefined) return this.minHintStreamId === 0;
-    return streamId >= this.minHintStreamId;
+    return streamId !== undefined && streamId >= this.minHintStreamId;
   }
 
   private publishHintPoints(next: GoHintPoint[]): void {

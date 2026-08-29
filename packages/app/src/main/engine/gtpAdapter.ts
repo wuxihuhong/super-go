@@ -43,6 +43,8 @@ const ANALYZE_TIMEOUT_MS = 30_000;
 /** 棋力只限一维时，把另一维拉到引擎哨兵，避免和分析/上一档粘在一起 */
 const SEARCH_UNLIMITED_VISITS = 1_000_000_000;
 const SEARCH_UNLIMITED_TIME_SEC = 1e20;
+/** analyzeOnce 专用，不占用 startAnalysis 的 streamSeq，避免交错入队把 hint 流判过期 */
+const ANALYZE_ONCE_STREAM_ID = -1;
 
 function isLaunchSpec(source: EngineLaunchSource): source is GtpLaunchSpec {
   return typeof source !== 'string';
@@ -81,8 +83,10 @@ export class GtpAdapter implements EngineAdapter {
   private analyzing = false;
   /** 已发出 kata-analyze、引擎还在流式吐 info */
   private streamOpen = false;
-  /** 已预约 / 最近一次 startAnalysis 的代次 */
+  /** 已预约 / 最近一次 startAnalysis 的代次（仅 hint 流；analyzeOnce 不写） */
   private streamSeq = 0;
+  /** startAnalysis / stopAnalysis 的取消令牌；analyzeOnce 不碰 */
+  private analysisGen = 0;
   /** 当前已发出、info 应挂上的流代次；stop 后残余帧仍用这个值 */
   private liveStreamId = 0;
   private rpcTail: Promise<void> = Promise.resolve();
@@ -227,14 +231,15 @@ export class GtpAdapter implements EngineAdapter {
     this.analyzing = true;
     const streamId = opts.streamId ?? this.streamSeq + 1;
     this.streamSeq = streamId;
+    const gen = ++this.analysisGen;
     void this.enqueue(async () => {
-      if (!this.analyzing || streamId !== this.streamSeq) return;
+      if (gen !== this.analysisGen) return;
       await this.applySearchParams({
         maxVisits: opts.maxVisits,
         maxTimeSec: opts.maxTimeSec,
         wideRootNoise: opts.wideRootNoise,
       });
-      if (!this.analyzing || streamId !== this.streamSeq) return;
+      if (gen !== this.analysisGen) return;
       this.liveStreamId = streamId;
       this.streamOpen = true;
       this.send(gtpCommands.kataAnalyze(this.nextColor));
@@ -244,6 +249,7 @@ export class GtpAdapter implements EngineAdapter {
   stopAnalysis(): void {
     if (!this.analyzing && !this.streamOpen) return;
     this.analyzing = false;
+    this.analysisGen += 1;
     if (this.streamOpen) {
       this.send(gtpCommands.stop());
       this.streamOpen = false;
@@ -267,16 +273,13 @@ export class GtpAdapter implements EngineAdapter {
       const cmd = useSearch
         ? gtpCommands.kataSearchAnalyze(this.nextColor)
         : gtpCommands.kataAnalyze(this.nextColor);
-      this.analyzing = !useSearch;
       this.status = 'thinking';
       try {
         if (useSearch) {
           await this.rpc(cmd, ANALYZE_TIMEOUT_MS);
         } else {
-          // streamOpen 与真实流一致，外部 stopAnalysis 才能发 stop 打断
-          const streamId = opts.streamId ?? this.streamSeq + 1;
-          this.streamSeq = streamId;
-          this.liveStreamId = streamId;
+          // 负 id + 不写 analyzing/streamSeq，避免把已预约的 hint 流判过期
+          this.liveStreamId = ANALYZE_ONCE_STREAM_ID;
           this.streamOpen = true;
           this.send(cmd);
           const deadline = Date.now() + Math.min(ANALYZE_TIMEOUT_MS, (opts.maxTimeSec ?? 2) * 1000 + 500);
@@ -286,11 +289,9 @@ export class GtpAdapter implements EngineAdapter {
             if (visits >= (opts.maxVisits ?? 1)) break;
           }
           this.send(gtpCommands.stop());
-          this.analyzing = false;
           this.streamOpen = false;
         }
       } finally {
-        this.analyzing = false;
         this.streamOpen = false;
         if (this.status === 'thinking') this.status = 'ready';
         await this.restoreStrength();

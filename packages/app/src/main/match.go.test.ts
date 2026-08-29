@@ -172,6 +172,14 @@ describe('MatchService 围棋', () => {
     await match.refreshStrength();
     expect(calls).toContain('start');
     emit?.({
+      winRate: 0.55,
+      lead: 2.0,
+      depth: 2800,
+      pv: ['Q16'],
+      candidates: [{ move: 'Q16', visits: 2800, winRate: 0.55, lead: 2.0 }],
+    });
+    expect(latest().hintPoints).toBeUndefined();
+    emit?.({
       streamId: adapter.lastStartStreamId,
       winRate: 0.55,
       lead: 2.0,
