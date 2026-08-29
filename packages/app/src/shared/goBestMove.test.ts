@@ -84,11 +84,23 @@ describe('hintPointsFromCandidates', () => {
     expect(painted?.visits).toBe(2900);
   });
 
-  it('无 lead 时全部 loss=0，仅访问量最高者为最优', () => {
+  it('全部缺 lead 时标 faint、不伪造最优', () => {
     const points = hintPointsFromCandidates([{ move: 'Q16', visits: 10 }, { move: 'D4', visits: 8 }], 19, 1);
-    expect(points.every((p) => p.loss === 0)).toBe(true);
-    expect(points.filter((p) => p.best)).toHaveLength(1);
-    expect(points[0]?.best).toBe(true);
+    expect(points.every((p) => p.faint)).toBe(true);
+    expect(points.filter((p) => p.best)).toHaveLength(0);
+  });
+
+  it('部分缺 lead 的点不参与正手着色', () => {
+    const points = hintPointsFromCandidates(
+      [
+        { move: 'Q16', visits: 800, lead: 1.2 },
+        { move: 'D4', visits: 400 },
+      ],
+      19,
+      25,
+    );
+    expect(points[0]).toMatchObject({ faint: false, best: true, loss: 0 });
+    expect(points[1]?.faint).toBe(true);
     expect(points[1]?.best).toBe(false);
   });
 });

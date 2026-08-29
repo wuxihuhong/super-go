@@ -231,6 +231,8 @@ interface GoSceneHandle {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   stones: THREE.Group;
+  hints: THREE.Group;
+  rebuildHints: () => void;
   boardTex: THREE.CanvasTexture;
   boardCtx: CanvasRenderingContext2D;
   stoneGeo: THREE.LatheGeometry;
@@ -373,7 +375,13 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
     scene.add(floor);
 
     const stones = new THREE.Group();
+    const hints = new THREE.Group();
+    const hintGeo = new THREE.CircleGeometry(1, 32);
     scene.add(stones);
+    scene.add(hints);
+    let overlayCssW = 0;
+    let overlayCssH = 0;
+    let overlayDpr = 0;
     const stoneGeo = makeGoStoneGeometry();
     const blackMat = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(cssColor('--stone-black')),
@@ -475,6 +483,27 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
           }
         }
       }
+      rebuildHints();
+    };
+
+    const clearHintMeshes = (): void => {
+      while (hints.children.length > 0) {
+        const child = hints.children[0]!;
+        hints.remove(child);
+        if (child instanceof THREE.Mesh) {
+          const mat = child.material;
+          (Array.isArray(mat) ? mat : [mat]).forEach((m) => m.dispose());
+        }
+      }
+    };
+
+    const rebuildHints = (): void => {
+      const p = propsRef.current;
+      const pos = p.position;
+      const n = pos.size;
+      const step = GRID / (n - 1);
+      const stoneR = step * 0.46;
+      clearHintMeshes();
       const hintList = p.hintPoints ?? [];
       const bestHint = uniqueBestHint(hintList);
       for (const hint of hintList) {
@@ -490,7 +519,7 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
         const at = gridToWorld(hint.point.x, hint.point.y, n);
         const vis = hintDotVisual(stoneR, hint, bestHint);
         const disc = new THREE.Mesh(
-          new THREE.CircleGeometry(vis.radius, 32),
+          hintGeo,
           new THREE.MeshBasicMaterial({
             color: new THREE.Color(vis.color),
             transparent: true,
@@ -501,7 +530,8 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
         );
         disc.rotation.x = -Math.PI / 2;
         disc.position.set(at.x, 0.08, at.z);
-        stones.add(disc);
+        disc.scale.setScalar(vis.radius);
+        hints.add(disc);
       }
       schedule();
       drawHintOverlay();
@@ -515,10 +545,15 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       const cssH = rect.height;
       if (cssW <= 0 || cssH <= 0) return;
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(cssW * dpr);
-      canvas.height = Math.round(cssH * dpr);
-      canvas.style.width = `${cssW}px`;
-      canvas.style.height = `${cssH}px`;
+      if (cssW !== overlayCssW || cssH !== overlayCssH || dpr !== overlayDpr) {
+        overlayCssW = cssW;
+        overlayCssH = cssH;
+        overlayDpr = dpr;
+        canvas.width = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+        canvas.style.width = `${cssW}px`;
+        canvas.style.height = `${cssH}px`;
+      }
       const ctx = canvas.getContext('2d');
       if (ctx === null) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -552,6 +587,8 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       scene,
       camera,
       stones,
+      hints,
+      rebuildHints,
       boardTex,
       boardCtx,
       stoneGeo,
@@ -570,6 +607,8 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
     return () => {
       renderer.domElement.removeEventListener('pointerdown', onDown);
       renderer.domElement.removeEventListener('pointerup', onUp);
+      clearHintMeshes();
+      hintGeo.dispose();
       stoneGeo.dispose();
       board.geometry.dispose();
       topMat.dispose();
@@ -607,7 +646,11 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
 
   useEffect(() => {
     sceneRef.current?.rebuildStones();
-  }, [props.position, props.lastPoint, props.hintPoints, props.themeTick]);
+  }, [props.position, props.lastPoint, props.themeTick]);
+
+  useEffect(() => {
+    sceneRef.current?.rebuildHints();
+  }, [props.hintPoints]);
 
   return (
     <div ref={ref} className="relative h-full w-full">

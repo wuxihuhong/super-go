@@ -111,6 +111,8 @@ function ToolButton(props: {  label: string;
   onClick: () => void;
   disabled?: boolean;
   accent?: boolean;
+  /** 开关键才输出 aria-pressed；一次性动作不要带 */
+  toggle?: boolean;
 }): React.JSX.Element {
   const shortcutText =
     props.shortcut === undefined
@@ -124,7 +126,7 @@ function ToolButton(props: {  label: string;
         type="button"
         style={NO_DRAG}
         aria-label={props.label}
-        aria-pressed={props.accent === true}
+        aria-pressed={props.toggle === true ? props.accent === true : undefined}
         disabled={props.disabled}
         onClick={props.onClick}
         className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-transparent ${
@@ -203,6 +205,7 @@ export default function Toolbar(props: ToolbarProps) {
     disabled = false,
     accent = false,
     shortcut?: string,
+    toggle = false,
   ): React.JSX.Element => (
     <ToolButton
       label={props.t(key)}
@@ -212,6 +215,7 @@ export default function Toolbar(props: ToolbarProps) {
       onClick={onClick}
       disabled={disabled}
       accent={accent}
+      toggle={toggle}
     />
   );
 
@@ -355,6 +359,8 @@ export default function Toolbar(props: ToolbarProps) {
           props.onToggleBestMove,
           false,
           props.showBestMove,
+          undefined,
+          true,
         )}
       {props.kind === 'go' && (
         <div className="relative">

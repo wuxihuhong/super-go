@@ -192,6 +192,89 @@ describe('MatchService 围棋', () => {
     expect(calls).toContain('stop');
   });
 
+  it('落子立刻清空过期 hintPoints，再等新分析', async () => {
+    let showBestMove = true;
+    const adapter = fakeGoAdapter();
+    let emit: ((evaluation: EngineEvaluation) => void) | undefined;
+    adapter.onEvaluation = (cb) => {
+      emit = cb;
+      return () => {
+        emit = undefined;
+      };
+    };
+    const { match, latest } = makeMatch(adapter, { showBestMove: () => showBestMove });
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    await match.refreshStrength();
+    emit?.({
+      winRate: 0.55,
+      lead: 2.0,
+      depth: 400,
+      pv: ['Q16'],
+      candidates: [
+        { move: 'Q16', visits: 400, lead: 2.0 },
+        { move: 'D4', visits: 120, lead: 1.1 },
+      ],
+    });
+    expect(latest().hintPoints?.length).toBeGreaterThan(0);
+    expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
+    expect(latest().hintPoints).toBeUndefined();
+    match.dispose();
+  });
+
+  it('hint 评估同分同深度不重复推 liveEval', async () => {
+    const live: Array<{ winRate?: number; lead?: number; depth?: number }> = [];
+    const adapter = fakeGoAdapter();
+    let emit: ((evaluation: EngineEvaluation) => void) | undefined;
+    adapter.onEvaluation = (cb) => {
+      emit = cb;
+      return () => {
+        emit = undefined;
+      };
+    };
+    const events: MatchEvents = {
+      snapshot: () => undefined,
+      engineStatus: () => undefined,
+      liveEval: (e) => {
+        if (e === null) return;
+        live.push({ winRate: e.winRate, lead: e.lead, depth: e.depth });
+      },
+    };
+    const match = new MatchService(
+      events,
+      () => null,
+      () => normalizeXiangqiStrength({}),
+      () => ({ min: 0, max: 0 }),
+      {
+        createGoAdapter: () => adapter,
+        sleep: async () => undefined,
+        go: {
+          launch: () => ({
+            binaryPath: '/dev/null',
+            modelPath: '/dev/null',
+            configPath: '/dev/null',
+          }),
+          strength: () => normalizeGoStrength({ mode: 'visits', visits: 25 }),
+          playDelayMs: () => ({ min: 0, max: 0 }),
+          analysis: () => ({ maxVisits: 50, fastVisits: 8, maxTimeSec: 1, wideRootNoise: 0.04 }),
+          ponder: () => false,
+          showBestMove: () => true,
+          setup: () => ({ boardSize: 19, komi: 7.5, rules: 'chinese' }),
+        },
+      },
+    );
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19 } })).ok).toBe(true);
+    await match.refreshStrength();
+    const frame = { winRate: 0.51, lead: 0.4, depth: 80, pv: ['Q16'] };
+    emit?.(frame);
+    emit?.(frame);
+    emit?.(frame);
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({ winRate: 0.51, lead: 0.4, depth: 80 });
+    match.dispose();
+  });
+
   it('对局中 refreshStrength 把闲时思考下发给适配器', async () => {
     let ponder = false;
     const calls: boolean[] = [];

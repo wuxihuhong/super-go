@@ -132,6 +132,9 @@ export class MatchService {
   /** 围棋候选选点（hint 分析或 genmove 帧） */
   private goHintPoints: GoHintPoint[] = [];
   private hinting = false;
+  private lastHintSnapshotAt = 0;
+  private hintSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingHintPoints: GoHintPoint[] | null = null;
   private strengthTail: Promise<void> = Promise.resolve();
   /** 引擎着法落子拦截（连线注入点：§6.1 出招 → 本地先落子 → 再点平台） */
   private engineMoveInterceptor: ((move: XiangqiMove) => Promise<boolean>) | null = null;
@@ -181,7 +184,7 @@ export class MatchService {
     }
     this.generation++;
     this.stopHintAnalysis();
-    this.goHintPoints = [];
+    this.clearGoHintPoints();
     this.adapter?.stopSearch();
     this.setThinking(false);
     this.paused = false;
@@ -326,7 +329,7 @@ export class MatchService {
     this.liveState.start({ engineSide, strength: profile });
     this.lastEngineSide = engineSide;
     this.lastStrength = profile;
-    this.goHintPoints = [];
+    this.clearGoHintPoints();
     this.pushSnapshot();
     if (this.engineToMoveNow()) void this.engineTurn();
     else this.refreshHintAnalysis();
@@ -354,6 +357,7 @@ export class MatchService {
       }
       const node = this.goTree.play(move);
       this.finishIfOver();
+      this.clearGoHintPoints();
       this.pushSnapshot();
       if (!this.paused && this.liveState.phase === 'playing' && this.engineToMoveNow()) {
         void this.engineTurn();
@@ -419,7 +423,7 @@ export class MatchService {
     }
     this.generation++;
     this.stopHintAnalysis();
-    this.goHintPoints = [];
+    this.clearGoHintPoints();
     this.adapter?.stopSearch();
     this.setThinking(false);
     const engineSide = (this.liveState.engineSide ?? 'first') as Player;
@@ -563,6 +567,7 @@ export class MatchService {
   dispose(): void {
     this.generation++;
     this.stopHintAnalysis();
+    this.clearGoHintPoints();
     this.adapter?.quit();
     this.adapter = null;
     this.launchedPath = null;
@@ -676,7 +681,7 @@ export class MatchService {
       const result = this.goGame.isGameOver(pos, [pos]);
       if (result === null) return false;
       this.stopHintAnalysis();
-      this.goHintPoints = [];
+      this.clearGoHintPoints();
       this.liveState.end(result);
       void this.resetStrength();
       void this.refineGoFinalScore();
@@ -851,11 +856,63 @@ export class MatchService {
     this.adapter?.stopAnalysis?.();
   }
 
+  private clearGoHintPoints(): void {
+    if (this.hintSnapshotTimer !== null) {
+      clearTimeout(this.hintSnapshotTimer);
+      this.hintSnapshotTimer = null;
+    }
+    this.pendingHintPoints = null;
+    this.goHintPoints = [];
+  }
+
+  private publishHintPoints(next: GoHintPoint[]): void {
+    if (hintsSignature(next) === hintsSignature(this.goHintPoints) && this.pendingHintPoints === null) {
+      return;
+    }
+    const elapsed = Date.now() - this.lastHintSnapshotAt;
+    if (elapsed >= 100) {
+      this.goHintPoints = next;
+      this.lastHintSnapshotAt = Date.now();
+      this.pushSnapshot();
+      return;
+    }
+    this.pendingHintPoints = next;
+    if (this.hintSnapshotTimer !== null) return;
+    this.hintSnapshotTimer = setTimeout(() => {
+      this.hintSnapshotTimer = null;
+      if (this.pendingHintPoints === null) return;
+      this.goHintPoints = this.pendingHintPoints;
+      this.pendingHintPoints = null;
+      this.lastHintSnapshotAt = Date.now();
+      this.pushSnapshot();
+    }, 100 - elapsed);
+  }
+
+  private emitGoLiveEval(evaluation: EngineEvaluation): void {
+    const { winRate, lead } = toBlackPerspective(
+      this.turnNow(),
+      evaluation.winRate,
+      evaluation.lead,
+    );
+    const prev = this.lastForwardedLive;
+    const next: LiveEval = {
+      winRate: winRate ?? prev?.winRate,
+      lead: lead ?? prev?.lead,
+      depth: evaluation.depth ?? prev?.depth,
+    };
+    const sameDepth = next.depth !== undefined && next.depth === this.lastLiveDepth;
+    const sameScore = next.winRate === prev?.winRate && next.lead === prev?.lead;
+    if (sameDepth && sameScore) return;
+    if (next.depth !== undefined) this.lastLiveDepth = next.depth;
+    this.lastForwardedLive = next;
+    this.events.liveEval(next);
+  }
+
   private refreshHintAnalysis(): void {
     this.stopHintAnalysis();
     if (!this.showBestMoveOn()) {
-      if (this.goHintPoints.length > 0) {
-        this.goHintPoints = [];
+      if (this.goHintPoints.length > 0 || this.pendingHintPoints !== null) {
+        this.clearGoHintPoints();
         this.pushSnapshot();
       }
       return;
@@ -884,51 +941,24 @@ export class MatchService {
         this.goPositionNow().size,
         this.goAnalysis().fastVisits,
       );
-      if (hintsSignature(next) !== hintsSignature(this.goHintPoints)) {
-        this.goHintPoints = next;
-        this.pushSnapshot();
-      }
+      this.publishHintPoints(next);
     }
     if (this.thinking) {
       this.forwardLiveEval(evaluation);
       return;
     }
     if (this.hinting && this.kind === 'go') {
-      const { winRate, lead } = toBlackPerspective(
-        this.turnNow(),
-        evaluation.winRate,
-        evaluation.lead,
-      );
-      this.events.liveEval({
-        winRate,
-        lead,
-        depth: evaluation.depth,
-      });
+      this.emitGoLiveEval(evaluation);
     }
   }
 
   private forwardLiveEval(evaluation: EngineEvaluation): void {
     if (!this.thinking || this.liveState.engineSide === null) return;
-    const prev = this.lastForwardedLive;
     if (this.kind === 'go') {
-      const { winRate, lead } = toBlackPerspective(
-        this.turnNow(),
-        evaluation.winRate,
-        evaluation.lead,
-      );
-      const next: LiveEval = {
-        winRate: winRate ?? prev?.winRate,
-        lead: lead ?? prev?.lead,
-        depth: evaluation.depth ?? prev?.depth,
-      };
-      const sameDepth = next.depth !== undefined && next.depth === this.lastLiveDepth;
-      const sameScore = next.winRate === prev?.winRate && next.lead === prev?.lead;
-      if (sameDepth && sameScore) return;
-      if (next.depth !== undefined) this.lastLiveDepth = next.depth;
-      this.lastForwardedLive = next;
-      this.events.liveEval(next);
+      this.emitGoLiveEval(evaluation);
       return;
     }
+    const prev = this.lastForwardedLive;
     const { redCp, redMate } = toRedPerspective(this.turnNow(), evaluation.cp, evaluation.mate);
     const next: LiveEval = {
       redCp: redCp ?? prev?.redCp,
@@ -1205,6 +1235,7 @@ export class MatchService {
     const node = this.goTree.play(engineMove);
     node.evalRecord = this.toGoEvalRecord(evaluation, pos.turn);
     this.finishIfOver();
+    this.clearGoHintPoints();
     this.pushSnapshot();
     this.setThinking(false);
     this.pushSnapshot();

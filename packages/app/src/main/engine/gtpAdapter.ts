@@ -75,6 +75,8 @@ export class GtpAdapter implements EngineAdapter {
   } | null = null;
   private nextColor: 'B' | 'W' = 'B';
   private analyzing = false;
+  /** 已发出 kata-analyze、引擎还在流式吐 info */
+  private streamOpen = false;
   private rpcTail: Promise<void> = Promise.resolve();
   /** 对局强度：分析后需还原，避免 fastVisits 粘滞 */
   private lastStrength: GtpStrengthSpec | null = null;
@@ -223,15 +225,22 @@ export class GtpAdapter implements EngineAdapter {
         wideRootNoise: opts.wideRootNoise,
       });
       if (!this.analyzing) return;
+      this.streamOpen = true;
       this.send(gtpCommands.kataAnalyze(this.nextColor));
     });
   }
 
   stopAnalysis(): void {
-    if (!this.analyzing) return;
+    if (!this.analyzing && !this.streamOpen) return;
     this.analyzing = false;
-    this.send(gtpCommands.stop());
+    if (this.streamOpen) {
+      this.send(gtpCommands.stop());
+      this.streamOpen = false;
+    }
     void this.enqueue(async () => {
+      // 等一拍：pending 为空时丢掉 kata-analyze 收尾空行 + stop 的 = / 空行
+      // 再挂 restoreStrength，避免把残余响应错配到 kata-set-param
+      await this.rpcWaitOptional();
       await this.restoreStrength();
     });
   }
@@ -264,10 +273,12 @@ export class GtpAdapter implements EngineAdapter {
           }
           this.send(gtpCommands.stop());
           this.analyzing = false;
+          this.streamOpen = false;
           await this.rpcWaitOptional();
         }
       } finally {
         this.analyzing = false;
+        this.streamOpen = false;
         if (this.status === 'thinking') this.status = 'ready';
         await this.restoreStrength();
       }

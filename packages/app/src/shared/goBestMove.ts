@@ -53,14 +53,15 @@ export function hintPointsFromCandidates(
   const champ =
     top.find((p) => p.visits >= faintBelowVisits && p.lead !== undefined) ??
     top.find((p) => p.lead !== undefined);
+  const bestLead = champ?.lead;
   const points: GoHintPoint[] = top.map((p) => {
-    const loss =
-      champ?.lead !== undefined && p.lead !== undefined ? Math.max(0, champ.lead - p.lead) : 0;
+    const scored = bestLead !== undefined && p.lead !== undefined;
+    const loss = scored ? Math.max(0, bestLead - p.lead) : 0;
     return {
       point: p.point,
       loss,
       visits: p.visits,
-      faint: p.visits < faintBelowVisits,
+      faint: p.visits < faintBelowVisits || !scored,
       best: false,
     };
   });
