@@ -1,6 +1,6 @@
 {
   "name": "@super-go/app",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "license": "GPL-3.0-or-later",
   "description": "Electron 壳：main(adapters) / preload / renderer(UI)",
@@ -12,10 +12,10 @@
     "preview": "electron-vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:win": "electron-vite build && electron-builder --win",
-    "build-app": "electron-vite build && electron-builder --mac --win",
-    "build:dir": "electron-vite build && electron-builder --dir"
+    "build:mac": "electron-vite build && node scripts/electron-builder.mjs --mac",
+    "build:win": "electron-vite build && node scripts/electron-builder.mjs --win",
+    "build-app": "electron-vite build && node scripts/electron-builder.mjs --mac --win",
+    "build:dir": "electron-vite build && node scripts/electron-builder.mjs --dir"
   },
   "devDependencies": {
     "@super-go/core": "workspace:*",

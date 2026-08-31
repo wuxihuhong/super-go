@@ -64,6 +64,14 @@ export const IconGame = base(
   </>,
 );
 
+export const IconInfo = base(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v6" />
+    <circle cx="12" cy="8" r="0.9" fill="currentColor" stroke="none" />
+  </>,
+);
+
 export const IconGear = base(
   <>
     <circle cx="12" cy="12" r="3" />

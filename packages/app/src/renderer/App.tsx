@@ -23,6 +23,7 @@ import type {
 } from '@shared/ipc';
 import { BOARD3D_SCALE, clampBoard3dScale, isLinkerActivePhase } from '@shared/ipc';
 import type { GameSnapshot } from '@shared/game';
+import AboutPanel from './components/AboutPanel';
 import Board from './components/Board';
 import Board3D from './components/Board3D';
 import GoBoard from './components/GoBoard';
@@ -32,6 +33,7 @@ import StatusBar from './components/StatusBar';
 import Toolbar, { type Popover } from './components/Toolbar';
 import { createT, detectLanguage } from './i18n';
 import { nextBoardFlip } from './lib/boardOrientation';
+import { isToolbarShortcutMod } from './lib/shortcuts';
 import { useElementSize } from './lib/useElementSize';
 import { playSound, setSoundEnabled } from './lib/sound';
 
@@ -50,6 +52,7 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [themeTick, setThemeTick] = useState(0);
   const [popover, setPopover] = useState<Popover>('none');
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [board3d, setBoard3d] = useState(true);
   const [glFailed, setGlFailed] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
@@ -100,12 +103,17 @@ export default function App() {
     const offLinkerLog = window.superGo.onLinkerLog((entry) => {
       setLinkerLogs((cur) => [...cur.slice(-60), entry]);
     });
+    const offAbout = window.superGo.onShowAbout(() => {
+      setPopover('none');
+      setAboutOpen(true);
+    });
     return () => {
       offSnapshot();
       offStatus();
       offEval();
       offLinkerStatus();
       offLinkerLog();
+      offAbout();
     };
   }, []);
 
@@ -279,6 +287,11 @@ export default function App() {
     setPopover((cur) => (cur === which ? 'none' : which));
   }, []);
 
+  const openAbout = useCallback((): void => {
+    setPopover('none');
+    setAboutOpen(true);
+  }, []);
+
   // ---- 快捷键：与工具栏按钮一一对应（输入框内不拦截）----
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -294,66 +307,71 @@ export default function App() {
         (playing || snapshot?.phase === 'ended') && (snapshot?.moves.length ?? 0) > 0 && !linkerActive;
       const canResign = playing && engineSide !== 'both' && !linkerActive;
       const zoomOk = board3d && !glFailed;
-      const key = e.key.toLowerCase();
-      const mod = e.metaKey || e.ctrlKey;
+      const code = e.code;
 
-      if (e.key === ' ' && !mod) {
+      if (e.key === 'Escape' && aboutOpen) {
+        e.preventDefault();
+        setAboutOpen(false);
+        return;
+      }
+      if (e.key === ' ' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         if (playing) runIntent(() => window.superGo.togglePause());
         return;
       }
-      if (!mod) return;
+      // mac 一律 ⌘⇧（避开系统 ⌘N/⌘Z/⌘,）；Win/Linux 为 Ctrl（认输另加 Shift）
+      if (!isToolbarShortcutMod(e)) return;
 
-      if (key === 'n') {
+      if (code === 'KeyN') {
         e.preventDefault();
         togglePopover('setup');
-      } else if (key === 'z') {
+      } else if (code === 'KeyZ') {
         e.preventDefault();
         if (canUndo) runIntent(() => window.superGo.undoMove());
-      } else if (e.key === ',') {
+      } else if (code === 'Comma') {
         e.preventDefault();
         togglePopover('settings');
-      } else if (key === 'b') {
+      } else if (code === 'KeyB') {
         e.preventDefault();
         setPanelOpen((v) => {
           const next = !v;
           userClosedPanel.current = !next;
           return next;
         });
-      } else if (key === 'r' && e.shiftKey) {
+      } else if (code === 'KeyR' && e.shiftKey) {
         e.preventDefault();
         if (canResign) runIntent(() => window.superGo.resign());
-      } else if (key === 'p') {
+      } else if (code === 'KeyP') {
         e.preventDefault();
         if (kind === 'go' && playing) runIntent(() => window.superGo.playMove({ point: null }));
-      } else if (key === 'm') {
+      } else if (code === 'KeyM') {
         e.preventDefault();
         if (kind === 'go') persistShowBestMove(!showBestMove);
-      } else if (key === 'e') {
+      } else if (code === 'KeyE') {
         e.preventDefault();
         if (kind === 'go') togglePopover('score');
-      } else if (key === 'g') {
+      } else if (code === 'KeyG') {
         e.preventDefault();
         if (playing) togglePopover('game');
-      } else if (e.key === '1') {
+      } else if (code === 'Digit1') {
         e.preventDefault();
         if (playing) handleToggleEngineSide('first');
-      } else if (e.key === '2') {
+      } else if (code === 'Digit2') {
         e.preventDefault();
         if (playing) handleToggleEngineSide('second');
-      } else if (key === 'l') {
+      } else if (code === 'KeyL') {
         e.preventDefault();
         togglePopover('linker');
-      } else if (key === 't') {
+      } else if (code === 'KeyT') {
         e.preventDefault();
         handleToggleAlwaysOnTop();
-      } else if (key === '=' || key === '+') {
+      } else if (code === 'Equal') {
         e.preventDefault();
         if (zoomOk) handleBoard3dScale(board3dScale + BOARD3D_SCALE.step);
-      } else if (key === '-' || key === '_') {
+      } else if (code === 'Minus') {
         e.preventDefault();
         if (zoomOk) handleBoard3dScale(board3dScale - BOARD3D_SCALE.step);
-      } else if (e.key === '0') {
+      } else if (code === 'Digit0') {
         e.preventDefault();
         if (zoomOk) handleBoard3dScale(1);
       }
@@ -375,6 +393,7 @@ export default function App() {
     handleToggleEngineSide,
     handleToggleAlwaysOnTop,
     togglePopover,
+    aboutOpen,
   ]);
 
   // 棋盘方位（执方与视角解耦，2026-08-26 定稿）——hooks 区实现：
@@ -427,12 +446,6 @@ export default function App() {
       (phase === undefined || !isLinkerActivePhase(phase));
     if (leftLinker && showBestMove) persistShowBestMove(false);
   }, [linkerStatus?.phase, showBestMove, persistShowBestMove]);
-
-  // 引擎离场（执方双关 / 转观战）→ 关掉最佳选点。等快照到位再判，避免首帧抢关。
-  useEffect(() => {
-    if (snapshot === null || engineSide !== null || !showBestMove) return;
-    persistShowBestMove(false);
-  }, [snapshot, engineSide, showBestMove, persistShowBestMove]);
 
   // 新对局后清掉已停止连线的残留横幅（error 留给用户点关闭）
   useEffect(() => {
@@ -513,6 +526,7 @@ export default function App() {
         onLinkerStop={() => window.superGo.linkerStop()}
         onLinkerPauseToggle={() => window.superGo.linkerPauseToggle()}
         onLinkerResolve={(r) => window.superGo.linkerResolve(r)}
+        onOpenAbout={openAbout}
       />
 
       {/* 通知浮层（不挤压布局） */}
@@ -615,6 +629,17 @@ export default function App() {
         liveEval={liveEval}
         boardFlipped={flip}
       />
+
+      {aboutOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/60"
+          onClick={() => setAboutOpen(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <AboutPanel t={t} onClose={() => setAboutOpen(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

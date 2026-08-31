@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, searchForWorkspaceRoot } from 'vite';
+import { resolveAppVersion } from './src/shared/appVersion';
 
 /**
  * 浏览器开发模式（pnpm dev:web）：只起 renderer 的 vite 服务，不拉起 Electron。
@@ -10,6 +11,7 @@ import { defineConfig, searchForWorkspaceRoot } from 'vite';
  */
 export default defineConfig({
   root: 'src/renderer',
+  define: { __APP_VERSION__: JSON.stringify(resolveAppVersion()) },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

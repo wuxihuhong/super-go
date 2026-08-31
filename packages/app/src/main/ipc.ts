@@ -1,5 +1,6 @@
 import { normalizeGoStrength, normalizeXiangqiStrength, type GameKind } from '@super-go/core';
-import { app, dialog, ipcMain, nativeTheme, type BrowserWindow } from 'electron';
+import { dialog, ipcMain, nativeTheme, shell, type BrowserWindow } from 'electron';
+import { isAllowedExternalUrl } from '../shared/about';
 import {
   IPC_CHANNELS,
   type AppSettings,
@@ -22,10 +23,11 @@ export function registerIpc(
   getMainWindow: () => BrowserWindow | null,
   match: MatchService,
   linker: LinkerController,
+  onLanguageChanged?: () => void,
 ): void {
   ipcMain.handle(IPC_CHANNELS.appInfo, () => ({
     versions: {
-      app: app.getVersion(),
+      app: __APP_VERSION__,
       electron: process.versions.electron ?? '',
       node: process.versions.node ?? '',
       chrome: process.versions.chrome ?? '',
@@ -33,6 +35,11 @@ export function registerIpc(
     platform: process.platform,
     cpuThreads: cpuThreadCount(),
   }));
+
+  ipcMain.handle(IPC_CHANNELS.appOpenExternal, async (_event, url: unknown) => {
+    if (typeof url !== 'string' || !isAllowedExternalUrl(url)) return;
+    await shell.openExternal(url);
+  });
 
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => settings.get());
 
@@ -69,6 +76,7 @@ export function registerIpc(
     if (patch.activeKind !== undefined && patch.activeKind !== match.activeKind) {
       void match.setKind(patch.activeKind);
     }
+    if (patch.language !== undefined) onLanguageChanged?.();
     return next;
   });
 

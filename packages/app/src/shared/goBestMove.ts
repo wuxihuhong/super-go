@@ -56,7 +56,7 @@ export function hintPointsFromCandidates(
   const bestLead = champ?.lead;
   const points: GoHintPoint[] = top.map((p) => {
     const scored = bestLead !== undefined && p.lead !== undefined;
-    const loss = scored ? Math.max(0, bestLead - p.lead) : 0;
+    const loss = scored ? Math.max(0, bestLead! - p.lead!) : 0;
     return {
       point: p.point,
       loss,

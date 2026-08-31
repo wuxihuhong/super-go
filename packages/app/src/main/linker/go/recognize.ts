@@ -7,7 +7,7 @@ import type { LocateHint } from '../../../shared/linker';
 import type { BoardBox, BoardGrid } from '../boardGeometry';
 import type { RawImage } from '../types';
 import { classifyGoIntersections, nudgeGoGridOffChrome } from './goClassify';
-import { detectGoGrid, goGridBox, goGridInImage, type GoGrid } from './goGrid';
+import { detectGoGrid, goGridBox, goGridStillValid, type GoGrid } from './goGrid';
 
 export interface RecognizedGoFrame {
   cells: readonly GoCell[];
@@ -25,8 +25,8 @@ export type RecognizeGoFail = { ok: false; kind: Exclude<LocateHint, 'captureFai
 export type RecognizeGoResult = RecognizeGoOk | RecognizeGoFail;
 
 export function recognizeGoFrame(img: RawImage, prev: GoGrid | null = null): RecognizeGoResult {
-  // 网格只标定一次：密盘每帧重找网会被底栏/成片子带偏。窗口缩放后 prev 出画再重标。
-  if (prev !== null && goGridInImage(img, prev)) {
+  // 网格只标定一次：密盘每帧重找网会被底栏/成片子带偏。窗口缩放或盘面移位后重标。
+  if (prev !== null && goGridStillValid(img, prev)) {
     return {
       ok: true,
       frame: {

@@ -29,6 +29,7 @@ export interface SettingsPanelProps {
   kind: GameKind;
   /** 语言切换需 App 同步本地 lang 状态（即时生效，§7.5） */
   onSettingsChanged: (next: AppSettings) => void;
+  onOpenAbout: () => void;
 }
 
 /**
@@ -218,6 +219,15 @@ export default function SettingsPanel(props: SettingsPanelProps) {
               (settings?.view?.board3d ?? true) ? 'true' : 'false',
               (value) => patch({ view: { board3d: value === 'true' } }),
             )}
+          </Row>
+          <Row label={props.t('settings.about')}>
+            <button
+              type="button"
+              onClick={props.onOpenAbout}
+              className="rounded-lg px-2 py-1 text-xs text-accent transition-colors hover:bg-accent/10"
+            >
+              {props.t('app.name')}
+            </button>
           </Row>
         </Section>
       )}

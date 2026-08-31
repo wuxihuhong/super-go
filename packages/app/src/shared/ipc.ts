@@ -67,6 +67,8 @@ export function clampBoard3dScale(scale: number): number {
 
 export const IPC_CHANNELS = {
   appInfo: 'app:info',
+  appOpenExternal: 'app:openExternal',
+  appShowAbout: 'app:showAbout',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   settingsPickEnginePath: 'settings:pickEnginePath',
@@ -202,6 +204,10 @@ export interface EngineStatusPayload {
 /** preload 暴露给 renderer 的 API 形状（window.superGo） */
 export interface SuperGoApi {
   getAppInfo(): Promise<AppInfo>;
+  /** 用系统浏览器 / 邮件客户端打开 https 或 mailto（关于窗口） */
+  openExternal(url: string): Promise<void>;
+  /** mac 应用菜单「关于」推送到 renderer；返回取消订阅 */
+  onShowAbout(cb: () => void): () => void;
   getSettings(): Promise<AppSettings>;
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   /** 主题有效值变化（含跟随系统时的系统切换）推送；返回取消订阅函数 */

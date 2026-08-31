@@ -290,8 +290,8 @@ function findWoodishRoi(img: RawImage): BoardRoi | null {
     for (let x = 0; x < width; x++) {
       const o = (y * width + x) * 4;
       if (!isWarmBoardPixel(data[o]!, data[o + 1]!, data[o + 2]!)) continue;
-      col[x] += 1;
-      row[y] += 1;
+      col[x] = col[x]! + 1;
+      row[y] = row[y]! + 1;
       wood += 1;
     }
   }

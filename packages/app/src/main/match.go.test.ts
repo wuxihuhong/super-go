@@ -280,7 +280,7 @@ describe('MatchService 围棋', () => {
   });
 
   it('落子立刻清空过期 hintPoints，再等新分析', async () => {
-    let showBestMove = true;
+    const showBestMove = true;
     const adapter = fakeGoAdapter();
     let emit: ((evaluation: EngineEvaluation) => void) | undefined;
     adapter.onEvaluation = (cb) => {
@@ -516,7 +516,7 @@ describe('MatchService 围棋', () => {
     match.dispose();
   });
 
-  it('算目：本地数子 + 引擎 final_score', async () => {
+  it('算目：只回引擎 final_score / 快分析', async () => {
     const { match } = makeMatch(fakeGoAdapter({ finalScore: 'B+3.5' }));
     expect((await match.setKind('go')).ok).toBe(true);
     expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19, komi: 7.5 } })).ok).toBe(
@@ -525,8 +525,7 @@ describe('MatchService 围棋', () => {
     const r = await match.estimateScore();
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.score.local.method).toBe('area');
-    expect(r.score.local.komi).toBe(7.5);
+    expect(r.score).not.toHaveProperty('local');
     expect(r.score.engine?.margin).toBe(3.5);
     expect(r.score.engine?.raw).toBe('B+3.5');
     expect(r.score.engine?.winRate).toBeCloseTo(0.51);
@@ -557,6 +556,27 @@ describe('MatchService 围棋', () => {
     expect(during.ok).toBe(true);
     if (during.ok) expect(during.score.engine?.raw).toBe('W+64.5');
     release({ move: 'D4', evaluation: { winRate: 0.4, lead: -2, depth: 6 } });
+    match.dispose();
+  });
+
+  it('走子不清算目缓存，再次失败时回上次', async () => {
+    const adapter = fakeGoAdapter({ finalScore: 'B+3.5' });
+    let fail = false;
+    adapter.finalScore = async () => {
+      if (fail) throw new Error('unavailable');
+      return 'B+3.5';
+    };
+    const { match } = makeMatch(adapter);
+    expect((await match.setKind('go')).ok).toBe(true);
+    expect((await match.newGame({ engineSide: null, goSetup: { boardSize: 19, komi: 7.5 } })).ok).toBe(
+      true,
+    );
+    const first = await match.estimateScore();
+    expect(first.ok && first.score.engine?.raw).toBe('B+3.5');
+    expect(match.playMove({ point: { x: 3, y: 3 } }).ok).toBe(true);
+    fail = true;
+    const again = await match.estimateScore();
+    expect(again.ok && again.score.engine?.raw).toBe('B+3.5');
     match.dispose();
   });
 });

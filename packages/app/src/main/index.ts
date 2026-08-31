@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, nativeTheme } from 'electron';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeGoStrength, normalizeXiangqiStrength } from '@super-go/core';
+import { aboutMenuLabel } from '../shared/about';
 import { GO_ANALYSIS_DEFAULT, IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
 import { moveDelayMs } from '../shared/moveDelay';
 import { cpuThreadCount } from './cpuThreads';
@@ -30,10 +31,18 @@ app.setName('Super Go');
 
 /**
  * 应用菜单：菜单栏第一项 = app 名（开发模式默认菜单显示 "Electron"，打包版不受影响）。
- * 子菜单用 role 构建（文案随系统语言自动本地化，无硬编码）。
+ * 编辑/窗口用 role（系统语言本地化）；「关于」走应用内卡片，不用系统 About。
  */
-function installAppMenu(): void {
+function installAppMenu(lang: string | undefined): void {
   const isMac = process.platform === 'darwin';
+  const aboutItem = {
+    label: aboutMenuLabel(lang),
+    click: (): void => {
+      if (mainWindow !== null && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC_CHANNELS.appShowAbout);
+      }
+    },
+  };
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       ...(isMac
@@ -41,7 +50,7 @@ function installAppMenu(): void {
             {
               label: app.getName(),
               submenu: [
-                { role: 'about' as const },
+                aboutItem,
                 { type: 'separator' as const },
                 { role: 'hide' as const },
                 { role: 'hideOthers' as const },
@@ -53,6 +62,7 @@ function installAppMenu(): void {
         : []),
       { role: 'editMenu' as const },
       { role: 'windowMenu' as const },
+      ...(isMac ? [] : [{ role: 'help' as const, submenu: [aboutItem] }]),
     ]),
   );
 }
@@ -167,8 +177,9 @@ function resolveGoLaunch(settingsGo: {
 }
 
 void app.whenReady().then(() => {
-  installAppMenu();
   const settings = new SettingsStore();
+  const rebuildMenu = (): void => installAppMenu(settings.get().language ?? app.getLocale());
+  rebuildMenu();
   const diagLog = process.env['SUPER_GO_LINKER_DIAG'] !== undefined;
   // =1 只开 stdout 日志；自动连线要显式标题（≠"1"）或 SUPER_GO_LINKER_DIAG_AUTO
   const diagFilter = process.env['SUPER_GO_LINKER_DIAG'];
@@ -241,7 +252,7 @@ void app.whenReady().then(() => {
       }),
   );
 
-  registerIpc(settings, () => mainWindow, match, linker);
+  registerIpc(settings, () => mainWindow, match, linker, rebuildMenu);
 
   const runLinkerDiag = async (): Promise<void> => {
     const windows = await linker.listWindows();

@@ -17,6 +17,7 @@ import {
   isSubstantialChild,
   makeLParam,
   scalePhysicalToPosted,
+  type DpiAwarenessKind,
 } from './winClickMath';
 
 const WM_MOUSEMOVE = 0x0200;
@@ -63,7 +64,7 @@ let hitCache: { root: number; hwnd: number } | null = null;
 function api(): Api {
   if (apiCache !== null) return apiCache;
   const user32 = koffi.load('user32.dll');
-  let getDpiForMonitor: WinFn | null = null;
+  let getDpiForMonitor: WinFn | null;
   try {
     const shcore = koffi.load('shcore.dll');
     getDpiForMonitor = shcore.func(
@@ -196,7 +197,7 @@ function physicalScreenToPostedClient(
   const phys = screenToClient(hwnd, screenX, screenY);
   if (phys === null) return null;
 
-  let awareness = awarenessFromWin32(0);
+  let awareness: DpiAwarenessKind;
   try {
     const ctx = a.GetWindowDpiAwarenessContext(hwnd);
     awareness = awarenessFromWin32(a.GetAwarenessFromDpiAwarenessContext(ctx));

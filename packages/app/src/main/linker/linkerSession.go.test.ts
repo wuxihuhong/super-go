@@ -43,9 +43,9 @@ async function waitFor(cond: () => boolean, timeoutMs = 8000): Promise<void> {
   }
 }
 
-function makeFakeGoMatch(engineReplies: GoMove[] = []) {
+function makeFakeGoMatch(engineReplies: GoMove[] = [], start?: GoPosition) {
   const game = new GoGame();
-  let position = game.initialPosition({ boardSize: 19 });
+  let position = start ?? game.initialPosition({ boardSize: 19 });
   const moves: GoMove[] = [];
   const newGames: NewGameIntent[] = [];
   let engineSide: EngineSide = null;
@@ -134,7 +134,7 @@ function makeHarness(
   const clicks: Array<[number, number]> = [];
   const clickCaptureSeq: number[] = [];
   let captureSeq = 0;
-  const fake = makeFakeGoMatch(engineReplies);
+  const fake = makeFakeGoMatch(engineReplies, initial);
 
   const native: LinkerNative = {
     listWindows: async () => [WINDOW],
@@ -187,7 +187,7 @@ describe('LinkerSession 围棋连线', () => {
     h.session.start();
     await waitFor(() => h.newGames.length >= 1);
     expect(h.newGames[0]!.engineSide).toBe(null);
-    expect(h.newGames[0]!.goSetup?.boardSize).toBe(19);
+    expect(h.newGames[0]!.goSetup).toEqual({ boardSize: 19, komi: 7.5, rules: 'chinese' });
 
     const next = emptyCells(19);
     placeStone(next, 19, 3, 3, 'first');
@@ -195,6 +195,15 @@ describe('LinkerSession 围棋连线', () => {
     await waitFor(() => h.moves.length >= 1);
     expect(h.moves[0]).toEqual({ kind: 'go', point: { x: 3, y: 3 } });
     expect(h.clicks).toEqual([]);
+    h.session.stop('user');
+  });
+
+  it('开局带上当前对局贴目/规则', async () => {
+    const empty = recognizedToGoPosition(emptyCells(19), 19, 'first', { komi: 6.5, rules: 'japanese' });
+    const h = makeHarness(empty);
+    h.session.start();
+    await waitFor(() => h.newGames.length >= 1);
+    expect(h.newGames[0]!.goSetup).toEqual({ boardSize: 19, komi: 6.5, rules: 'japanese' });
     h.session.stop('user');
   });
 

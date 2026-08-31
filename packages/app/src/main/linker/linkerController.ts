@@ -98,8 +98,6 @@ export class LinkerController {
     if (win === null) return { ok: false, error: '目标窗口不存在' };
 
     const kind = intent.kind ?? 'xiangqi';
-    await this.match.setKind(kind);
-
     const settings = this.getSettings();
     if (kind === 'xiangqi') {
       const modelPath = this.modelLocator();
@@ -114,6 +112,8 @@ export class LinkerController {
         }
       }
     }
+
+    await this.match.setKind(kind);
 
     this.session = new LinkerSession({
       native: this.native,

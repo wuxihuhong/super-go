@@ -27,6 +27,8 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
 
 const api: SuperGoApi = {
   getAppInfo: () => ipcRenderer.invoke(IPC_CHANNELS.appInfo),
+  openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.appOpenExternal, url),
+  onShowAbout: (cb: () => void) => subscribe<void>(IPC_CHANNELS.appShowAbout, cb),
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
   setSettings: (patch: Partial<AppSettings>) => ipcRenderer.invoke(IPC_CHANNELS.settingsSet, patch),
   onThemeChanged: (cb: (dark: boolean) => void) =>

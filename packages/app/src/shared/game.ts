@@ -1,7 +1,7 @@
 /**
  * 对弈共享类型：快照 + 意图（main 生产、renderer 消费；禁止 Node/Electron 类型）。
  */
-import type { EngineSide, GameKind, GameResult, GameSetup, GoScore, Player, Point } from '@super-go/core';
+import type { EngineSide, GameKind, GameResult, GameSetup, Player, Point } from '@super-go/core';
 
 export interface MainlineItem {
   nodeId: number;
@@ -110,10 +110,8 @@ export interface GoEngineScore {
 }
 
 export interface GoScoreEstimate {
-  local: GoScore;
+  /** 本次引擎算目；未算出则回最近一次（思考中不打断 genmove） */
   engine?: GoEngineScore;
-  /** 空点已收完或双虚着：本地目差才展示。中盘只报子数 */
-  localClosed: boolean;
 }
 
 export type EstimateScoreResult =

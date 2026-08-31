@@ -25,8 +25,6 @@ import {
   MoveTree,
   moveToIccs,
   parseGtpMove,
-  isLocalScoreClosed,
-  scoreGo,
   xiangqiThreadCap,
   XiangqiGame,
   type EngineSide,
@@ -38,7 +36,6 @@ import {
   type GoStrengthConfig,
   type MoveNode,
   type Player,
-  type Point,
   type StrengthProfile,
   type XiangqiMove,
   type XiangqiPosition,
@@ -548,18 +545,14 @@ export class MatchService {
   }
 
   /**
-   * 围棋算目：引擎空闲时问 `final_score` 与快分析。
-   * 思考中不打断 genmove，回最近一次引擎结果（算目缓存，否则上一手分析形势）。
+   * 围棋算目：只问引擎 `final_score` / 快分析。思考中不打断 genmove，回上次引擎结果。
    */
   async estimateScore(): Promise<EstimateScoreResult> {
     if (this.kind !== 'go') return { ok: false, error: '仅围棋可算目' };
-    const pos = this.goPositionNow();
-    const local = scoreGo(pos);
-    const localClosed = isLocalScoreClosed(local, pos.consecutivePasses);
     const adapter = this.adapter;
     const finalScore = adapter?.finalScore;
     if (this.thinking || adapter === null || adapter.getStatus() !== 'ready' || finalScore === undefined) {
-      return { ok: true, score: { local, localClosed, engine: this.recentGoEngineScore() } };
+      return { ok: true, score: { engine: this.recentGoEngineScore() } };
     }
 
     this.stopHintAnalysis();
@@ -591,7 +584,7 @@ export class MatchService {
         if (evaln !== undefined) {
           const { winRate, lead } = toBlackPerspective(pos.turn, evaln.winRate, evaln.lead);
           engine = {
-            margin: engine?.margin ?? lead ?? local.margin,
+            margin: engine?.margin ?? lead ?? 0,
             raw: engine?.raw ?? '',
             winRate,
             lead,
@@ -601,9 +594,9 @@ export class MatchService {
       }
 
       this.rememberGoEngineScore(engine);
-      return { ok: true, score: { local, localClosed, engine: engine ?? this.recentGoEngineScore() } };
+      return { ok: true, score: { engine: engine ?? this.recentGoEngineScore() } };
     } catch {
-      return { ok: true, score: { local, localClosed, engine: this.recentGoEngineScore() } };
+      return { ok: true, score: { engine: this.recentGoEngineScore() } };
     } finally {
       this.refreshHintAnalysis();
     }
@@ -615,7 +608,7 @@ export class MatchService {
     this.lastGoEngineScore = engine;
   }
 
-  /** 算目缓存，没有则退回盘上最近一手的分析形势 */
+  /** 上次引擎算目；没有则退回盘上最近一手的分析形势（有 lead 才报目差） */
   private recentGoEngineScore(): GoEngineScore | undefined {
     if (this.lastGoEngineScore !== null) return this.lastGoEngineScore;
     const snap = this.buildGoSnapshot();

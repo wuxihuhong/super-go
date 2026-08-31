@@ -43,7 +43,6 @@ import { flipPoint, gridPoint, type BoardGrid } from './boardGeometry';
 import { boardsEqual, diffBoards, inferTurnFromBoard, toPosition } from './diff';
 import {
   diffGoBoards,
-  explainStepFromGo,
   inferGoTurn,
   isInitialGoBoard,
   recognizedToGoPosition,
@@ -355,6 +354,7 @@ export class LinkerSession {
 
   /** 以平台当前识别局面重开一局（丢弃本地着法树，用户显式决断才走这条） */
   private async resyncFromPlatform(): Promise<void> {
+    this.invalidateCalibration();
     if (this.kind === 'go') {
       const frame = this.lastGo;
       if (frame === null) {
@@ -364,7 +364,7 @@ export class LinkerSession {
       const turn: Player = isInitialGoBoard(frame.cells, frame.size)
         ? 'first'
         : this.opts.match.currentGoPosition().turn;
-      const pos = recognizedToGoPosition(frame.cells, frame.size, turn);
+      const pos = recognizedToGoPosition(frame.cells, frame.size, turn, this.goRules());
       const result = await this.opts.match.newGame({
         engineSide: null,
         initialFen: serializeGo(pos),
@@ -567,7 +567,8 @@ export class LinkerSession {
     this.turnUncertain = false;
     const inferred = inferGoTurn(base.cells, base.size);
     if (inferred !== null) {
-      if (!(await this.startGoGame(recognizedToGoPosition(base.cells, base.size, inferred)))) return;
+      if (!(await this.startGoGame(recognizedToGoPosition(base.cells, base.size, inferred, this.goRules()))))
+        return;
       this.log(
         'info',
         isInitialGoBoard(base.cells, base.size)
@@ -580,7 +581,7 @@ export class LinkerSession {
     this.turnUncertain = engineSide === null;
     if (
       !(await this.startGoGame(
-        recognizedToGoPosition(base.cells, base.size, turn),
+        recognizedToGoPosition(base.cells, base.size, turn, this.goRules()),
         engineSide ?? undefined,
       ))
     ) {
@@ -592,6 +593,12 @@ export class LinkerSession {
         ? `mid-game turn taken from engine side (${turn})`
         : 'mid-game turn unknown; default black (set engine side to correct)',
     );
+  }
+
+  /** 连线开局用用户设置的贴目/规则（setKind 后 currentGoPosition 已带设置） */
+  private goRules(): Pick<GoPosition, 'komi' | 'rules'> {
+    const pos = this.opts.match.currentGoPosition();
+    return { komi: pos.komi, rules: pos.rules };
   }
 
   /** 中局看不出轮值：引擎已执一方则该方走，否则红/黑先。 */
@@ -701,6 +708,7 @@ export class LinkerSession {
             unknownCount = 0;
             if (isInitialGoBoard(frame.cells, frame.size)) {
               this.log('info', 'platform shows a fresh go board; restarting game');
+              this.invalidateCalibration();
               return;
             }
             if (
@@ -712,8 +720,10 @@ export class LinkerSession {
                 'warn',
                 `armed position never matched the platform; re-arming (${this.emptyReArms}/${MAX_EMPTY_REARMS})`,
               );
+              this.invalidateCalibration();
               return;
             }
+            this.invalidateCalibration();
             this.enterAttention(
               'boardMismatch',
               '本地局面与平台对不上（平台可能悔棋或识别有误）',
@@ -795,23 +805,9 @@ export class LinkerSession {
       return;
     }
     this.turnUncertain = false;
-    if (await this.startGoGame(recognizedToGoPosition(local.cells, local.size, side))) {
+    if (await this.startGoGame(recognizedToGoPosition(local.cells, local.size, side, this.goRules()))) {
       this.log('info', `turn adopted from engine side (${side})`);
     }
-  }
-
-  /** recognized 是否为 base + 一步；返回该步与走子方（颜色判据天然唯一） */
-  private explainStepFrom(
-    recognized: RecognizedBoard,
-    base: RecognizedBoard,
-  ): { move: XiangqiMove; mover: Player } | null {
-    for (const turn of ['first', 'second'] as const) {
-      const diff = diffBoards(recognized, toPosition(base, turn));
-      if (diff.type === 'opponent-move') {
-        return { move: diff.move, mover: turn };
-      }
-    }
-    return null;
   }
 
   private async innerLoop(gen: number, firstFrame: RecognizedFrame): Promise<void> {
@@ -913,6 +909,7 @@ export class LinkerSession {
             unknownCount = 0;
             if (isInitialBoard(frame.board)) {
               this.log('info', 'platform shows a fresh board; restarting game');
+              this.invalidateCalibration();
               return; // 回外层重新定位 + 重开一局
             }
             // 本地一步没走就对不上 = 开局基准识别错了。没有历史可丢，自己重开，
@@ -926,9 +923,11 @@ export class LinkerSession {
                 'warn',
                 `armed position never matched the platform; re-arming (${this.emptyReArms}/${MAX_EMPTY_REARMS})`,
               );
+              this.invalidateCalibration();
               return; // 回外层重新定位 + 重开一局
             }
             // 已有着法（或反复重开仍对不上）：丢掉整棵着法树是用户的决定，不是我们的
+            this.invalidateCalibration();
             this.enterAttention(
               'boardMismatch',
               '本地局面与平台对不上（平台可能悔棋或识别有误）',

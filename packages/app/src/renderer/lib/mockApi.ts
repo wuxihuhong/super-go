@@ -22,8 +22,6 @@ import {
   pieceAt,
   pieceTypeOf,
   pieceSide,
-  isLocalScoreClosed,
-  scoreGo,
   XiangqiGame,
   type EngineSide,
   type GameKind,
@@ -31,7 +29,6 @@ import {
   type GoMove,
   type GoPosition,
   type Player,
-  type Point,
   type XiangqiMove,
   type XiangqiPosition,
 } from '@super-go/core';
@@ -44,10 +41,12 @@ import {
   type SuperGoApi,
   type ThemeSetting,
 } from '@shared/ipc';
+import { isAllowedExternalUrl } from '@shared/about';
 import { LINKER_SETTINGS_DEFAULT, type ActiveWindowPick } from '@shared/linker';
 import { MOVE_DELAY_DEFAULT, pickMoveDelayMs } from '@shared/moveDelay';
 import type {
   GameSnapshot,
+  GoEngineScore,
   GoHintPoint,
   IntentResult,
   LiveEval,
@@ -95,6 +94,8 @@ function createMockApi(): SuperGoApi {
   let paused = false;
   /** 终局悔棋复活用：end 清空 state 前留底执方 */
   let lastEngineSide: EngineSide = null;
+  /** 上次模拟引擎算目；新对局 / 切棋种清空 */
+  let lastGoEngineScore: GoEngineScore | null = null;
   let generation = 0;
 
   const snapshotListeners = new Set<(snap: GameSnapshot) => void>();
@@ -313,11 +314,14 @@ function createMockApi(): SuperGoApi {
       const choice = moves[Math.floor(Math.random() * Math.max(1, moves.length))] ?? { kind: 'go' as const, point: null };
       const node = goTree.play(choice);
       const wr = 0.45 + Math.random() * 0.1;
+      const winRate = pos.turn === 'first' ? wr : 1 - wr;
+      const lead = (wr - 0.5) * 8;
       node.evalRecord = {
-        score: { kind: 'winRate', winRate: pos.turn === 'first' ? wr : 1 - wr, lead: (wr - 0.5) * 8 },
+        score: { kind: 'winRate', winRate, lead },
         depth: 80,
         source: 'Mock KataGo',
       };
+      lastGoEngineScore = { margin: lead, raw: '', winRate, lead, visits: 80 };
       thinking = false;
       const over = goGame.isGameOver(goTree.positionOf(goTree.cursor), []);
       if (over && goState.phase === 'playing') goState.end(over);
@@ -417,10 +421,17 @@ function createMockApi(): SuperGoApi {
   const api: SuperGoApi = {
     getAppInfo: () =>
       Promise.resolve({
-        versions: { app: '0.0.1-mock', electron: '-', node: '-', chrome: chromeVersion() },
+        versions: { app: __APP_VERSION__, electron: '-', node: '-', chrome: chromeVersion() },
         platform: navigator.platform,
         cpuThreads: Math.max(1, navigator.hardwareConcurrency || 1),
       }),
+    openExternal: (url) => {
+      if (isAllowedExternalUrl(url)) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      return Promise.resolve();
+    },
+    onShowAbout: () => () => {},
     getSettings: () => Promise.resolve({ ...settings }),
     setSettings: (patch) => {
       const prevBest = settings.go.showBestMove === true;
@@ -468,6 +479,7 @@ function createMockApi(): SuperGoApi {
 
     newGame: (intent: NewGameIntent) => {
       generation++;
+      lastGoEngineScore = null;
       clearThinking();
       paused = false;
       if (kind === 'go') {
@@ -609,15 +621,27 @@ function createMockApi(): SuperGoApi {
     pickGoConfigPath: () => Promise.resolve(null),
     estimateScore: () => {
       if (kind !== 'go') return Promise.resolve({ ok: false, error: '仅围棋可算目' });
-      const pos = goTree.positionOf(goTree.cursor);
-      const local = scoreGo(pos);
-      return Promise.resolve({
-        ok: true,
-        score: { local, localClosed: isLocalScoreClosed(local, pos.consecutivePasses) },
-      });
+      if (lastGoEngineScore !== null) {
+        return Promise.resolve({ ok: true, score: { engine: lastGoEngineScore } });
+      }
+      const snap = buildGoSnapshot();
+      const wr = snap.winRate ?? 0.47 + Math.random() * 0.06;
+      const lead = snap.lead ?? (wr - 0.5) * 8;
+      const abs = Math.abs(lead);
+      const raw = lead === 0 ? '0' : lead > 0 ? `B+${abs.toFixed(1)}` : `W+${abs.toFixed(1)}`;
+      const engine: GoEngineScore = {
+        margin: lead,
+        raw,
+        winRate: wr,
+        lead,
+        visits: snap.depth ?? 64,
+      };
+      lastGoEngineScore = engine;
+      return Promise.resolve({ ok: true, score: { engine } });
     },
     setKind: (next) => {
       generation++;
+      lastGoEngineScore = null;
       clearThinking();
       kind = next;
       settings = { ...settings, activeKind: next };

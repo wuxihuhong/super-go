@@ -12,6 +12,7 @@ import type {
 import { BOARD3D_SCALE, isLinkerActivePhase } from '@shared/ipc';
 import type { EstimateScoreResult, GameSnapshot, GoScoreEstimate } from '@shared/game';
 import type { MessageKey, TFunction } from '../i18n';
+import { formatToolbarShortcut, IS_MAC } from '../lib/shortcuts';
 import GamePanel from './GamePanel';
 import LinkerPanel from './LinkerPanel';
 import SettingsPanel from './SettingsPanel';
@@ -21,6 +22,7 @@ import {
   IconFlag,
   IconGame,
   IconGear,
+  IconInfo,
   IconLink,
   IconPanel,
   IconPause,
@@ -86,17 +88,12 @@ export interface ToolbarProps {
   onLinkerStop: () => void;
   onLinkerPauseToggle: () => void;
   onLinkerResolve: (resolution: LinkerResolution) => void;
+  onOpenAbout: () => void;
 }
 
 /** hiddenInset 标题栏下，header 整体可拖拽窗口；交互元素逐一豁免 */
 const DRAG = { WebkitAppRegion: 'drag' } as React.CSSProperties;
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
-
-/** mac 融合标题栏要给红绿灯留位；Windows/Linux 走系统窗框，不能空出这块 */
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
-
-/** 快捷键修饰键：mac ⌘ / 其他 Ctrl+ */
-const MOD = IS_MAC ? '⌘' : 'Ctrl+';
 
 /** key → 说明文案键（同 key 加 .hint 后缀） */
 function hintKeyOf(key: MessageKey): MessageKey {
@@ -116,11 +113,7 @@ function ToolButton(props: {  label: string;
   toggle?: boolean;
 }): React.JSX.Element {
   const shortcutText =
-    props.shortcut === undefined
-      ? undefined
-      : props.shortcut === ' '
-        ? 'Space'
-        : `${MOD}${props.shortcut}`;
+    props.shortcut === undefined ? undefined : formatToolbarShortcut(props.shortcut);
   return (
     <span className="group relative">
       <button
@@ -166,7 +159,8 @@ function EngineSideButton(props: {
   disabled?: boolean;
   onClick: () => void;
 }): React.JSX.Element {
-  const shortcutText = props.shortcut === undefined ? undefined : `${MOD}${props.shortcut}`;
+  const shortcutText =
+    props.shortcut === undefined ? undefined : formatToolbarShortcut(props.shortcut);
   return (
     <span className="group relative">
       <button
@@ -360,6 +354,7 @@ export default function Toolbar(props: ToolbarProps) {
           ' ',
         )}
       {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.canResign, false, 'Shift+R')}
+      {iconButton('toolbar.about', <IconInfo />, props.onOpenAbout)}
       {props.kind === 'go' &&
         iconButton(
           'toolbar.pass',
@@ -399,9 +394,14 @@ export default function Toolbar(props: ToolbarProps) {
 
       {/* 居中标题仅 mac：hiddenInset 没有系统标题，Win/Linux 窗框已有应用名 */}
       {IS_MAC && (
-        <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-sm font-semibold select-none">
+        <button
+          type="button"
+          style={NO_DRAG}
+          onClick={props.onOpenAbout}
+          className="absolute left-1/2 -translate-x-1/2 text-sm font-semibold text-foreground transition-colors hover:text-accent"
+        >
           {props.title}
-        </span>
+        </button>
       )}
 
       {/* 右侧：引擎状态 + 对局临时配置 + 连线 + 侧栏 + 设置 */}
@@ -518,6 +518,7 @@ export default function Toolbar(props: ToolbarProps) {
               t={props.t}
               kind={props.kind}
               onSettingsChanged={props.onSettingsChanged}
+              onOpenAbout={props.onOpenAbout}
             />,
             'right',
           )}
@@ -603,10 +604,8 @@ function ScoreBreakdown(props: { t: TFunction; score: GoScoreEstimate }): React.
   if (engine === undefined) {
     return <p className="px-1 text-xs text-muted-foreground">{props.t('toolbar.score.noEngine')}</p>;
   }
-  const marginText =
-    engine.raw !== ''
-      ? formatGtpScoreRaw(engine.raw, labels)
-      : formatScoreSideMargin(engine.margin, labels.black, labels.white);
+  // 目差只信 GTP final_score；仅有胜率、没有 lead 时不编造「目差 0」
+  const marginText = engine.raw !== '' ? formatGtpScoreRaw(engine.raw, labels) : '';
   return (
     <div className="space-y-1">
       {marginText !== '' && (
@@ -670,7 +669,7 @@ function ZoomBar(props: {
         className="ml-1 shrink-0 whitespace-nowrap rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
       >
         {props.t('toolbar.boardZoom.reset')}
-        <kbd className="ml-1 font-sans text-[10px] opacity-70">{MOD}0</kbd>
+        <kbd className="ml-1 font-sans text-[10px] opacity-70">{formatToolbarShortcut('0')}</kbd>
       </button>
     </div>
   );
