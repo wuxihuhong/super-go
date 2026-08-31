@@ -10,9 +10,24 @@ files:
   - out/**
   - package.json
   - '!**/*.map'
+  # 安装包不发布 Linux；这两份原生库只在别的平台用
+  - '!**/onnxruntime-node/bin/**/linux/**'
+  - '!**/node_modules/@nut-tree/libnut-linux/**'
 asarUnpack:
   - '**/*.node'
 compression: maximum
+# Chromium 语言包只留界面实际支持的（中/英/日）；不切会多带 ~45MB .pak
+electronLanguages:
+  - en
+  - en-US
+  - en_US
+  - zh
+  - zh-CN
+  - zh_CN
+  - zh-TW
+  - zh_TW
+  - ja
+afterPack: ./scripts/slim-unpacked.mjs
 # 连线识别模型随包分发（10MB，双平台共用；GPLv3 来源已决策接受，见 AGENTS.md）
 # LICENSE / NOTICE 一并放入 Resources，满足 GPLv3 随附许可证与第三方声明
 extraResources:
@@ -56,6 +71,7 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  artifactName: ${productName}-${version}-setup.${ext}
+  # 分发文件名用 Super-Go；productName 仍是 Super Go（菜单栏 / 快捷方式）
+  artifactName: Super-Go-${version}-setup.${ext}
 dmg:
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: Super-Go-${version}-${arch}.${ext}

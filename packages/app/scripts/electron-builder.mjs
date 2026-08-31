@@ -3,12 +3,25 @@
  *（或环境变量 APP_VERSION），不再自己算日期。
  * 覆盖：APP_VERSION=1.0.0-20260101 node scripts/electron-builder.mjs --mac
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appDir = dirname(dirname(fileURLToPath(import.meta.url)));
+const repoRoot = join(appDir, '../..');
+const guardedPackageJson = [join(repoRoot, 'package.json'), join(appDir, 'package.json')].map(
+  (path) => ({ path, text: readFileSync(path, 'utf8') }),
+);
+
+function restorePackageJsonIfRewritten() {
+  for (const file of guardedPackageJson) {
+    const now = existsSync(file.path) ? readFileSync(file.path, 'utf8') : '';
+    if (now === file.text) continue;
+    writeFileSync(file.path, file.text);
+    console.warn(`[build] 已还原被 electron-builder 改写的 ${file.path}`);
+  }
+}
 
 function resolvePackagedVersion() {
   const override = process.env['APP_VERSION'];
@@ -36,4 +49,5 @@ const result = spawnSync('pnpm', ['exec', 'electron-builder', ...args], {
   shell: process.platform === 'win32',
   env: { ...process.env, APP_VERSION: version },
 });
+restorePackageJsonIfRewritten();
 process.exit(result.status ?? 1);
