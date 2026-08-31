@@ -26,7 +26,7 @@ export const BOARD_CONF_THRESHOLD = 0.5;
  * 建立在少一枚子的局面上，而且因为前后帧自洽，**不会报任何错**。
  * 漏子比多子更危险：多出来的子会被同格取高分、尺寸/框内过滤、盘面静态校验、
  * 着法合法性四道防线拦住，漏子却能安静地产出一个"看起来合法"的错局面。
- * 实测（screen-initial / tchess-init / tchess-overlay 三张真图）：一路降到 0.15
+ * 实测（tchess-overlay）：一路降到 0.15
  * 都没有多出或认错任何一格。取 0.25 留足余量。
  */
 export const PIECE_CONF_THRESHOLD = 0.25;
