@@ -26,7 +26,16 @@ import { SettingsStore } from './settings';
 
 let mainWindow: BrowserWindow | null = null;
 
-// 应用名（mac 菜单栏/dock、Windows 进程名）；安装包显示名由 electron-builder 的 productName 决定
+/** 开发态读 build/icon.png；安装包走 extraResources。 */
+function resolveAppIconPng(): string | undefined {
+  const candidates = [
+    join(__dirname, '../../build/icon.png'),
+    join(process.resourcesPath, 'icon.png'),
+  ];
+  return candidates.find((path) => existsSync(path));
+}
+
+// 应用名（mac 菜单栏/dock、Windows 进程名）；安装包与产物文件名由 productName Super-Go 决定
 app.setName('Super Go');
 
 /**
@@ -68,6 +77,7 @@ function installAppMenu(lang: string | undefined): void {
 }
 
 function createWindow(alwaysOnTop: boolean): BrowserWindow {
+  const icon = resolveAppIconPng();
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -76,6 +86,7 @@ function createWindow(alwaysOnTop: boolean): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     alwaysOnTop, // 置顶属视图偏好（settings.view），随设置持久化
+    ...(icon !== undefined ? { icon } : {}),
     // mac 融合原生观感（参考 Chess.app）：藏标题栏、红绿灯内嵌进工具栏；
     // Windows/Linux 保留系统窗框
     ...(process.platform === 'darwin'
@@ -177,6 +188,10 @@ function resolveGoLaunch(settingsGo: {
 }
 
 void app.whenReady().then(() => {
+  const dockIcon = resolveAppIconPng();
+  if (process.platform === 'darwin' && dockIcon !== undefined) {
+    app.dock?.setIcon(dockIcon);
+  }
   const settings = new SettingsStore();
   const rebuildMenu = (): void => installAppMenu(settings.get().language ?? app.getLocale());
   rebuildMenu();

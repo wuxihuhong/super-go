@@ -7,7 +7,13 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { HOST_OVERLAY_FILE, hostBuildNotes, hostConfigOverlay } from './host-build-overrides.mjs';
+import {
+  HOST_OVERLAY_FILE,
+  applyLinuxMacDirArgs,
+  hostBuildNotes,
+  hostCliOverrides,
+  hostConfigOverlay,
+} from './host-build-overrides.mjs';
 
 const appDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const repoRoot = join(appDir, '../..');
@@ -41,15 +47,23 @@ function resolvePackagedVersion() {
 }
 
 const version = resolvePackagedVersion();
-const args = [...process.argv.slice(2), `-c.extraMetadata.version=${version}`];
+const rawArgs = process.argv.slice(2);
+const hostArgs = process.platform === 'linux' ? applyLinuxMacDirArgs(rawArgs) : rawArgs;
+const args = [...hostArgs, `-c.extraMetadata.version=${version}`];
 const overlay = hostConfigOverlay(process.platform);
 const env = { ...process.env, APP_VERSION: version };
 if (overlay !== null) {
   const overlayPath = join(appDir, HOST_OVERLAY_FILE);
   writeFileSync(overlayPath, `${JSON.stringify(overlay, null, 2)}\n`);
-  args.push('--config', overlayPath);
+  args.push('--config', overlayPath, ...hostCliOverrides(process.platform));
   env.CSC_IDENTITY_AUTO_DISCOVERY = process.env['CSC_IDENTITY_AUTO_DISCOVERY'] ?? 'false';
   for (const note of hostBuildNotes(process.platform)) console.log(`[build] ${note}`);
+}
+
+for (const name of ['icon.png', 'icon.icns', 'icon.ico']) {
+  if (existsSync(join(appDir, 'build', name))) continue;
+  console.error(`[build] 缺少 build/${name}：先跑 pnpm --filter @super-go/app icons`);
+  process.exit(1);
 }
 
 console.log(`[build] version ${version}`);

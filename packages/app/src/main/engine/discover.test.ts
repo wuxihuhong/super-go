@@ -65,7 +65,7 @@ describe('打包产物集成（dist 存在才跑，缺产物自动跳过）', ()
       process.cwd(),
       'dist',
       'mac-arm64',
-      'Super Go.app',
+      'Super-Go.app',
       'Contents',
       'Resources',
       'engines',

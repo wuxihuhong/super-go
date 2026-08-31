@@ -13,6 +13,7 @@ import { BOARD3D_SCALE, isLinkerActivePhase } from '@shared/ipc';
 import type { EstimateScoreResult, GameSnapshot, GoScoreEstimate } from '@shared/game';
 import type { MessageKey, TFunction } from '../i18n';
 import { formatToolbarShortcut, IS_MAC } from '../lib/shortcuts';
+import { AppMark } from './AppMark';
 import GamePanel from './GamePanel';
 import LinkerPanel from './LinkerPanel';
 import SettingsPanel from './SettingsPanel';
@@ -398,8 +399,9 @@ export default function Toolbar(props: ToolbarProps) {
           type="button"
           style={NO_DRAG}
           onClick={props.onOpenAbout}
-          className="absolute left-1/2 -translate-x-1/2 text-sm font-semibold text-foreground transition-colors hover:text-accent"
+          className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1.5 text-sm font-semibold text-foreground transition-colors hover:text-accent"
         >
+          <AppMark className="h-5 w-5" />
           {props.title}
         </button>
       )}

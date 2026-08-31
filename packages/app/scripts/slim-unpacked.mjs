@@ -62,7 +62,7 @@ export function planLibnutRemovals(packageNames, platform) {
 export function resolveUnpackedRoot(context) {
   const { appOutDir, electronPlatformName, packager } = context;
   if (electronPlatformName === 'darwin') {
-    const name = packager?.appInfo?.productFilename ?? 'Super Go';
+    const name = packager?.appInfo?.productFilename ?? 'Super-Go';
     const p = join(appOutDir, `${name}.app`, 'Contents', 'Resources', 'app.asar.unpacked');
     return existsSync(p) ? p : null;
   }

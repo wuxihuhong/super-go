@@ -30,6 +30,7 @@ pnpm-debug.log*
 # electron
 packages/app/release/
 packages/app/.electron-builder.host.json
+packages/app/build/icon.iconset/
 
 
 engines/

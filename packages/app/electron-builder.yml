@@ -1,8 +1,9 @@
 # 打包配置（electron-builder）：pnpm build-app 在本机产出 mac dmg + Windows 安装包
 # 安装包 version 由 scripts/electron-builder.mjs 打成 1.0.0-yyyyMMdd（勿在此写死日期）
-# Linux 上由 scripts/electron-builder.mjs 覆盖：mac → dir（.app），win 跳过 wine/signtool
+# Linux 上由 scripts/electron-builder.mjs 覆盖：mac → dir（.app），win 跳过 signtool、NSIS 用 Wine 11 包
 appId: com.super-go.app
-productName: Super Go
+# 产物文件名一律 Super-Go（.app / dmg / setup.exe），不要 Super Go
+productName: Super-Go
 directories:
   output: dist
   buildResources: build
@@ -40,8 +41,11 @@ extraResources:
     to: NOTICE.md
   - from: ../../licenses
     to: licenses
+  - from: build/icon.png
+    to: icon.png
 # 无签名证书：跳过公证流程（产物仍可右键打开/安装）
 mac:
+  icon: build/icon.icns
   category: public.app-category.games
   target:
     - target: dmg
@@ -56,6 +60,7 @@ mac:
       filter:
         - '*/MacOS/**'
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]
@@ -72,7 +77,10 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  # 分发文件名用 Super-Go；productName 仍是 Super Go（菜单栏 / 快捷方式）
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   artifactName: Super-Go-${version}-setup.${ext}
 dmg:
+  icon: build/icon.icns
   artifactName: Super-Go-${version}-${arch}.${ext}

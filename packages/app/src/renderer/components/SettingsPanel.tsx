@@ -18,6 +18,7 @@ import { LINKER_SETTINGS_DEFAULT, supportsBackgroundClick, type LinkerSettings }
 import { MOVE_DELAY_MAX_SEC, normalizeMoveDelay } from '@shared/moveDelay';
 import { guessCpuThreads, resolveCpuThreads } from '../lib/cpuThreads';
 import { commitNumberInput } from '../lib/numberInput';
+import { AppMark } from './AppMark';
 import StrengthFields from './StrengthFields';
 import type { TFunction } from '../i18n';
 
@@ -224,8 +225,9 @@ export default function SettingsPanel(props: SettingsPanelProps) {
             <button
               type="button"
               onClick={props.onOpenAbout}
-              className="rounded-lg px-2 py-1 text-xs text-accent transition-colors hover:bg-accent/10"
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-accent transition-colors hover:bg-accent/10"
             >
+              <AppMark className="h-4 w-4" />
               {props.t('app.name')}
             </button>
           </Row>

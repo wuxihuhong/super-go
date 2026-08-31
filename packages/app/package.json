@@ -15,7 +15,8 @@
     "build:mac": "electron-vite build && node scripts/electron-builder.mjs --mac",
     "build:win": "electron-vite build && node scripts/electron-builder.mjs --win",
     "build-app": "electron-vite build && node scripts/electron-builder.mjs --mac --win",
-    "build:dir": "electron-vite build && node scripts/electron-builder.mjs --dir"
+    "build:dir": "electron-vite build && node scripts/electron-builder.mjs --dir",
+    "icons": "node scripts/generate-icons.mjs"
   },
   "devDependencies": {
     "@super-go/core": "workspace:*",
