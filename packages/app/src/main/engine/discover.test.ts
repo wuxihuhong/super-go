@@ -25,11 +25,15 @@ describe('findPikafishBinary 平台候选', () => {
     expect(findPikafishBinary(root, 'win32')).toMatch(/pikafish-avx512icl\.exe$/);
   });
 
-  it('darwin：取 MacOS/apple-silicon（NNUE 同目录）', () => {
+  it('darwin：arm64 优先 apple-silicon，x64 优先 intel', () => {
     put(join('MacOS', 'pikafish-apple-silicon'));
+    put(join('MacOS', 'pikafish-intel'));
     put(join('MacOS', 'pikafish.nnue'));
-    expect(findPikafishBinary(root, 'darwin')).toMatch(
+    expect(findPikafishBinary(root, 'darwin', 'arm64')).toMatch(
       new RegExp(`pikafish-test.*MacOS.*pikafish-apple-silicon`),
+    );
+    expect(findPikafishBinary(root, 'darwin', 'x64')).toMatch(
+      new RegExp(`pikafish-test.*MacOS.*pikafish-intel`),
     );
   });
 
@@ -72,7 +76,22 @@ describe('打包产物集成（dist 存在才跑，缺产物自动跳过）', ()
       'chess',
     );
     if (!existsSync(dir)) return;
-    expect(findPikafishBinary(dir, 'darwin')).toMatch(/pikafish-apple-silicon$/);
+    expect(findPikafishBinary(dir, 'darwin', 'arm64')).toMatch(/pikafish-apple-silicon$/);
+  });
+
+  it('mac x64 unpacked：resourcesPath/engines/chess 能命中 intel', () => {
+    const dir = join(
+      process.cwd(),
+      'dist',
+      existsSync(join(process.cwd(), 'dist', 'mac-x64', 'Super-Go.app')) ? 'mac-x64' : 'mac',
+      'Super-Go.app',
+      'Contents',
+      'Resources',
+      'engines',
+      'chess',
+    );
+    if (!existsSync(dir)) return;
+    expect(findPikafishBinary(dir, 'darwin', 'x64')).toMatch(/pikafish-intel$/);
   });
 
   it('win unpacked：resourcesPath/engines/chess 能命中 avx512icl', () => {

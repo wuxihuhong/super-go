@@ -1,0 +1,5 @@
+#!/bin/sh
+# electron-builder WineVm 会 exec 这个路径；真正抽卸载器走旁边的 Node 脚本。
+set -e
+DIR=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+exec node "$DIR/extract-uninstaller.cjs" "$@"

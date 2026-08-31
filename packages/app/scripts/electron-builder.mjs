@@ -13,6 +13,7 @@ import {
   hostBuildNotes,
   hostCliOverrides,
   hostConfigOverlay,
+  linuxWineStubDir,
 } from './host-build-overrides.mjs';
 
 const appDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -57,6 +58,8 @@ if (overlay !== null) {
   writeFileSync(overlayPath, `${JSON.stringify(overlay, null, 2)}\n`);
   args.push('--config', overlayPath, ...hostCliOverrides(process.platform));
   env.CSC_IDENTITY_AUTO_DISCOVERY = process.env['CSC_IDENTITY_AUTO_DISCOVERY'] ?? 'false';
+  env.ELECTRON_BUILDER_WINE_TOOLSET_DIR =
+    process.env['ELECTRON_BUILDER_WINE_TOOLSET_DIR'] ?? linuxWineStubDir(appDir);
   for (const note of hostBuildNotes(process.platform)) console.log(`[build] ${note}`);
 }
 

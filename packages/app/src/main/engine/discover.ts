@@ -8,7 +8,6 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const CANDIDATES: Record<string, string[]> = {
-  darwin: ['MacOS/pikafish-apple-silicon', 'MacOS/pikafish-intel'],
   linux: ['Linux/pikafish-avx2', 'Linux/pikafish-bmi2', 'Linux/pikafish-sse41-popcnt'],
   // avx512icl 优先（AVX-512 路径，Zen5 如 9950X3D / IceLake+ 命中最优），
   // 逐级回退兼容老 CPU；都不在则用户可在设置里指定路径（§5.6 逃生口）
@@ -23,9 +22,22 @@ const CANDIDATES: Record<string, string[]> = {
   ],
 };
 
+function pikafishCandidates(platform: string, arch: string): string[] | undefined {
+  if (platform === 'darwin') {
+    return arch === 'arm64'
+      ? ['MacOS/pikafish-apple-silicon', 'MacOS/pikafish-intel']
+      : ['MacOS/pikafish-intel', 'MacOS/pikafish-apple-silicon'];
+  }
+  return CANDIDATES[platform];
+}
+
 /** 在 enginesDir（= <repo>/engines/chess）下找本平台 Pikafish */
-export function findPikafishBinary(enginesDir: string, platform: string): string | null {
-  const patterns = CANDIDATES[platform];
+export function findPikafishBinary(
+  enginesDir: string,
+  platform: string,
+  arch: string = process.arch,
+): string | null {
+  const patterns = pikafishCandidates(platform, arch);
   if (patterns === undefined || !existsSync(enginesDir)) return null;
   for (const entry of readdirSync(enginesDir)) {
     for (const pattern of patterns) {

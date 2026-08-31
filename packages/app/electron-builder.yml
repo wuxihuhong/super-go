@@ -1,6 +1,6 @@
 # 打包配置（electron-builder）：pnpm build-app 在本机产出 mac dmg + Windows 安装包
 # 安装包 version 由 scripts/electron-builder.mjs 打成 1.0.0-yyyyMMdd（勿在此写死日期）
-# Linux 上由 scripts/electron-builder.mjs 覆盖：mac → dir（.app），win 跳过 signtool、NSIS 用 Wine 11 包
+# Linux 上由 scripts/electron-builder.mjs 覆盖：mac → dir（.app），win 跳过 signtool，NSIS 卸载器用 wine-stub
 appId: com.super-go.app
 # 产物文件名一律 Super-Go（.app / dmg / setup.exe），不要 Super Go
 productName: Super-Go
@@ -49,11 +49,11 @@ mac:
   category: public.app-category.games
   target:
     - target: dmg
-      arch: [arm64]
+      arch: [arm64, x64]
   identity: null
   extendInfo:
     LSMinimumSystemVersion: '12.0'
-  # 引擎随包分发：只带本平台二进制 + NNUE（51MB）
+  # 引擎随包分发：MacOS 含 apple-silicon 与 intel + NNUE；运行时按 arch 选
   extraResources:
     - from: ../../engines/chess
       to: engines/chess

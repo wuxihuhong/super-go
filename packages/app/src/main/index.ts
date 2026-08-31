@@ -158,7 +158,7 @@ function resolveEnginePath(userPath: string | undefined): string | null {
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
   })) {
-    const found = findPikafishBinary(root, process.platform);
+    const found = findPikafishBinary(root, process.platform, process.arch);
     if (found !== null) return found;
   }
   return null;
