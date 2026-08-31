@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { HOST_OVERLAY_FILE, hostBuildNotes, hostConfigOverlay } from './host-build-overrides.mjs';
 
 const appDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const repoRoot = join(appDir, '../..');
@@ -41,13 +42,22 @@ function resolvePackagedVersion() {
 
 const version = resolvePackagedVersion();
 const args = [...process.argv.slice(2), `-c.extraMetadata.version=${version}`];
+const overlay = hostConfigOverlay(process.platform);
+const env = { ...process.env, APP_VERSION: version };
+if (overlay !== null) {
+  const overlayPath = join(appDir, HOST_OVERLAY_FILE);
+  writeFileSync(overlayPath, `${JSON.stringify(overlay, null, 2)}\n`);
+  args.push('--config', overlayPath);
+  env.CSC_IDENTITY_AUTO_DISCOVERY = process.env['CSC_IDENTITY_AUTO_DISCOVERY'] ?? 'false';
+  for (const note of hostBuildNotes(process.platform)) console.log(`[build] ${note}`);
+}
 
 console.log(`[build] version ${version}`);
 const result = spawnSync('pnpm', ['exec', 'electron-builder', ...args], {
   cwd: appDir,
   stdio: 'inherit',
   shell: process.platform === 'win32',
-  env: { ...process.env, APP_VERSION: version },
+  env,
 });
 restorePackageJsonIfRewritten();
 process.exit(result.status ?? 1);

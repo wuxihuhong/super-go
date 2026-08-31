@@ -302,3 +302,4 @@ engines/chess/  象棋引擎发行包（gitignore，dev 时按平台自动探测
 - [KataGo](https://github.com/lightvector/KataGo) 及其官方网络为 MIT（或同等宽松许可）
 - Electron、React、three.js、ONNX Runtime 等为 MIT / Apache-2.0，与 GPL 组合分发相容
 
+@Cursor

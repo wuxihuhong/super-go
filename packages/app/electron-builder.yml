@@ -1,5 +1,6 @@
 # 打包配置（electron-builder）：pnpm build-app 在本机产出 mac dmg + Windows 安装包
 # 安装包 version 由 scripts/electron-builder.mjs 打成 1.0.0-yyyyMMdd（勿在此写死日期）
+# Linux 上由 scripts/electron-builder.mjs 覆盖：mac → dir（.app），win 跳过 wine/signtool
 appId: com.super-go.app
 productName: Super Go
 directories:
