@@ -64,9 +64,16 @@ export function isOneStepGoShift(a: GoGrid, b: GoGrid): boolean {
   return shiftX || shiftY;
 }
 
+const GRID_DEBUG = process.env.SUPER_GO_GRID_DEBUG === '1';
+
+function gridDebug(msg: string): void {
+  if (GRID_DEBUG) console.log(`[gridDebug] ${msg}`);
+}
+
 export function detectGoGrid(img: RawImage): GoGridDetectResult | null {
   if (img.width < 40 || img.height < 40) return null;
   const wood = findWoodishRoi(img);
+  gridDebug(`woodRoi=${JSON.stringify(wood)}`);
   let best: GoGridDetectResult | null = null;
   for (const roi of listBoardRois(img)) {
     const local =
@@ -82,15 +89,26 @@ export function detectGoGrid(img: RawImage): GoGridDetectResult | null {
       break;
     }
   }
-  if (wood !== null) {
-    const boxed = fit19InWindowWood(img, wood);
-    if (boxed !== null) {
-      if (best === null) return boxed;
-      const bg = woodMedianLuma(img, wood);
-      if (countStoneLike(img, boxed.grid, bg) > countStoneLike(img, best.grid, bg) + 8) {
-        return boxed;
-      }
+  // 密盘救援:优先用暖色连通域外接框(棋子盖不住外圈边距,对密度免疫),
+  // 退回密集带框。哪个先拟合成功用哪个。
+  const component = findWarmComponentRoi(img);
+  gridDebug(`componentRoi=${JSON.stringify(component)}`);
+  for (const roi of dedupeRois([component, wood])) {
+    const boxed = fit19InWindowWood(img, roi);
+    if (boxed === null) {
+      gridDebug(`fit19(${roi.kind}@${roi.x},${roi.y},${roi.w}x${roi.h}) null`);
+      continue;
     }
+    if (best === null) return boxed;
+    const masks = buildStoneMasks(img, woodMedianRgb(img, roi));
+    const bounds = roiBounds(roi);
+    const boxedN = countDecisiveStones(masks, boxed.grid, bounds);
+    const bestN = countDecisiveStones(masks, best.grid, bounds);
+    gridDebug(
+      `boxed=(${boxed.grid.originX.toFixed(1)},${boxed.grid.originY.toFixed(1)},${boxed.grid.stepX.toFixed(2)}) n=${boxedN} vs best=(${best.grid.originX.toFixed(1)},${best.grid.originY.toFixed(1)},${best.grid.stepX.toFixed(2)}) size=${best.grid.size} n=${bestN}`,
+    );
+    if (boxedN > bestN + 8) return boxed;
+    return best;
   }
   return best;
 }
@@ -149,15 +167,21 @@ function isBetterGrid(a: GoGridDetectResult, b: GoGridDetectResult): boolean {
 
 /**
  * 整窗密盘：木纹框内只搜 19 路内缩。空盘/9/13 占子不够会退回线检，避免把 13 路空盘标成 19。
+ *
+ * 内缩从 0 起扫：野狐等平台的格线几乎贴着木纹边缘（实测内缩 <2%），
+ * 从 5% 起扫会整体错过真实几何，逼出「步长对、锚点错」的质心网格。
+ * 计分用「果断子色」（明确黑 / 明确亮白 / 明确去黄白）而非单纯对比度：
+ * 锚点落在子缝上时圆盘是混色，果断计分会塌掉，锚点对了才立得住。
  */
 function fit19InWindowWood(img: RawImage, roi: BoardRoi): GoGridDetectResult | null {
   if (roi.w * roi.h > img.width * img.height * 0.85) return null;
-  const bg = woodMedianLuma(img, roi);
+  const wood = woodMedianRgb(img, roi);
+  const masks = buildStoneMasks(img, wood);
+  const bounds = roiBounds(roi);
   const side = Math.min(roi.w, roi.h);
-  const minIn = side * 0.055;
   const maxIn = side * 0.16;
   let best: { grid: GoGrid; stones: number } | null = null;
-  for (let inset = minIn; inset <= maxIn; inset += 3) {
+  for (let inset = 0; inset <= maxIn; inset += 3) {
     const stepX = (roi.w - 2 * inset) / 18;
     const stepY = (roi.h - 2 * inset) / 18;
     if (stepX < MIN_STEP_PX || stepY < MIN_STEP_PX) continue;
@@ -169,88 +193,251 @@ function fit19InWindowWood(img: RawImage, roi: BoardRoi): GoGridDetectResult | n
       stepY,
       size: 19,
     };
-    const stones = countStoneLike(img, grid, bg);
+    const stones = countDecisiveStones(masks, grid, bounds);
     if (best === null || stones > best.stones) best = { grid, stones };
   }
-  if (best === null || best.stones < 80) return null;
+  if (best === null || best.stones < 80) {
+    gridDebug(`fit19 coarse fail: best=${best === null ? 'null' : best.stones}`);
+    return null;
+  }
+  const refined = refineGridByMasks(masks, best.grid, bounds);
+  const refinedStones = countDecisiveStones(masks, refined, bounds);
+  if (refinedStones < 80) {
+    gridDebug(`fit19 refined fail: ${refinedStones}`);
+    return null;
+  }
   const half: GoGrid = {
-    ...best.grid,
-    originX: best.grid.originX + best.grid.stepX * 0.5,
-    originY: best.grid.originY + best.grid.stepY * 0.5,
+    ...refined,
+    originX: refined.originX + refined.stepX * 0.5,
+    originY: refined.originY + refined.stepY * 0.5,
   };
-  if (best.stones < countStoneLike(img, half, bg) * 1.7) return null;
-  const refined = refineOriginByStones(img, best.grid, bg);
+  const halfStones = countDecisiveStones(masks, half, bounds);
+  gridDebug(
+    `fit19 coarse=(${best.grid.originX.toFixed(1)},${best.grid.originY.toFixed(1)},${best.grid.stepX.toFixed(2)}) n=${best.stones} refined=(${refined.originX.toFixed(1)},${refined.originY.toFixed(1)},${refined.stepX.toFixed(2)},${refined.stepY.toFixed(2)}) n=${refinedStones} half=${halfStones}`,
+  );
+  // 官子收完的满盘：半格位置四邻同色时覆盖率也不低，比率卡太紧会误杀正确网格
+  if (refinedStones < halfStones * 1.15) return null;
   return { grid: refined, box: goGridBox(refined), confidence: 0.92 };
 }
 
-function refineOriginByStones(img: RawImage, grid: GoGrid, bg: number): GoGrid {
-  let best = grid;
-  let bestN = countStoneLike(img, grid, bg);
-  for (let dx = -2; dx <= 2; dx++) {
-    for (let dy = -2; dy <= 2; dy++) {
-      if (dx === 0 && dy === 0) continue;
-      const cand: GoGrid = { ...grid, originX: grid.originX + dx, originY: grid.originY + dy };
-      const n = countStoneLike(img, cand, bg);
-      if (n > bestN) {
-        best = cand;
-        bestN = n;
+/**
+ * 锚点精修：木纹 ROI 因棋子遮挡常不对称（一侧被啃掉十几像素），对称内缩出的
+ * 原点最多差 1/4 格、步长差 ~1%（19 路上会累积成半格）。
+ * 覆盖率计分对 ±10px 的偏移太平坦（子径远大于窗口），改用相位信号：
+ * 沿轴投影黑白子密度，真锚点处格点相位密度高、半格相位（子缝）密度低，
+ * 按「梳齿相关」逐轴搜原点 ±0.35 格 × 步长 ±2%。
+ */
+function refineGridByMasks(masks: StoneMasks, grid: GoGrid, bounds: Bounds): GoGrid {
+  const xProf = stoneProfile(masks, bounds, 'x');
+  const yProf = stoneProfile(masks, bounds, 'y');
+  const fx = refineAxisByProfile(xProf, masks.stride, grid.originX, grid.stepX, grid.size);
+  const fy = refineAxisByProfile(yProf, masks.stride, grid.originY, grid.stepY, grid.size);
+  return { ...grid, originX: fx.origin, stepX: fx.step, originY: fy.origin, stepY: fy.step };
+}
+
+/** 黑+白子掩码沿垂直方向积分成 1D 密度（mask 格分辨率），轻微平滑 */
+function stoneProfile(masks: StoneMasks, bounds: Bounds, axis: 'x' | 'y'): Float64Array {
+  const { mw, mh, stride, blackI, whiteI } = masks;
+  const cx0 = Math.max(0, Math.floor(bounds.x0 / stride));
+  const cx1 = Math.min(mw - 1, Math.ceil(bounds.x1 / stride));
+  const cy0 = Math.max(0, Math.floor(bounds.y0 / stride));
+  const cy1 = Math.min(mh - 1, Math.ceil(bounds.y1 / stride));
+  const n = axis === 'x' ? mw : mh;
+  const raw = new Float64Array(n);
+  if (cx1 < cx0 || cy1 < cy0) return raw;
+  if (axis === 'x') {
+    for (let mx = cx0; mx <= cx1; mx++) {
+      raw[mx] =
+        boxSum(blackI, mw, mx, cy0, mx, cy1) + boxSum(whiteI, mw, mx, cy0, mx, cy1);
+    }
+  } else {
+    for (let my = cy0; my <= cy1; my++) {
+      raw[my] =
+        boxSum(blackI, mw, cx0, my, cx1, my) + boxSum(whiteI, mw, cx0, my, cx1, my);
+    }
+  }
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = raw[i - 1] ?? raw[i]!;
+    const b = raw[i]!;
+    const c = raw[i + 1] ?? raw[i]!;
+    out[i] = (a + b + b + c) * 0.25;
+  }
+  return out;
+}
+
+function refineAxisByProfile(
+  prof: Float64Array,
+  stride: number,
+  o0: number,
+  s0: number,
+  size: number,
+): { origin: number; step: number } {
+  const at = (px: number): number => {
+    const i = Math.round(px / stride);
+    if (i < 0 || i >= prof.length) return 0;
+    return prof[i]!;
+  };
+  let best = { origin: o0, step: s0 };
+  let bestScore = -Infinity;
+  for (let k = -8; k <= 8; k++) {
+    const s = s0 * (1 + k * 0.0025);
+    const range = Math.max(3, Math.round(s * 0.35));
+    for (let d = -range; d <= range; d++) {
+      const o = o0 + d;
+      let centers = 0;
+      let gaps = 0;
+      for (let i = 0; i < size; i++) {
+        centers += at(o + i * s);
+        if (i < size - 1) gaps += at(o + (i + 0.5) * s);
+      }
+      const score = centers / size - gaps / (size - 1);
+      if (score > bestScore) {
+        bestScore = score;
+        best = { origin: o, step: s };
       }
     }
   }
   return best;
 }
 
-function countStoneLike(img: RawImage, grid: GoGrid, bg: number): number {
+interface RgbSample {
+  luma: number;
+  r: number;
+  g: number;
+  b: number;
+}
+
+interface Bounds {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** ROI 外扩约半格（19 路），容纳被棋子啃掉边缘后仍在盘上的首末路 */
+function roiBounds(roi: BoardRoi): Bounds {
+  const m = Math.min(roi.w, roi.h) * 0.035;
+  return { x0: roi.x - m, y0: roi.y - m, x1: roi.x + roi.w + m, y1: roi.y + roi.h + m };
+}
+
+/**
+ * 黑/白子像素掩码 + 积分图（stride 2）。
+ * 白 = 明确比木纹亮，或去黄灰白（野狐白子几乎不比木纹亮，靠 r−b 区分）。
+ */
+interface StoneMasks {
+  mw: number;
+  mh: number;
+  stride: number;
+  /** (mw+1)*(mh+1) 积分图 */
+  blackI: Uint32Array;
+  whiteI: Uint32Array;
+}
+
+function buildStoneMasks(img: RawImage, wood: RgbSample): StoneMasks {
+  const stride = 2;
+  const mw = Math.ceil(img.width / stride);
+  const mh = Math.ceil(img.height / stride);
+  const blackI = new Uint32Array((mw + 1) * (mh + 1));
+  const whiteI = new Uint32Array((mw + 1) * (mh + 1));
+  const d = img.data;
+  const blackMax = Math.min(90, wood.luma - 45);
+  const brightMin = wood.luma + 40;
+  const woodYel = wood.r - wood.b;
+  const paleYelMax = Math.min(36, woodYel * 0.45);
+  const paleUsable = woodYel >= 36;
+  for (let my = 0; my < mh; my++) {
+    const y = Math.min(img.height - 1, my * stride);
+    const rowOff = my * (mw + 1);
+    const nextOff = (my + 1) * (mw + 1);
+    for (let mx = 0; mx < mw; mx++) {
+      const x = Math.min(img.width - 1, mx * stride);
+      const o = (y * img.width + x) * 4;
+      const r = d[o]!;
+      const g = d[o + 1]!;
+      const b = d[o + 2]!;
+      const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+      const yel = r - b;
+      const isBlack = luma < blackMax ? 1 : 0;
+      const isWhite =
+        luma > brightMin ||
+        (paleUsable && luma >= 140 && luma >= wood.luma - 28 && yel <= paleYelMax && yel <= woodYel - 28)
+          ? 1
+          : 0;
+      blackI[nextOff + mx + 1] = isBlack + blackI[nextOff + mx]! + blackI[rowOff + mx + 1]! - blackI[rowOff + mx]!;
+      whiteI[nextOff + mx + 1] = isWhite + whiteI[nextOff + mx]! + whiteI[rowOff + mx + 1]! - whiteI[rowOff + mx]!;
+    }
+  }
+  return { mw, mh, stride, blackI, whiteI };
+}
+
+function boxSum(integral: Uint32Array, mw: number, x0: number, y0: number, x1: number, y1: number): number {
+  const w1 = mw + 1;
+  return (
+    integral[(y1 + 1) * w1 + x1 + 1]! -
+    integral[y0 * w1 + x1 + 1]! -
+    integral[(y1 + 1) * w1 + x0]! +
+    integral[y0 * w1 + x0]!
+  );
+}
+
+/**
+ * 网格点上「果断是子」的数量：以交叉点为中心约半格窗口内，单一子色覆盖 ≥60%。
+ * 锚点落在子缝上时窗口是混色，覆盖率塌掉——分数对锚点偏移敏感，适合做拟合评分。
+ * bounds 限制计数区域，防止伸出盘外的网格点吃深色底栏刷分。
+ */
+function countDecisiveStones(masks: StoneMasks, grid: GoGrid, bounds: Bounds | null): number {
   const step = Math.min(grid.stepX, grid.stepY);
-  const r = Math.max(2, step * 0.28);
-  const contrast = Math.max(40, bg * 0.3);
+  const half = Math.max(2, step * 0.26);
+  const s = masks.stride;
   let n = 0;
-  for (let y = 0; y < grid.size; y++) {
-    for (let x = 0; x < grid.size; x++) {
-      const d = sampleDiskLuma(img, grid.originX + x * grid.stepX, grid.originY + y * grid.stepY, r);
-      if (d !== null && Math.abs(d - bg) > contrast) n += 1;
+  for (let gy = 0; gy < grid.size; gy++) {
+    for (let gx = 0; gx < grid.size; gx++) {
+      const cx = grid.originX + gx * grid.stepX;
+      const cy = grid.originY + gy * grid.stepY;
+      if (bounds !== null && (cx < bounds.x0 || cx > bounds.x1 || cy < bounds.y0 || cy > bounds.y1)) {
+        continue;
+      }
+      const x0 = Math.max(0, Math.floor((cx - half) / s));
+      const y0 = Math.max(0, Math.floor((cy - half) / s));
+      const x1 = Math.min(masks.mw - 1, Math.floor((cx + half) / s));
+      const y1 = Math.min(masks.mh - 1, Math.floor((cy + half) / s));
+      if (x1 < x0 || y1 < y0) continue;
+      const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+      if (boxSum(masks.blackI, masks.mw, x0, y0, x1, y1) >= area * 0.6) {
+        n += 1;
+        continue;
+      }
+      if (boxSum(masks.whiteI, masks.mw, x0, y0, x1, y1) >= area * 0.6) n += 1;
     }
   }
   return n;
 }
 
-function woodMedianLuma(img: RawImage, roi: BoardRoi): number {
-  const warm: number[] = [];
+function woodMedianRgb(img: RawImage, roi: BoardRoi): RgbSample {
+  const rs: number[] = [];
+  const gs: number[] = [];
+  const bs: number[] = [];
   const d = img.data;
   for (let y = roi.y; y < roi.y + roi.h; y += 4) {
     for (let x = roi.x; x < roi.x + roi.w; x += 4) {
       if (x < 0 || y < 0 || x >= img.width || y >= img.height) continue;
       const o = (Math.floor(y) * img.width + Math.floor(x)) * 4;
       if (!isWarmBoardPixel(d[o]!, d[o + 1]!, d[o + 2]!)) continue;
-      warm.push(0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]!);
+      rs.push(d[o]!);
+      gs.push(d[o + 1]!);
+      bs.push(d[o + 2]!);
     }
   }
-  if (warm.length < 8) return 160;
-  warm.sort((a, b) => a - b);
-  return warm[warm.length >> 1]!;
-}
-
-function sampleDiskLuma(img: RawImage, cx: number, cy: number, r: number): number | null {
-  const r2 = r * r;
-  const x0 = Math.max(0, Math.floor(cx - r));
-  const x1 = Math.min(img.width - 1, Math.ceil(cx + r));
-  const y0 = Math.max(0, Math.floor(cy - r));
-  const y1 = Math.min(img.height - 1, Math.ceil(cy + r));
-  const values: number[] = [];
-  const d = img.data;
-  const w = img.width;
-  for (let y = y0; y <= y1; y += 2) {
-    const dy = y + 0.5 - cy;
-    for (let x = x0; x <= x1; x += 2) {
-      const dx = x + 0.5 - cx;
-      if (dx * dx + dy * dy > r2) continue;
-      const o = (y * w + x) * 4;
-      values.push(0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]!);
-    }
-  }
-  if (values.length === 0) return null;
-  values.sort((a, b) => a - b);
-  return values[values.length >> 1]!;
+  if (rs.length < 8) return { luma: 160, r: 190, g: 158, b: 104 };
+  rs.sort((a, b) => a - b);
+  gs.sort((a, b) => a - b);
+  bs.sort((a, b) => a - b);
+  const mid = rs.length >> 1;
+  const r = rs[mid]!;
+  const g = gs[mid]!;
+  const b = bs[mid]!;
+  return { luma: 0.299 * r + 0.587 * g + 0.114 * b, r, g, b };
 }
 
 function offsetDetect(found: GoGridDetectResult, ox: number, oy: number): GoGridDetectResult {
@@ -312,6 +499,95 @@ function findWoodishRoi(img: RawImage): BoardRoi | null {
   if (roi.w < 80 || roi.h < 80) return null;
   if (roi.w * roi.h > width * height * 0.92) return null;
   return roi;
+}
+
+/**
+ * 最大暖色连通域外接框：官子收完的密盘棋子盖住 95% 木纹，按行列密集带找盘会塌
+ * （整列暖色只剩边距和子缝，过不了密度阈值）；但棋子盖不住外圈边距，
+ * 边距 + 子缝 + 空区在像素上连成一片，其外接框仍是完整棋盘。
+ */
+function findWarmComponentRoi(img: RawImage): BoardRoi | null {
+  const stride = 2;
+  const mw = Math.ceil(img.width / stride);
+  const mh = Math.ceil(img.height / stride);
+  const mask = new Uint8Array(mw * mh);
+  const d = img.data;
+  for (let my = 0; my < mh; my++) {
+    const y = Math.min(img.height - 1, my * stride);
+    for (let mx = 0; mx < mw; mx++) {
+      const x = Math.min(img.width - 1, mx * stride);
+      const o = (y * img.width + x) * 4;
+      if (isWarmBoardPixel(d[o]!, d[o + 1]!, d[o + 2]!)) mask[my * mw + mx] = 1;
+    }
+  }
+  const seen = new Uint8Array(mw * mh);
+  const stack: number[] = [];
+  let best: { minX: number; maxX: number; minY: number; maxY: number; area: number } | null = null;
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] === 0 || seen[i] === 1) continue;
+    seen[i] = 1;
+    stack.length = 0;
+    stack.push(i);
+    let area = 0;
+    let minX = mw;
+    let maxX = 0;
+    let minY = mh;
+    let maxY = 0;
+    while (stack.length > 0) {
+      const cur = stack.pop()!;
+      const cx = cur % mw;
+      const cy = (cur - cx) / mw;
+      area += 1;
+      if (cx < minX) minX = cx;
+      if (cx > maxX) maxX = cx;
+      if (cy < minY) minY = cy;
+      if (cy > maxY) maxY = cy;
+      if (cx > 0 && mask[cur - 1] === 1 && seen[cur - 1] === 0) {
+        seen[cur - 1] = 1;
+        stack.push(cur - 1);
+      }
+      if (cx < mw - 1 && mask[cur + 1] === 1 && seen[cur + 1] === 0) {
+        seen[cur + 1] = 1;
+        stack.push(cur + 1);
+      }
+      if (cy > 0 && mask[cur - mw] === 1 && seen[cur - mw] === 0) {
+        seen[cur - mw] = 1;
+        stack.push(cur - mw);
+      }
+      if (cy < mh - 1 && mask[cur + mw] === 1 && seen[cur + mw] === 0) {
+        seen[cur + mw] = 1;
+        stack.push(cur + mw);
+      }
+    }
+    if (best === null || area > best.area) best = { minX, maxX, minY, maxY, area };
+  }
+  if (best === null) return null;
+  const x = best.minX * stride;
+  const y = best.minY * stride;
+  const w = (best.maxX - best.minX + 1) * stride;
+  const h = (best.maxY - best.minY + 1) * stride;
+  if (w < 80 || h < 80) return null;
+  if (w > h * 1.4 || h > w * 1.4) return null;
+  if (w * h > img.width * img.height * 0.92) return null;
+  // 外接框内暖色占比要够"实"（密盘边距+子缝也有 ~10%），滤掉细长噪声连通域
+  if (best.area * stride * stride < w * h * 0.04) return null;
+  return { x, y, w, h, kind: 'wood' };
+}
+
+function dedupeRois(rois: readonly (BoardRoi | null)[]): BoardRoi[] {
+  const out: BoardRoi[] = [];
+  for (const r of rois) {
+    if (r === null) continue;
+    const dup = out.some(
+      (o) =>
+        Math.abs(o.x - r.x) < 8 &&
+        Math.abs(o.y - r.y) < 8 &&
+        Math.abs(o.w - r.w) < 16 &&
+        Math.abs(o.h - r.h) < 16,
+    );
+    if (!dup) out.push(r);
+  }
+  return out;
 }
 
 /** 宽窗常见布局：棋盘在左、分析栏在右。无木纹（暗色主题）时用左侧方块。 */
