@@ -1,305 +1,308 @@
 # Super Go
 
-双棋种（象棋 + 围棋）桌面对弈工具，支持本机人机对弈与连线代打两条核心场景。
+A desktop tool for two board games (Xiangqi + Go), supporting local human-vs-engine play and online proxy play.
 
-当前进度：**象棋与围棋本机人机对弈均已可用**（见下）；连线代打仍在开发计划中（[DESIGN.md §9](./DESIGN.md)）。
+Current status: **local human-vs-engine play works for both Xiangqi and Go** (see below); online proxy play is still on the roadmap ([DESIGN.md §9](./DESIGN.md)).
 
-## 象棋人机对弈
+> 中文: [README.zh-CN.md](./README.zh-CN.md)
 
-- **3D 棋盘**（Three.js）：木盘 + 车削棋子 + 阴刻字 + 软阴影，固定对弈视角；可在设置中切换平面棋盘
-- **棋力可选**：等级分 / 搜索深度 / 思考时长 / 节点数 / 不设限，五种模式；可设搜索线程与哈希表；对局中可随时调整
-- **引擎执方任选**：执红、执黑或引擎左右互搏观战
-- **评估走势图**：每一步的引擎评估折线（红方视角），着法列表与引擎信息同栏
-- 完整对局控制：悔棋、认输、暂停、复盘跳转、终局悔棋复活
-- 走子 / 吃子 / 将军 / 终局音效（可关），中 / 英 / 日界面，浅 / 深 / 跟随系统主题
-- 窗口置顶开关（连线代打时压在第三方平台之上）
-- 内置 [Pikafish](https://github.com/official-pikafish/Pikafish) 引擎，安装包开箱即用
+## Xiangqi human vs engine
 
-## Pikafish 引擎参数
+- **3D board** (Three.js): wooden board, turned pieces, engraved characters, soft shadows, fixed playing view; switch to a flat board in settings
+- **Adjustable strength**: five modes — Elo rating / search depth / think time / node count / unlimited; configurable search threads and hash table; change anytime during a game
+- **Engine side**: play Red, play Black, or watch engine vs engine
+- **Evaluation chart**: per-move engine eval line (Red’s perspective), move list and engine info in the same panel
+- Full game controls: undo, resign, pause, replay navigation, revive after game end
+- Move / capture / check / endgame sound effects (toggleable); UI in Chinese / English / Japanese; light / dark / system theme
+- Always-on-top window toggle (for stacking above third-party platforms during proxy play)
+- Bundled [Pikafish](https://github.com/official-pikafish/Pikafish) engine — ready out of the box
 
-随包引擎为 **Pikafish 2026-01-31**（[官网](http://pikafish.com) / [Wiki：UCI 选项](https://www.pikafish.com/wiki/index.php?title=UCI%E9%80%89%E9%A1%B9)）。下面按本机 `uci` 握手列出全部选项与默认值。
+## Pikafish engine options
 
-**本软件会改棋力，以及搜索线程 / 哈希表。** 设置里的五种模式对应：
+Bundled engine: **Pikafish 2026-01-31** ([website](http://pikafish.com) / [Wiki: UCI options](https://www.pikafish.com/wiki/index.php?title=UCI%E9%80%89%E9%A1%B9)). Options and defaults below are from a local `uci` handshake.
 
-
-| Super Go 棋力 | 实际下发给引擎的                                       |
-| ----------- | ---------------------------------------------- |
-| 等级分         | 打开 `UCI_LimitStrength`，并设 `UCI_Elo`（1280–3133） |
-| 搜索深度        | 满强度；用 `go depth` 限制层数                          |
-| 思考时长        | 满强度；用 `go movetime` 限制每步毫秒                     |
-| 节点数         | 满强度；用 `go nodes` 限制节点                          |
-| 不设限         | 关掉 `UCI_LimitStrength`，不限制搜索                   |
-| 搜索线程 / 哈希表  | `Threads` / `Hash`（引擎级，对局结束不复位）                |
+**Super Go adjusts strength, search threads, and hash table.** The five strength modes map to:
 
 
-其余选项一律用引擎出厂默认（下表「默认」列）。对局结束会把强度复位为满强度，避免放水粘在分析上；线程与哈希保持用户设置。
-
-放水（等级分 / Skill Level）只影响**出哪一步**，分析分数仍按满强度计算。
-
-### 棋力
-
-
-| 选项                  | 类型  | 默认   | 范围        | 说明                                                                             |
-| ------------------- | --- | ---- | --------- | ------------------------------------------------------------------------------ |
-| `UCI_LimitStrength` | 开关  | 关    | —         | 打开后 `UCI_Elo` 生效，并让 `Skill Level` 失效                                           |
-| `UCI_Elo`           | 整数  | 1280 | 1280–3133 | 天梯校准的拟人等级分；越低越弱。1280 ≈ Skill 0，1777 ≈ 4，2268 ≈ 7，2568 ≈ 10，2850 ≈ 13，3133 ≈ 19 |
-| `Skill Level`       | 整数  | 20   | 0–20      | 粗档放水（非 20 时内部 MultiPV=4）。本软件不改此项，只用 `UCI_Elo`                                  |
+| Super Go strength | Sent to the engine |
+| --- | --- |
+| Elo rating | Enable `UCI_LimitStrength` and set `UCI_Elo` (1280–3133) |
+| Search depth | Full strength; limit with `go depth` |
+| Think time | Full strength; limit with `go movetime` (ms per move) |
+| Node count | Full strength; limit with `go nodes` |
+| Unlimited | Disable `UCI_LimitStrength`; no search cap |
+| Threads / Hash | `Threads` / `Hash` (engine-level; not reset after each game) |
 
 
+All other options use engine factory defaults (see the “Default” column below). After a game, strength resets to full so handicaps do not stick in analysis; threads and hash keep the user’s settings.
+
+Handicap (Elo / Skill Level) affects **which move is played only**; analysis scores stay at full strength.
+
+### Strength
 
 
-### 循环棋规与限招
-
-象棋和棋/长将不按国际象棋判。引擎在搜索里就按所选规则给分，**长将默认视为将军方违规**，满强度一般不会把「车进一将军、将进一、车退一、将退一」循环走穿。本软件本地规则层不裁判长将，终局仍以绝杀/困毙为准；连线时平台会按自己的棋规判。
-
-
-| 选项                  | 类型  | 默认            | 取值    | 说明                                              |
-| ------------------- | --- | ------------- | ----- | ----------------------------------------------- |
-| `Repetition Rule`   | 枚举  | **AsianRule** | 见下    | 循环着法（长将 / 长捉等）怎么判                               |
-| `Mate Threat Depth` | 整数  | 10            | 0–10  | 仅 `ChineseRule` 有效：判断「杀」的回合数。0 = 不判断杀；越高棋力下降越明显 |
-| `Sixty Move Rule`   | 开关  | **开**         | —     | 自然限招：长时间不吃子按和（0 分）                              |
-| `Rule60MaxPly`      | 整数  | **120**       | 1–150 | 限招步数。120 = 60 回合，与天天象棋一致。调太小棋力会漂                |
-| `Draw Rule`         | 枚举  | **None**      | 见下    | 把「和」改算成某方胜，只适合拆棋，会扭曲分数                          |
-
-
-`Repetition Rule`：
-
-
-| 值                 | 含义                                                           |
-| ----------------- | ------------------------------------------------------------ |
-| **AsianRule**（默认） | 亚规。严重级：长将 > 长捉同一子 > 其它。**2-fold**（同一局面第 2 次即判）。多数网络平台接近此规    |
-| ChineseRule       | 简化中规（本质仍是亚规改版）。严重级：长将 > 长捉/长杀/将杀·将捉·杀捉循环 > 其它。中规条文模糊，无法完整程序化 |
-| ComputerRule      | 作者《中国象棋程序竞赛规则》。更贴亚规图例，**3-fold**（第 3 次才判），和常见网规有差别           |
-| SkyRule           | 部分网规（亚规微调），不是中规                                              |
-| YitianRule        | 弈天平台                                                         |
-| AllowChase        | 只禁长将，其它循环都允。优势残局拆棋、想躲开循环争议时用                                 |
-| NoJudgement       | 循环不作裁决                                                       |
-
-
-`Draw Rule`：`None`（正常）/ `DrawAsBlackWin` / `DrawAsRedWin`（一切和棋算该方胜）/ `DrawRepAsBlackWin` / `DrawRepAsRedWin`（仅循环和算该方胜）。改完拆棋后务必改回 `None`。
-
-### 搜索与显示
-
-
-| 选项               | 类型  | 默认              | 范围                              | 说明                                                |
-| ---------------- | --- | --------------- | ------------------------------- | ------------------------------------------------- |
-| `Threads`        | 整数  | 1               | 1–本机 CPU 核数                     | 搜索线程。可在棋力设置中改（引擎协议上限 1024，本软件按核数钳制）               |
-| `Hash`           | 整数  | 16              | 1–33554432                      | 置换表 MB。可在棋力设置中改（界面上限 32768 MB）                    |
-| `Clear Hash`     | 按钮  | —               | —                               | 清空置换表                                             |
-| `Ponder`         | 开关  | 关               | —                               | 后台思考（对方时钟仍走时继续算）                                  |
-| `MultiPV`        | 整数  | 1               | 1–128                           | 同时计算几条主变。调高会降棋力，只适合拆棋                             |
-| `Move Overhead`  | 整数  | 30              | 0–5000                          | 通信/界面耗时余量（毫秒），防超时                                 |
-| `nodestime`      | 整数  | 0               | 0–10000                         | 按节点折算时间；0 = 不用                                    |
-| `ScoreType`      | 枚举  | **Elo**         | Elo / PawnValueNormalized / Raw | 只影响显示分，不影响棋力。Elo = 按胜率模型换算（约 200 分对应自对弈快棋 76% 胜率） |
-| `LU_Output`      | 开关  | 开               | —                               | 同一深度是否多次输出上下界；不影响棋力                               |
-| `EvalFile`       | 字符串 | `pikafish.nnue` | —                               | NNUE 权重路径，一般与引擎同目录                                |
-| `Debug Log File` | 字符串 | 空               | —                               | 调试日志文件                                            |
-| `NumaPolicy`     | 字符串 | auto            | —                               | 多路 CPU 绑核；一般不用改                                   |
+| Option | Type | Default | Range | Notes |
+| --- | --- | --- | --- | --- |
+| `UCI_LimitStrength` | switch | off | — | When on, `UCI_Elo` applies and `Skill Level` is ignored |
+| `UCI_Elo` | int | 1280 | 1280–3133 | Ladder-calibrated human-like rating; lower = weaker. 1280 ≈ Skill 0, 1777 ≈ 4, 2268 ≈ 7, 2568 ≈ 10, 2850 ≈ 13, 3133 ≈ 19 |
+| `Skill Level` | int | 20 | 0–20 | Coarse handicap (non-20 uses internal MultiPV=4). Super Go does not touch this; it uses `UCI_Elo` only |
 
 
 
 
-### Windows 二进制怎么选
+### Repetition rules and move limits
 
-安装包会按 CPU 自动挑；自行替换时大致由快到慢：
+Xiangqi draws and perpetual check are not judged like chess. The engine scores search according to the selected rule set; **perpetual check is treated as a violation by the checking side by default**, so at full strength it generally will not grind through loops like “Rook forward check, King forward, Rook back, King back”. Super Go’s local rules layer does not adjudicate perpetual check; game end is still checkmate / stalemate; online platforms apply their own rules.
+
+
+| Option | Type | Default | Values | Notes |
+| --- | --- | --- | --- | --- |
+| `Repetition Rule` | enum | **AsianRule** | see below | How repeated moves (perpetual check / chase, etc.) are judged |
+| `Mate Threat Depth` | int | 10 | 0–10 | `ChineseRule` only: plies to detect “mate threat”. 0 = off; higher values reduce strength |
+| `Sixty Move Rule` | switch | **on** | — | Natural move limit: long sequences without capture score as draw (0) |
+| `Rule60MaxPly` | int | **120** | 1–150 | Move-limit plies. 120 = 60 full moves, matching Tiantian Xiangqi. Too low hurts playing strength |
+| `Draw Rule` | enum | **None** | see below | Treat draws as wins for one side — analysis only; distorts scores |
+
+
+
+
+`Repetition Rule`:
+
+
+| Value | Meaning |
+| --- | --- |
+| **AsianRule** (default) | Asian rules. Severity: perpetual check > perpetual chase of same piece > other. **2-fold** (same position on 2nd occurrence). Close to most online platforms |
+| ChineseRule | Simplified Chinese rules (Asian variant). Severity: perpetual check > perpetual chase/kill and check-kill/chase-kill loops > other. Chinese rule text is ambiguous; not fully programmable |
+| ComputerRule | Author’s *Chinese Computer Xiangqi Competition Rules*. Closer to Asian diagrams, **3-fold** (3rd occurrence). Differs from common online rules |
+| SkyRule | Some online rules (Asian tweak), not official Chinese rules |
+| YitianRule | Yitian platform |
+| AllowChase | Only perpetual check forbidden; other loops allowed. For endgame analysis or avoiding repetition disputes |
+| NoJudgement | No adjudication on repetition |
+
+
+`Draw Rule`: `None` (normal) / `DrawAsBlackWin` / `DrawAsRedWin` (all draws count as that side’s win) / `DrawRepAsBlackWin` / `DrawRepAsRedWin` (repetition draws only). Reset to `None` after analysis.
+
+### Search and display
+
+
+| Option | Type | Default | Range | Notes |
+| --- | --- | --- | --- | --- |
+| `Threads` | int | 1 | 1–CPU cores | Search threads. Adjustable in strength settings (protocol max 1024; Super Go clamps to core count) |
+| `Hash` | int | 16 | 1–33554432 | Transposition table MB. Adjustable in settings (UI cap 32768 MB) |
+| `Clear Hash` | button | — | — | Clear transposition table |
+| `Ponder` | switch | off | — | Ponder while opponent’s clock runs |
+| `MultiPV` | int | 1 | 1–128 | Principal variations in parallel. Higher values weaken play; analysis only |
+| `Move Overhead` | int | 30 | 0–5000 | Communication/UI slack (ms), anti-timeout |
+| `nodestime` | int | 0 | 0–10000 | Time from nodes; 0 = off |
+| `ScoreType` | enum | **Elo** | Elo / PawnValueNormalized / Raw | Display only. Elo = win-rate model (~200 cp ≈ 76% self-play blitz win rate) |
+| `LU_Output` | switch | on | — | Multiple bound updates at same depth; no strength effect |
+| `EvalFile` | string | `pikafish.nnue` | — | NNUE weights path; usually next to the binary |
+| `Debug Log File` | string | empty | — | Debug log file |
+| `NumaPolicy` | string | auto | — | NUMA binding; rarely needs changing |
+
+
+
+
+### Choosing a Windows binary
+
+Installers pick by CPU automatically. When replacing manually, roughly fastest to slowest:
 
 `vnni512` > `avx512icl` / `avx512` > `avxvnni` > `bmi2` > `avx2` > `sse41-popcnt`
 
-选本机能跑的最新一档即可。权重文件 `pikafish.nnue` 必须和可执行文件放在同一目录。
+Use the newest variant your CPU runs. Weights file `pikafish.nnue` must sit in the same directory as the executable.
 
-## 围棋人机对弈
+## Go human vs engine
 
-- **19 路标准盘**（3D 木盘 / 平面 Canvas 可切）；规则中国 / 日本 / AGA，贴目默认日本 6.5、中国与 AGA 7.5
-- **棋力**：选最强网，visits / 思考时长 / 不设限；满强度对弈，不对人类段位放水
-- **引擎执方任选**：执黑、执白或引擎互搏观战；虚着、悔棋、认输、暂停
-- **算目**：工具栏「目」只展示引擎结果（黑/白，不用 W/B）。不做本地数子、不做领地热图
-- 评估为黑方视角胜率 + 目差
+- **19×19 standard board** (3D wood / flat Canvas); Chinese / Japanese / AGA rules; default komi: Japanese 6.5, Chinese and AGA 7.5
+- **Strength**: strongest network, visits / think time / unlimited; full-strength play, no human-dan handicapping
+- **Engine side**: Black, White, or engine vs engine; pass, undo, resign, pause
+- **Score estimate**: toolbar “Score” shows engine result only (Black/White, not W/B). No local counting, no ownership heatmap
+- Evaluation: Black win rate + point lead
 
 
 
-## KataGo 引擎参数
 
-本机引擎为 **KataGo 1.18.0**（Metal 后端）。文档：[官网](https://github.com/lightvector/KataGo) / [GTP 扩展](https://github.com/lightvector/KataGo/blob/master/docs/GTP_Extensions.md) / [官方示例配置](https://github.com/lightvector/KataGo/blob/master/cpp/configs/gtp_example.cfg)。本软件只挂一张主模型、满强度下，要下就和下最强的那张。
+## KataGo engine options
 
-下面按本机 `gtp` 握手（`kata-list-params` / `kata-get-params`，配置为官方 `gtp_example.cfg`）列出选项与默认值。未写进配置的项，引擎给的是「无上限」哨兵值（如 `maxTime = 1e+20`）。
+Local engine: **KataGo 1.18.0** (Metal backend). Docs: [repo](https://github.com/lightvector/KataGo) / [GTP extensions](https://github.com/lightvector/KataGo/blob/master/docs/GTP_Extensions.md) / [example config](https://github.com/lightvector/KataGo/blob/master/cpp/configs/gtp_example.cfg). Super Go uses one main model at full strength — play with the strongest network you have.
 
-设置 → **围棋引擎** 里能改的，以及实际下发给引擎的：
+Options and defaults below from a local `gtp` handshake (`kata-list-params` / `kata-get-params`, config = official `gtp_example.cfg`). Items not in config use “unlimited” sentinel values (e.g. `maxTime = 1e+20`).
 
-| Super Go 设置 | 默认 | 实际下发 |
+Settings → **Go engine** — what you can change and what is sent to the engine:
+
+| Super Go setting | Default | Sent to engine |
 | --- | --- | --- |
-| KataGo 路径 | 空 = 自动探测 | 可执行文件；留空走 brew / `engines/go` |
-| 模型文件 | 空 = 自动探测 | 启动参数 `-model`（棋力第一要素）。留空优先 `kata1-b18*` |
-| 配置文件 | 空 = 应用生成 `gtp.cfg` | `-config` |
-| 棋力 · 访问量 | **400**（预设 25 / 100 / 400 / 800 / 1600，也可手填 1–100 万） | 只设 `maxVisits`，**不限时间** |
-| 棋力 · 思考时长 | 每手秒数（默认 **8**） | 只设 `maxTime`，**不限 visits** |
-| 棋力 · 不设限 | — | visits、时间都不限（引擎按时钟搜） |
-| 行棋延迟 (s) | **0.3–0.9**（0–15） | 本软件在算完之后、落子之前随机等；两端都为 0 则立刻走。不下发给 KataGo |
-| 闲时思考 | 关 | `ponderingEnabled`；对方思考时继续搜（配置里闲时最多 60 秒） |
-| 宽根噪声 | **0.04** | `analysisWideRootNoise`，只影响评估探索面，不影响对局出招 |
-| 默认规则 / 贴目 | 中国 / **7.5** | `kata-set-rules` / GTP `komi`。切日本会改成 6.5，AGA 仍是 7.5 |
+| KataGo path | empty = auto-detect | Executable; empty uses brew / `engines/go` |
+| Model file | empty = auto-detect | Startup `-model` (primary strength factor). Empty prefers `kata1-b18*` |
+| Config file | empty = app-generated `gtp.cfg` | `-config` |
+| Strength · visits | **400** (presets 25 / 100 / 400 / 800 / 1600, or manual 1–1M) | Sets `maxVisits` only, **no time cap** |
+| Strength · think time | seconds per move (default **8**) | Sets `maxTime` only, **no visit cap** |
+| Strength · unlimited | — | No visit or time cap (engine searches on clock) |
+| Move delay (s) | **0.3–0.9** (0–15) | App waits randomly after compute, before playing; 0 at both ends = instant. Not sent to KataGo |
+| Ponder | off | `ponderingEnabled`; search while opponent thinks (ponder cap 60s in config) |
+| Wide root noise | **0.04** | `analysisWideRootNoise`; widens analysis exploration only, not move choice |
+| Default rules / komi | Chinese / **7.5** | `kata-set-rules` / GTP `komi`. Japanese switches to 6.5; AGA stays 7.5 |
 
-棋力三档只选其一，出招只受这一档约束，另一维拉到无上限，避免和分析抢同一套 visits/时间。落子后的评估和算目用内置快分析，设置里不再单独给「分析 visits / 快速 visits / 分析时限」。
+Only one strength mode at a time; move choice is constrained by that mode only, the other dimension is unlimited, so analysis does not compete for the same visits/time. Post-move eval and scoring use built-in fast analysis; settings no longer expose separate “analysis visits / fast visits / analysis time limit”.
 
-其余选项一律用引擎出厂默认（下表「默认」列）。visits / 时限只约束**出哪一步和搜多深**，评估分仍按这次搜索给，不会另开一套假分。
+All other options use engine defaults (see “Default” below). Visits/time limits constrain **move choice and search depth only**; eval scores come from that search, not a separate fake score.
 
-同一张网上，visits 越大搜得越深、越稳，对人来说都过了世界冠军（大约，没有绝对标准）。25 已经职业以上，浅搜可能漏战术；400 是本软件默认；1600 更深更稳，也更吃 GPU。要再强，换更强的网比把 visits 加到几万更有效。
+On the same network, more visits = deeper, steadier search; against humans all are well above world-champion level (rough guide, not absolute). 25 is already pro-level but shallow search may miss tactics; 400 is Super Go’s default; 1600 is deeper and steadier but heavier on GPU. To go stronger, swap to a stronger network rather than pushing visits into tens of thousands.
 
-1.18 的 `kata-genmove_analyze` / `kata-analyze` **不能**把 `maxVisits` 写在命令行里（只接受颜色 + 间隔，间隔单位是厘秒）；上限必须先 `kata-set-param`。
+In 1.18, `kata-genmove_analyze` / `kata-analyze` **cannot** take `maxVisits` on the command line (color + interval only; interval in centiseconds); set caps with `kata-set-param` first.
 
-### 棋力与人类水平
+### Strength and human level
 
-本软件只走主模型 `-model`，满强度。棋力首先看**用哪张网**，其次才是 visits / 时限。启动：
+Super Go uses the main `-model` only, at full strength. Network choice matters first; visits/time second. Launch:
 
 ```text
-katago gtp -model <主模型.bin.gz> -config <gtp.cfg>
+katago gtp -model <main-model.bin.gz> -config <gtp.cfg>
 ```
 
-下面都是大约对照，没有绝对标准。官网 Elo 是机器互搏分，人类 Elo 是另一把尺，只看相对高低。
+Rough comparisons only — no absolute standard. Official Elo is engine self-play; human Elo uses a different scale; compare relatively.
 
-**模型 → 官网 Elo**（[katagotraining.org/networks](https://katagotraining.org/networks/)，2026-08）：
-
-
-| 模型                   | 官网 Elo（大约） | 对人（加一点搜索）    |
-| -------------------- | ---------- | ------------ |
-| `tf3-b11` / 智子 `b40` | 14500      | 世界冠军之上，现役最强档 |
-| `b28`                | 14100      | 世界冠军之上       |
-| brew 现成 `b18`        | 13600      | 也是世界冠军之上     |
-| brew 自带 `g170*`      | 低于 b18     | 弱一截，仍远强于职业   |
+**Model → official Elo** ([katagotraining.org/networks](https://katagotraining.org/networks/), 2026-08):
 
 
-要下最强：用 `tf3-b11` 或智子 `b40`。本机 brew 只有 b18，从官网下载后在设置里改模型路径。
-
-**人类 Elo → 段位**（大约；业余按 EGF 100 分一档的量级，顶尖职业按 goratings 的量级）：
-
-
-| 大约 Elo    | 大约水平        |
-| --------- | ----------- |
-| 100～2000  | 业余 20 级～1 级 |
-| 2100～2600 | 业余 1 段～6 段  |
-| 2700 上下   | 职业初段        |
-| 2700～3000 | 职业段         |
-| 3800～3900 | 现役世界冠军      |
+| Model | Official Elo (approx.) | vs humans (some search) |
+| --- | --- | --- |
+| `tf3-b11` / Zhizi `b40` | 14500 | Above world champion; top tier |
+| `b28` | 14100 | Above world champion |
+| brew `b18` | 13600 | Also above world champion |
+| brew bundled `g170*` | below b18 | Weaker, still far above pro |
 
 
-13600～14500 的网对人来说都过了世界冠军；网差几百只是引擎互搏。本软件默认 visits 400（官方示例 500），谁先碰到 `maxTime` / `maxVisits` 谁停。
+Strongest play: `tf3-b11` or Zhizi `b40`. Homebrew only ships b18; download from the official site and set the model path in settings.
 
-### 搜索上限
-
-
-| 选项                                            | 类型  | 默认（本机握手）     | 范围 / 空值                 | 说明                         |
-| --------------------------------------------- | --- | ------------ | ----------------------- | -------------------------- |
-| `maxVisits`                                   | 整数  | **500**      | 不设则无上限                  | 本手搜索树节点上限（含上一手仍有效的节点）      |
-| `maxPlayouts`                                 | 整数  | 无上限（`2^50`）  | 不设则无上限                  | 本手**新**展开的节点数              |
-| `maxTime`                                     | 浮点秒 | 无上限（`1e+20`） | 不设则无上限                  | 本手思考时间。三者同时设时取最先碰到的        |
-| `ponderingEnabled`                            | 开关  | 关            | —                       | 对方时钟走时继续搜                  |
-| `maxVisitsPondering` / `maxPlayoutsPondering` | 整数  | 无上限          | —                       | 闲时思考的 visits / playouts 上限 |
-| `maxTimePondering`                            | 浮点秒 | **60**       | —                       | 闲时思考时限，防止一直占 GPU           |
-| `numSearchThreads`                            | 整数  | **6**（示例配置）  | 宜用 `katago benchmark` 调 | 搜索线程。强 GPU 上最优值常远高于 CPU 核数 |
-| `lagBuffer`                                   | 浮点秒 | **1.0**      | —                       | 时钟余量，防超时                   |
-| `searchFactorAfterOnePass`                    | 浮点  | 0.50         | —                       | 对方虚着后少搜一点（对人友好）            |
-| `searchFactorAfterTwoPass`                    | 浮点  | 0.25         | —                       | 双方已虚着时再少搜                  |
-| `searchFactorWhenWinning`                     | 浮点  | 0.40         | 配置项，握手未单列时看 cfg         | 胜势时少搜                      |
-| `minPlayoutsPerThread`                        | 浮点  | 8            | —                       | 每线程至少展开这么多                 |
+**Human Elo → rank** (approx.; amateur by EGF ~100 per rank; top pros by goratings scale):
 
 
+| Approx. Elo | Approx. level |
+| --- | --- |
+| 100–2000 | Amateur 20 kyu – 1 kyu |
+| 2100–2600 | Amateur 1 dan – 6 dan |
+| ~2700 | Pro entry |
+| 2700–3000 | Pro dan |
+| 3800–3900 | Active world champion |
 
 
-### 规则
+Networks at 13600–14500 are all above human world-champion level; a few hundred Elo apart is engine self-play only. Super Go defaults to 400 visits (official example 500); whichever of `maxTime` / `maxVisits` is hit first stops search.
 
-由 `rules` 或 `kata-set-rules` 设置。引擎**不保证**与各国赛场细则逐字相同，只取最接近的组合（见 [规则说明](https://lightvector.github.io/KataGo/rules.html)）。贴目走标准 GTP `komi`。
-
-
-| 简写                            | 计分    | 劫    | 自杀  | 让子贴还          |
-| ----------------------------- | ----- | ---- | --- | ------------- |
-| `chinese`                     | 数子    | 简单劫  | 否   | 白得 N（N = 让子数） |
-| `chinese-kgs` / `chinese-ogs` | 数子    | 超劫   | 否   | 白得 N          |
-| `japanese` / `korean`         | 地盘    | 简单劫  | 否   | 无             |
-| `aga` / `bga`                 | 数子    | 局势超劫 | 否   | 白得 N−1        |
-| `tromp-taylor`（示例配置默认）        | 数子    | 超劫   | 是   | 无             |
-| `new-zealand`                 | 数子    | 局势超劫 | 是   | 无             |
-| `stone-scoring`               | 数子+全税 | 简单劫  | 否   | 无             |
+### Search limits
 
 
-也可拆字段：`ko` / `scoring` / `tax` / `suicide` / `whiteHandicapBonus` / `friendlyPassOk` / `hasButton`。`kgs-rules` 的 `chinese` 会映射成 `chinese-kgs`。
-
-### 认输与对局行为
-
-
-| 选项                                             | 类型  | 默认          | 说明                                     |
-| ---------------------------------------------- | --- | ----------- | -------------------------------------- |
-| `allowResignation`                             | 开关  | 开           | 允许认输                                   |
-| `resignThreshold`                              | 浮点  | **−0.90**   | 走子方胜负效用（[−1,1]）连续低于此值才认输               |
-| `resignConsecTurns`                            | 整数  | **3**       | 连续低于阈值多少手                              |
-| `resignMinScoreDifference`                     | 浮点  | 不设          | 目差小于此不认输                               |
-| `resignMinMovesPerBoardArea`                   | 浮点  | 0           | 例：0.25 → 19 路约 90 手内不认输                |
-| `delayMoveScale` / `delayMoveMax`              | 浮点秒 | 0 / 极大      | 引擎自己的随机落子延迟（明显手短、难手长）                  |
-| `conservativePass`                             | 开关  | 开           | 不因「再虚着按 Tromp-Taylor 就赢了」而虚着           |
-| `playoutDoublingAdvantage`                     | 浮点  | 0           | −3～3。正 = 自认更强、偏稳健；负 = 自认更弱、偏凶。让子局另有动态项 |
-| `dynamicPlayoutDoublingAdvantageCapPerOppLead` | 浮点  | 0.045（配置默认） | 按让子/贴目自动调优势假设；**不影响** analyze 分数       |
+| Option | Type | Default (local handshake) | Range / empty | Notes |
+| --- | --- | --- | --- | --- |
+| `maxVisits` | int | **500** | unset = unlimited | Cap on search-tree nodes this move (includes reused nodes from prior move) |
+| `maxPlayouts` | int | unlimited (`2^50`) | unset = unlimited | **New** nodes expanded this move |
+| `maxTime` | float s | unlimited (`1e+20`) | unset = unlimited | Think time this move. If all three set, first limit wins |
+| `ponderingEnabled` | switch | off | — | Search while opponent’s clock runs |
+| `maxVisitsPondering` / `maxPlayoutsPondering` | int | unlimited | — | Ponder visit/playout caps |
+| `maxTimePondering` | float s | **60** | — | Ponder time cap, avoids holding GPU forever |
+| `numSearchThreads` | int | **6** (example config) | tune with `katago benchmark` | Search threads; on strong GPUs optimal often exceeds CPU count |
+| `lagBuffer` | float s | **1.0** | — | Clock slack, anti-timeout |
+| `searchFactorAfterOnePass` | float | 0.50 | — | Search less after opponent passes (human-friendly) |
+| `searchFactorAfterTwoPass` | float | 0.25 | — | Search less after both passed |
+| `searchFactorWhenWinning` | float | 0.40 | from cfg if not in handshake | Search less when winning |
+| `minPlayoutsPerThread` | float | 8 | — | Minimum playouts per thread |
 
 
 
 
-### 分析
+### Rules
+
+Set via `rules` or `kata-set-rules`. Engine **does not guarantee** word-for-word match with every tournament rule set; it picks the closest combination ([rules reference](https://lightvector.github.io/KataGo/rules.html)). Komi via standard GTP `komi`.
 
 
-| 选项                             | 类型  | 默认             | 说明                                          |
-| ------------------------------ | --- | -------------- | ------------------------------------------- |
-| `analysisWideRootNoise`        | 浮点  | **0.04**       | 只影响分析，加宽根上探索。1 = 几乎每手都分配 visits             |
-| `analysisIgnorePreRootHistory` | 开关  | 开              | 减轻到达当前局面的古怪历史对预测的影响                         |
-| `reportAnalysisWinratesAs`     | 枚举  | **SIDETOMOVE** | `BLACK` / `WHITE` / `SIDETOMOVE`。多数界面要走子方视角 |
-| `analysisPVLen`                | 整数  | 15             | 分析主变最长手数                                    |
-| `wideRootNoise`                | 浮点  | 0              | 对局搜索的宽根噪声（与分析项分开）                           |
+| Shorthand | Scoring | Ko | Suicide | Handicap compensation |
+| --- | --- | --- | --- | --- |
+| `chinese` | area | simple | no | White gets N (N = handicap stones) |
+| `chinese-kgs` / `chinese-ogs` | area | superko | no | White gets N |
+| `japanese` / `korean` | territory | simple | no | none |
+| `aga` / `bga` | area | positional superko | no | White gets N−1 |
+| `tromp-taylor` (example default) | area | superko | yes | none |
+| `new-zealand` | area | positional superko | yes | none |
+| `stone-scoring` | area + all tax | simple | no | none |
+
+
+Or per field: `ko` / `scoring` / `tax` / `suicide` / `whiteHandicapBonus` / `friendlyPassOk` / `hasButton`. KGS `chinese` maps to `chinese-kgs`.
+
+### Resignation and game behavior
+
+
+| Option | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `allowResignation` | switch | on | Allow resignation |
+| `resignThreshold` | float | **−0.90** | Resign when mover’s win utility ([−1,1]) stays below this |
+| `resignConsecTurns` | int | **3** | Consecutive moves below threshold |
+| `resignMinScoreDifference` | float | unset | Do not resign if point lead is smaller |
+| `resignMinMovesPerBoardArea` | float | 0 | e.g. 0.25 → ~90 moves on 19×19 before resign allowed |
+| `delayMoveScale` / `delayMoveMax` | float s | 0 / huge | Engine’s own random move delay (obvious moves short, hard moves long) |
+| `conservativePass` | switch | on | Do not pass just because another pass wins under Tromp-Taylor |
+| `playoutDoublingAdvantage` | float | 0 | −3–3. Positive = assume stronger, safer; negative = assume weaker, sharper. Handicap games have extra dynamic term |
+| `dynamicPlayoutDoublingAdvantageCapPerOppLead` | float | 0.045 (config default) | Auto-adjust advantage from handicap/komi; **does not affect** analyze scores |
 
 
 
 
-### 线程、缓存与其余搜索项
+### Analysis
 
-`nnCacheSizePowerOfTwo`（配置默认约 20，即 2^20 条评估缓存）和 GPU 后端（本机 Metal / MPSGraph）在启动配置里，一般不能靠 `kata-set-param` 改。
 
-`kata-list-params` 里还有大量搜索内部项（`cpuctExploration`、`fpuReductionMax`、`useLcbForSelection`、`useGraphSearch` 等）。本机握手默认与官方示例一致，**不要当棋力旋钮拧**——棋力只应动模型、visits / 时限。完整注释见官方 `gtp_example.cfg`。
+| Option | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `analysisWideRootNoise` | float | **0.04** | Analysis only; widens root exploration. 1 ≈ visits on almost every move |
+| `analysisIgnorePreRootHistory` | switch | on | Reduces odd history effects on predictions |
+| `reportAnalysisWinratesAs` | enum | **SIDETOMOVE** | `BLACK` / `WHITE` / `SIDETOMOVE`. Most UIs want side-to-move perspective |
+| `analysisPVLen` | int | 15 | Max analysis PV length |
+| `wideRootNoise` | float | 0 | Wide root noise for game search (separate from analysis) |
 
-## 下载与运行
 
-从源码构建安装包（macOS dmg / Windows 安装程序，自动携带引擎）：
+
+
+### Threads, cache, and other search internals
+
+`nnCacheSizePowerOfTwo` (config default ~20, i.e. 2^20 eval cache entries) and GPU backend (local Metal / MPSGraph) live in startup config; usually not changeable via `kata-set-param`.
+
+`kata-list-params` exposes many internal search knobs (`cpuctExploration`, `fpuReductionMax`, `useLcbForSelection`, `useGraphSearch`, etc.). Local defaults match the official example — **do not treat these as strength knobs**; change model and visits/time only. Full comments in official `gtp_example.cfg`.
+
+## Download and run
+
+Build installers from source (macOS dmg / Windows NSIS, engines bundled):
 
 ```bash
 pnpm install
-pnpm build-app          # 产物在 packages/app/dist/
+pnpm build-app          # output in packages/app/dist/
 ```
 
-或直接运行开发版：
+Or run the dev build:
 
 ```bash
-pnpm dev                # Electron 开发模式
+pnpm dev                # Electron dev mode
 ```
 
 
 
-## 开发
+## Development
 
-- Node ≥ 22、pnpm ≥ 10
-- `pnpm test` 单测（规则 / 协议 / 引擎集成）；`pnpm gate` = typecheck + lint + test
-- `pnpm dev:web` 浏览器模式调试 UI（无 Electron，自动注入 mock 后端，[http://localhost:5174](http://localhost:5174)）
+- Node ≥ 22, pnpm ≥ 10
+- `pnpm test` — unit tests (rules / protocol / engine integration); `pnpm gate` = typecheck + lint + test
+- `pnpm dev:web` — browser UI debug (no Electron, mock backend injected, [http://localhost:5174](http://localhost:5174))
 
 ```
-packages/core   领域内核：规则 / 记谱 / 对弈状态机 / 着法树，零依赖纯 TS
-packages/app    Electron 应用：main（引擎进程 / IPC）、renderer（React UI）
-engines/chess/  象棋引擎发行包（gitignore，dev 时按平台自动探测；打包版内置无需放置）
+packages/core   Domain core: rules / notation / game state machine / move tree, pure TS, zero deps
+packages/app    Electron app: main (engine process / IPC), renderer (React UI)
+engines/chess/  Xiangqi engine bundle (gitignored; auto-detected in dev; bundled in release)
 ```
 
-设计文档与开发约定见 [DESIGN.md](./DESIGN.md) 与 [AGENTS.md](./AGENTS.md)。
+See [DESIGN.md](./DESIGN.md) and [AGENTS.md](./AGENTS.md) for design and dev conventions.
 
-## 许可证
+## License
 
-本项目源码以 **GNU GPLv3 或后续版本** 发布，全文见 [LICENSE](./LICENSE)。第三方引擎、权重与框架的许可证、商用限制与对应源码入口见 [NOTICE.md](./NOTICE.md)。
+Source code is released under **GNU GPLv3 or later** — full text in [LICENSE](./LICENSE). Third-party engines, weights, and frameworks: licenses, commercial restrictions, and source links in [NOTICE.md](./NOTICE.md).
 
-要点：
+Summary:
 
-- 连线用的 `yolov11.onnx` 来自 TCHESS（GPLv3），本软件按 GPL 分发
-- 随包 [Pikafish](https://github.com/official-pikafish/Pikafish) 引擎为 GPLv3；`pikafish.nnue` **权重另有「未经许可不得商用」条款**（[licenses/pikafish-nnue.txt](./licenses/pikafish-nnue.txt)）
-- [KataGo](https://github.com/lightvector/KataGo) 及其官方网络为 MIT（或同等宽松许可）
-- Electron、React、three.js、ONNX Runtime 等为 MIT / Apache-2.0，与 GPL 组合分发相容
-
-@Cursor
+- Proxy-play `yolov11.onnx` comes from TCHESS (GPLv3); this app is distributed under GPL
+- Bundled [Pikafish](https://github.com/official-pikafish/Pikafish) engine is GPLv3; `pikafish.nnue` **weights have a separate “no commercial use without permission” clause** ([licenses/pikafish-nnue.txt](./licenses/pikafish-nnue.txt))
+- [KataGo](https://github.com/lightvector/KataGo) and official networks are MIT (or equivalent permissive)
+- Electron, React, three.js, ONNX Runtime, etc. are MIT / Apache-2.0, compatible with GPL distribution
