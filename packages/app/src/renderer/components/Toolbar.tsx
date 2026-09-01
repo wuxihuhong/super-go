@@ -355,7 +355,6 @@ export default function Toolbar(props: ToolbarProps) {
           ' ',
         )}
       {iconButton('toolbar.resign', <IconFlag />, props.onResign, !props.canResign, false, 'Shift+R')}
-      {iconButton('toolbar.about', <IconInfo />, props.onOpenAbout)}
       {props.kind === 'go' &&
         iconButton(
           'toolbar.pass',
@@ -392,6 +391,7 @@ export default function Toolbar(props: ToolbarProps) {
           )}
         </div>
       )}
+      {iconButton('toolbar.about', <IconInfo />, props.onOpenAbout)}
 
       {/* 居中标题仅 mac：hiddenInset 没有系统标题，Win/Linux 窗框已有应用名 */}
       {IS_MAC && (
