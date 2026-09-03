@@ -49,6 +49,8 @@ Super Go 以 **GNU General Public License v3.0 或后续版本**（SPDX: `GPL-3.
 | [koffi](https://github.com/Koromix/koffi) | Windows PrintWindow FFI | MIT |
 | [TypeScript](https://github.com/microsoft/TypeScript) | 语言 | Apache-2.0 |
 | [Vitest](https://github.com/vitest-dev/vitest) | 测试 | MIT |
+| [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch)（`@fontsource/chakra-petch`） | UI 显示字体 | OFL-1.1 |
+| [JetBrains Mono](https://www.jetbrains.com/lp/mono/)（`@fontsource/jetbrains-mono`） | 等宽数字 / 遥测 | OFL-1.1 |
 
 npm 传递依赖各自保留原许可证；完整清单见各包内 `LICENSE`。MIT / Apache-2.0 与本项目的 GPLv3 **组合分发**相容：组合作品按 GPLv3 提供，上述组件本身仍是原许可证。
 

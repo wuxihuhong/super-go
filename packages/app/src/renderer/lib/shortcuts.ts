@@ -4,6 +4,24 @@ export const IS_MAC =
     ? /Mac|iPhone|iPad/.test(navigator.platform)
     : typeof process !== 'undefined' && process.platform === 'darwin';
 
+export const IS_WIN =
+  typeof navigator !== 'undefined' && navigator.platform !== ''
+    ? /Win/.test(navigator.platform)
+    : typeof process !== 'undefined' && process.platform === 'win32';
+
+/** 窗口层：真机跟 OS；dev:web 可用 ?platform=win|mac 预览 */
+export type ChromePlatform = 'mac' | 'win' | 'other';
+
+export function chromePlatform(): ChromePlatform {
+  if (typeof window !== 'undefined') {
+    const forced = new URLSearchParams(window.location.search).get('platform');
+    if (forced === 'win' || forced === 'mac') return forced;
+  }
+  if (IS_MAC) return 'mac';
+  if (IS_WIN) return 'win';
+  return 'other';
+}
+
 /**
  * 工具栏快捷键文案。
  * mac：一律 ⌘⇧（避开系统 ⌘N / ⌘Z / ⌘, 等）；其他平台 Ctrl+，认输仍是 Ctrl+Shift+R。

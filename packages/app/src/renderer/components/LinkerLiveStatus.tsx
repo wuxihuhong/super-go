@@ -78,7 +78,6 @@ const RESOLVE_KEY: Record<LinkerResolution, MessageKey> = {
 
 const RESOLUTIONS: readonly LinkerResolution[] = ['retry', 'resync', 'spectate'];
 
-/** 侧栏着法区底部：连线进行中、出错、或有可关闭的停止原因时才占位 */
 export function linkerLiveVisible(status: LinkerStatus | null): boolean {
   if (status === null) return false;
   if (linkerPhaseActive(status)) return true;
@@ -91,10 +90,28 @@ export function linkerPhaseActive(status: LinkerStatus | null): boolean {
   return status !== null && isLinkerActivePhase(status.phase);
 }
 
-/**
- * 连线即时状态（§6.6）：阶段 / fps / 启停 / 原因码 / 待介入决断。
- * 挂在侧栏着法列表下方，不依赖连线弹层是否打开。
- */
+function phaseTone(phase: LinkerPhase): { dot: string; pulse: boolean } {
+  switch (phase) {
+    case 'idle':
+    case 'stopped':
+      return { dot: 'bg-dim2', pulse: false };
+    case 'locating':
+    case 'initializing':
+      return { dot: 'bg-acc', pulse: true };
+    case 'scanning':
+    case 'thinking':
+    case 'clicking':
+      return { dot: 'bg-ok', pulse: true };
+    case 'paused':
+      return { dot: 'bg-dim', pulse: false };
+    case 'attention':
+    case 'error':
+      return { dot: 'bg-danger', pulse: false };
+    default:
+      return { dot: 'bg-dim2', pulse: false };
+  }
+}
+
 export default function LinkerLiveStatus(props: LinkerLiveStatusProps): React.JSX.Element {
   const { t, status } = props;
   const active = isLinkerActivePhase(status.phase);
@@ -102,108 +119,99 @@ export default function LinkerLiveStatus(props: LinkerLiveStatusProps): React.JS
   const showReason = reason !== null && !SILENT_REASONS.has(reason);
   const hintKey = reason !== null ? (REASON_HINT_KEY[reason] ?? null) : null;
   const locateHint = status.phase === 'locating' ? status.locateHint : null;
+  const tone = phaseTone(status.phase);
+  const titleTone =
+    status.phase === 'error' || status.phase === 'attention'
+      ? 'text-danger-txt'
+      : status.phase === 'paused' || status.phase === 'idle'
+        ? 'text-dim'
+        : 'text-ok-txt';
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2 text-xs">
+    <div className="rounded-[9px] border border-[color:var(--ok-line)] bg-[color:var(--ok-bg)] px-3 py-2.5">
+      <div className="flex items-center gap-2">
         <span
-          className={`h-2 w-2 shrink-0 rounded-full ${
-            !active
-              ? 'bg-muted-foreground/50'
-              : status.phase === 'attention'
-                ? 'bg-danger'
-                : status.phase === 'paused'
-                  ? 'bg-muted-foreground'
-                  : 'animate-pulse bg-accent'
-          }`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot} ${tone.pulse ? 'sg-pulse' : ''}`}
         />
-        <span className="min-w-0 truncate text-foreground">{t(PHASE_KEY[status.phase])}</span>
+        <span className={`min-w-0 truncate font-mono text-[10.5px] font-bold tracking-[0.06em] ${titleTone}`}>
+          {t('linker.title')} · {t(PHASE_KEY[status.phase])}
+        </span>
         {active && (
-          <span className="min-w-0 truncate text-[11px] text-muted-foreground">
-            {t('linker.status.fps')
-              .replace('{fps}', String(status.fps))
-              .replace('{ms}', String(status.inferMs))}
-            {status.reversed ? ` · ${t('linker.status.reversed')}` : ''}
+          <span className="ml-auto font-mono text-[9.5px] font-semibold text-dim2">
+            {status.fps}FPS {status.inferMs}MS
           </span>
         )}
       </div>
       {active && (
-        <div className="text-[11px] text-muted-foreground">
-          {t('linker.status.moves').replace('{n}', String(status.moves))} · {t('linker.emergency')}
+        <div className="mt-1 truncate font-mono text-[10.5px] text-dim">
+          {t('linker.status.moves').replace('{n}', String(status.moves))}
+          {status.reversed ? ` · ${t('linker.status.reversed')}` : ''}
+          {` · ${t('linker.emergency')}`}
         </div>
       )}
       {locateHint !== null && (
-        <div className="rounded-lg border border-border bg-background p-2.5">
+        <div className="mt-2 rounded-lg border border-[color:var(--line)] bg-background p-2.5">
           <div className="text-xs text-foreground">{t(LOCATE_KEY[locateHint])}</div>
-          <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-            {t(LOCATE_HINT_KEY[locateHint])}
-          </div>
+          <div className="mt-1 text-[11px] leading-relaxed text-dim">{t(LOCATE_HINT_KEY[locateHint])}</div>
         </div>
       )}
       {showReason && reason !== null && (
-        <div className="rounded-lg border border-danger/40 bg-danger/5 p-2.5">
+        <div className="mt-2 rounded-lg border border-[color:var(--danger-line)] bg-[color:var(--danger-bg)] p-2.5">
           <div className="flex items-start justify-between gap-2">
-            <div className="text-xs font-medium text-danger">{t(REASON_KEY[reason])}</div>
+            <div className="text-xs font-medium text-danger-txt">{t(REASON_KEY[reason])}</div>
             {props.onDismiss !== undefined && !active && (
               <button
                 type="button"
                 onClick={props.onDismiss}
-                className="shrink-0 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                className="shrink-0 text-[11px] text-dim hover:text-foreground"
               >
                 {t('linker.status.dismiss')}
               </button>
             )}
           </div>
           {hintKey !== null && (
-            <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-              {t(hintKey)}
-            </div>
+            <div className="mt-1 text-[11px] leading-relaxed text-dim">{t(hintKey)}</div>
           )}
           {status.message !== null && (
-            <div className="mt-1 font-mono text-[10px] break-all text-muted-foreground/70">
-              {status.message}
-            </div>
+            <div className="mt-1 font-mono text-[10px] break-all text-dim/70">{status.message}</div>
           )}
         </div>
       )}
       {active && (
-        <div className="flex gap-1.5">
+        <div className="mt-2 flex gap-1.5">
           <button
             type="button"
             onClick={props.onStop}
-            className="flex-1 rounded-md bg-danger px-2 py-1.5 text-[11px] font-medium text-background"
+            className="flex-1 rounded-md border border-[color:var(--danger-line)] bg-[color:var(--danger-bg)] py-1.5 font-mono text-[10.5px] font-semibold text-danger-txt"
           >
             {t('linker.stop')}
           </button>
           <button
             type="button"
             onClick={props.onPauseToggle}
-            className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+            className="flex-1 rounded-md border border-[color:var(--line)] py-1.5 font-mono text-[10.5px] font-semibold text-dim"
           >
             {status.phase === 'paused' ? t('linker.resume') : t('linker.pause')}
           </button>
         </div>
       )}
-      {status.phase === 'attention' && (
-        <LinkerResolveActions t={t} onResolve={props.onResolve} />
-      )}
+      {status.phase === 'attention' && <LinkerResolveActions t={t} onResolve={props.onResolve} />}
     </div>
   );
 }
 
-/** 待介入决断：侧栏与连线弹层共用，关掉侧栏后仍能从弹层点 */
 export function LinkerResolveActions(props: {
   t: TFunction;
   onResolve: (resolution: LinkerResolution) => void;
 }): React.JSX.Element {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="mt-2 flex flex-wrap gap-1.5">
       {RESOLUTIONS.map((r) => (
         <button
           key={r}
           type="button"
           onClick={() => props.onResolve(r)}
-          className="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground/80 transition-colors hover:border-accent hover:text-accent"
+          className="rounded-md border border-[color:var(--line)] bg-background px-2 py-1 text-[11px] text-foreground/80 hover:border-acc hover:text-acc"
         >
           {props.t(RESOLVE_KEY[r])}
         </button>

@@ -178,7 +178,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
   ];
 
   return (
-    <div className="max-h-[80vh] w-96 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-xl">
+    <div className="sg-popover max-h-[80vh] w-96 overflow-y-auto rounded-xl p-3">
       <div className="mb-3">
         {segmented(tabs, tab, setTab, false, true)}
       </div>
@@ -219,6 +219,13 @@ export default function SettingsPanel(props: SettingsPanelProps) {
               onOff,
               (settings?.view?.board3d ?? true) ? 'true' : 'false',
               (value) => patch({ view: { board3d: value === 'true' } }),
+            )}
+          </Row>
+          <Row label={props.t('settings.view.hudSweep')} hint={props.t('settings.view.hudSweep.hint')}>
+            {segmented(
+              onOff,
+              (settings?.view?.hudSweep !== false) ? 'true' : 'false',
+              (value) => patch({ view: { hudSweep: value === 'true' } }),
             )}
           </Row>
           <Row label={props.t('settings.about')}>

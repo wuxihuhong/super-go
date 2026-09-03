@@ -43,7 +43,7 @@ export default function SetupPanel(props: SetupPanelProps) {
       ];
 
   return (
-    <div className="w-80 rounded-xl border border-border bg-surface p-3 shadow-xl">
+    <div className="sg-popover w-80 rounded-xl p-3">
       <h2 className="mb-2 px-1 text-xs font-semibold text-muted-foreground">
         {props.t(props.mode === 'new' ? 'toolbar.newGame' : 'setup.continueFrom')}
       </h2>
@@ -126,7 +126,7 @@ export default function SetupPanel(props: SetupPanelProps) {
           onClick={() =>
             props.onStart(humanSide, go ? { boardSize: 19, komi, handicap, rules } : undefined)
           }
-          className="rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-accent-foreground"
+          className="sg-btn-solid rounded-lg px-3.5 py-1.5 text-xs font-medium"
         >
           {props.t(props.mode === 'new' ? 'setup.start' : 'setup.continueFrom')}
         </button>

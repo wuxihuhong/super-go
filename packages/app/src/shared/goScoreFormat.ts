@@ -28,3 +28,20 @@ export function formatScoreSideMargin(
   const n = Math.abs(rounded);
   return rounded > 0 ? `${black}+${n}` : `${white}+${n}`;
 }
+
+/** 中国规则面积：黑+白 = 路数²，lead = 黑 − 白 − 贴目 */
+export function estimateAreaScores(
+  lead: number,
+  komi: number,
+  size: number,
+): { black: number; white: number; blackAfterKomi: number } {
+  const total = size * size;
+  const black = (total + lead + komi) / 2;
+  const white = total - black;
+  return { black, white, blackAfterKomi: black - komi };
+}
+
+export function formatScoreNumber(n: number): string {
+  const r = Math.round(n * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+}

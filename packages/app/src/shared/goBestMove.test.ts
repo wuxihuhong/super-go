@@ -40,7 +40,7 @@ describe('hintPointsFromCandidates', () => {
     expect(points[2]?.best).toBe(false);
   });
 
-  it('有 +0.0 时 +0.4 不是最优（低访问点即使被错标 best 也不算）', () => {
+  it('有 -0.0 时 -0.4 不是最优（低访问点即使被错标 best 也不算）', () => {
     const points = hintPointsFromCandidates(
       [
         { move: 'H15', visits: 2900, lead: 2.0 },
@@ -74,7 +74,7 @@ describe('hintPointsFromCandidates', () => {
     expect(h14?.best).toBe(false);
   });
 
-  it('着色忽略错误的 best 旗标：只认写成 +0.0 且访问量最高的点', () => {
+  it('着色忽略错误的 best 旗标：只认写成 -0.0 且访问量最高的点', () => {
     const painted = uniqueBestHint([
       { point: { x: 7, y: 5 }, loss: 0.4, visits: 34, faint: false, best: true },
       { point: { x: 7, y: 4 }, loss: 0, visits: 2900, faint: false, best: false },
@@ -113,8 +113,8 @@ describe('candidatesFromEvaluation / format', () => {
   });
 
   it('目损与访问量文案', () => {
-    expect(formatHintLoss(0)).toBe('+0.0');
-    expect(formatHintLoss(2.84)).toBe('+2.8');
+    expect(formatHintLoss(0)).toBe('-0.0');
+    expect(formatHintLoss(2.84)).toBe('-2.8');
     expect(formatHintVisits(2800)).toBe('2.8k');
     expect(formatHintVisits(500)).toBe('500');
   });

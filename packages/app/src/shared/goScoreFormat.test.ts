@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { formatGtpScoreRaw, formatScoreSideMargin } from './goScoreFormat';
+import {
+  estimateAreaScores,
+  formatGtpScoreRaw,
+  formatScoreNumber,
+  formatScoreSideMargin,
+} from './goScoreFormat';
 
 const zh = { black: '黑', white: '白', draw: '和棋', resign: '认输', timeout: '超时' };
 
@@ -19,5 +24,17 @@ describe('formatScoreSideMargin', () => {
     expect(formatScoreSideMargin(-64.5, '黑', '白')).toBe('白+64.5');
     expect(formatScoreSideMargin(8.5, '黑', '白')).toBe('黑+8.5');
     expect(formatScoreSideMargin(0, '黑', '白')).toBe('0');
+  });
+});
+
+describe('estimateAreaScores', () => {
+  it('19 路贴目 7.5、黑领先 3.5 → 黑面积带括号贴目后', () => {
+    const a = estimateAreaScores(3.5, 7.5, 19);
+    expect(a.black + a.white).toBe(361);
+    expect(a.black - a.white - 7.5).toBeCloseTo(3.5);
+    expect(a.blackAfterKomi).toBeCloseTo(a.black - 7.5);
+    expect(formatScoreNumber(a.black)).toBe('186');
+    expect(formatScoreNumber(a.white)).toBe('175');
+    expect(formatScoreNumber(a.blackAfterKomi)).toBe('178.5');
   });
 });

@@ -55,6 +55,7 @@ import type {
   PlayMoveIntent,
 } from '@shared/game';
 import { toRedPerspective } from '@shared/score';
+import { applyTheme } from './theme';
 
 /** 子力价值（厘兵），mock 材料评估用 */
 const PIECE_CP: Record<string, number> = {
@@ -138,11 +139,10 @@ function createMockApi(): SuperGoApi {
   const effectiveDark = (): boolean =>
     settings.theme === 'dark' || (settings.theme === 'system' && media.matches);
   const applyThemeClass = (): void => {
-    const root = document.documentElement;
-    root.classList.toggle('theme-dark', settings.theme === 'dark');
-    root.classList.toggle('theme-light', settings.theme === 'light');
+    applyTheme(effectiveDark());
   };
   const notifyTheme = (): void => {
+    applyThemeClass();
     for (const cb of themeListeners) cb(effectiveDark());
   };
   applyThemeClass();
@@ -462,7 +462,7 @@ function createMockApi(): SuperGoApi {
       settings = {
         ...settings,
         ...patch,
-        view: { board3d: true, alwaysOnTop: false, ...settings.view, ...patch.view },
+        view: { board3d: true, alwaysOnTop: false, hudSweep: true, ...settings.view, ...patch.view },
         xiangqi: { ponder: false, ...settings.xiangqi, ...xiangqi },
         go,
       };
@@ -784,7 +784,7 @@ function loadSettings(): AppSettings {
       if (parsed.theme !== undefined) {
         return {
           ...parsed,
-          view: { board3d: true, alwaysOnTop: false, ...parsed.view },
+          view: { board3d: true, alwaysOnTop: false, hudSweep: true, ...parsed.view },
           xiangqi: {
             ponder: false,
             moveDelayMinSec: MOVE_DELAY_DEFAULT.minSec,
@@ -811,7 +811,7 @@ function loadSettings(): AppSettings {
   }
   return {
     theme: 'system' satisfies ThemeSetting,
-    view: { board3d: true, alwaysOnTop: false },
+    view: { board3d: true, alwaysOnTop: false, hudSweep: true },
     activeKind: 'xiangqi',
     xiangqi: {
       strength: {},

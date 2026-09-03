@@ -183,6 +183,8 @@ export interface AppSettings {
     alwaysOnTop?: boolean;
     /** 3D 棋盘在中央区的占比（0.5–2，仅 3D 生效；2D 恒满高） */
     board3dScale?: number;
+    /** 棋盘区扫掠光（默认开；prefers-reduced-motion 仍强制关） */
+    hudSweep?: boolean;
   };
   /** 当前棋种（工具栏全局开关；缺省象棋） */
   activeKind?: GameKind;

@@ -103,7 +103,15 @@ export function registerIpc(
   );
 
   nativeTheme.on('updated', () => {
-    getMainWindow()?.webContents.send(IPC_CHANNELS.themeChanged, nativeTheme.shouldUseDarkColors);
+    const win = getMainWindow();
+    win?.webContents.send(IPC_CHANNELS.themeChanged, nativeTheme.shouldUseDarkColors);
+    if (win !== null && !win.isDestroyed() && process.platform === 'win32') {
+      win.setTitleBarOverlay({
+        height: 32,
+        color: nativeTheme.shouldUseDarkColors ? '#0b1119' : '#ffffff',
+        symbolColor: nativeTheme.shouldUseDarkColors ? '#8fb4c6' : '#3d5a68',
+      });
+    }
   });
 
   // ---- 对弈意图（P1）----

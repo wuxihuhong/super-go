@@ -8,7 +8,7 @@ import { uniqueBestHint } from '@shared/goBestMove';
 import { grooveLine } from '../lib/boardDraw';
 import { drawHintLabel, hintDotVisual, hoshiPoints } from '../lib/goBoardDraw';
 import { snapGridIndex } from '../lib/goSnap';
-import { cssColor } from '../lib/theme';
+import { cssColor, isDarkTheme } from '../lib/theme';
 import { useElementSize } from '../lib/useElementSize';
 
 export interface GoBoard3DProps {
@@ -27,7 +27,7 @@ const GO_N = 19;
 const MARGIN = 0.72;
 const GRID = 10.8;
 const BOARD = GRID + 2 * MARGIN;
-const BOARD_H = 0.38;
+const BOARD_H = 1.45;
 const TEX = 4096;
 const LOOK_Z = 0.2;
 /** 盘体八角必须落在 NDC 此范围内，100% 时近沿/边角才不会被裁 */
@@ -46,6 +46,37 @@ function worldToGrid(hit: THREE.Vector3, n: number): Point | null {
   const gy = snapGridIndex(hit.z, origin, step, n);
   if (gx === null || gy === null) return null;
   return { x: gx, y: gy };
+}
+
+/** 沿 lathe V 铺高光→本体→Rim，浅色盘上白子靠边缘才能从盘面里分出来 */
+function paintStoneAlbedo(black: boolean): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 256;
+  const ctx = c.getContext('2d');
+  if (ctx === null) return c;
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  if (black) {
+    g.addColorStop(0, cssColor('--stone-black-hi'));
+    g.addColorStop(1, cssColor('--stone-black'));
+  } else {
+    g.addColorStop(0, cssColor('--stone-white-hi'));
+    g.addColorStop(0.28, cssColor('--stone-white'));
+    g.addColorStop(0.4, cssColor('--stone-white-rim'));
+    g.addColorStop(0.52, cssColor('--stone-white-rim'));
+    g.addColorStop(0.72, cssColor('--stone-white'));
+    g.addColorStop(1, cssColor('--stone-white-hi'));
+  }
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 256);
+  return c;
+}
+
+function stoneMapFromAlbedo(canvas: HTMLCanvasElement): THREE.CanvasTexture {
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 /** 双凸透镜形棋子剖面（绕 Y 轴旋转） */
@@ -67,13 +98,15 @@ function rnd(i: number): number {
 }
 
 /** 程序木纹（对齐象棋 3D：用不透明 --board-line + globalAlpha，避免 --board-grain 叠透明后等于没画） */
-function paintWoodGrain(ctx: CanvasRenderingContext2D): void {
+function paintWoodGrain(ctx: CanvasRenderingContext2D, opts?: { side?: boolean }): void {
   const W = ctx.canvas.width;
   const H = ctx.canvas.height;
   const hi = cssColor('--board-hi');
   const lo = cssColor('--board-lo');
   const line = cssColor('--board-line');
+  const dark = isDarkTheme();
   const scale = W / 1040;
+  const amp = dark ? 1 : 1.85;
   const grad = ctx.createLinearGradient(0, 0, W, H);
   grad.addColorStop(0, hi);
   grad.addColorStop(1, lo);
@@ -83,7 +116,7 @@ function paintWoodGrain(ctx: CanvasRenderingContext2D): void {
   ctx.strokeStyle = line;
   for (let i = 0; i < 12; i++) {
     const bx = ((i + rnd(i) * 0.6) / 12) * W;
-    ctx.globalAlpha = 0.08 + rnd(i + 20) * 0.06;
+    ctx.globalAlpha = (0.08 + rnd(i + 20) * 0.06) * amp;
     ctx.lineWidth = (50 + rnd(i + 60) * 90) * scale;
     ctx.beginPath();
     ctx.moveTo(bx + Math.sin(i * 1.7) * 3, 0);
@@ -93,7 +126,7 @@ function paintWoodGrain(ctx: CanvasRenderingContext2D): void {
   const fines = W > 2000 ? 120 : 64;
   for (let i = 0; i < fines; i++) {
     const bx = rnd(i) * W;
-    ctx.globalAlpha = 0.1 + rnd(i + 30) * 0.08;
+    ctx.globalAlpha = (0.1 + rnd(i + 30) * 0.08) * amp;
     ctx.lineWidth = (0.8 + rnd(i + 70) * 1.8) * scale;
     ctx.beginPath();
     ctx.moveTo(bx + Math.sin(i) * 2, 0);
@@ -102,7 +135,7 @@ function paintWoodGrain(ctx: CanvasRenderingContext2D): void {
   }
   for (let i = 0; i < 8; i++) {
     const bx = rnd(i + 200) * W;
-    ctx.globalAlpha = 0.14 + rnd(i + 210) * 0.07;
+    ctx.globalAlpha = (0.14 + rnd(i + 210) * 0.07) * amp;
     ctx.lineWidth = (2.5 + rnd(i + 220) * 2.5) * scale;
     ctx.beginPath();
     ctx.moveTo(bx, 0);
@@ -112,15 +145,24 @@ function paintWoodGrain(ctx: CanvasRenderingContext2D): void {
   ctx.restore();
   ctx.save();
   const sheen = ctx.createRadialGradient(W * 0.3, H * 0.2, 0, W * 0.3, H * 0.2, W * 0.9);
-  sheen.addColorStop(0, 'rgba(255,255,255,0.04)');
+  sheen.addColorStop(0, dark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.07)');
   sheen.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = sheen;
   ctx.fillRect(0, 0, W, H);
   const vign = ctx.createRadialGradient(W * 0.75, H * 0.85, 0, W * 0.75, H * 0.85, W * 0.8);
-  vign.addColorStop(0, 'rgba(0,0,0,0.05)');
+  vign.addColorStop(0, dark ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.12)');
   vign.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = vign;
   ctx.fillRect(0, 0, W, H);
+  if (opts?.side === true) {
+    ctx.fillStyle = dark ? 'rgba(0,0,0,0.28)' : 'rgba(18, 40, 52, 0.34)';
+    ctx.fillRect(0, 0, W, H);
+    const rim = ctx.createLinearGradient(0, 0, 0, H * 0.35);
+    rim.addColorStop(0, dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.22)');
+    rim.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = rim;
+    ctx.fillRect(0, 0, W, H * 0.28);
+  }
   ctx.restore();
 }
 
@@ -196,7 +238,7 @@ function frameGoBoard(camera: THREE.PerspectiveCamera, flip: boolean): void {
   camera.near = 0.8;
   camera.far = 90;
   let chosen = 34;
-  for (let dist = 24; dist <= 52; dist += 0.35) {
+  for (let dist = 24; dist <= 64; dist += 0.35) {
     camera.position.copy(dir).multiplyScalar(dist);
     camera.lookAt(look);
     camera.updateMatrixWorld(true);
@@ -341,7 +383,7 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       propsRef.current.onUnavailable();
       return;
     }
-    paintWoodGrain(sideCtx);
+    paintWoodGrain(sideCtx, { side: true });
     const sideTex = new THREE.CanvasTexture(sideCanvas);
     sideTex.colorSpace = THREE.SRGBColorSpace;
     sideTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -368,7 +410,7 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(48, 48),
-      new THREE.ShadowMaterial({ opacity: 0.16 }),
+      new THREE.ShadowMaterial({ opacity: 0.28 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -BOARD_H - 0.02;
@@ -391,7 +433,7 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       envMapIntensity: 0.2,
     });
     const whiteMat = new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color(cssColor('--stone-white')),
+      color: new THREE.Color(cssColor('--stone-white-hi')),
       roughness: 0.2,
       clearcoat: 0.38,
       envMapIntensity: 0.28,
@@ -441,22 +483,42 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       const n = pos.size;
       paintGoBoard(boardCtx, n);
       boardTex.needsUpdate = true;
-      paintWoodGrain(sideCtx);
+      paintWoodGrain(sideCtx, { side: true });
       sideTex.needsUpdate = true;
+      const dark = isDarkTheme();
       blackMat.color.set(cssColor('--stone-black'));
-      whiteMat.color.set(cssColor('--stone-white'));
+      blackMat.map?.dispose();
+      blackMat.map = stoneMapFromAlbedo(paintStoneAlbedo(true));
+      whiteMat.color.set(cssColor('--stone-white-hi'));
+      whiteMat.map?.dispose();
+      whiteMat.map = stoneMapFromAlbedo(paintStoneAlbedo(false));
+      whiteMat.roughness = dark ? 0.2 : 0.5;
+      whiteMat.clearcoat = dark ? 0.38 : 0;
+      whiteMat.envMapIntensity = dark ? 0.28 : 0;
+      topMat.roughness = dark ? 0.58 : 0.74;
+      topMat.clearcoat = dark ? 0.12 : 0.04;
+      topMat.envMapIntensity = dark ? 0.07 : 0.03;
+      sideMat.color.set(dark ? 0xffffff : 0xd4dee4);
+      sideMat.roughness = dark ? 0.5 : 0.68;
+      sideMat.clearcoat = dark ? 0.2 : 0.06;
+      sideMat.envMapIntensity = dark ? 0.1 : 0.04;
+      sideMat.needsUpdate = true;
+      blackMat.needsUpdate = true;
+      whiteMat.needsUpdate = true;
+      topMat.needsUpdate = true;
 
       while (stones.children.length > 0) {
         const child = stones.children[0]!;
         stones.remove(child);
-        if (child instanceof THREE.Mesh) {
-          if (child.geometry !== stoneGeo) child.geometry.dispose();
-          const mat = child.material;
+        child.traverse((node) => {
+          if (!(node instanceof THREE.Mesh)) return;
+          if (node.geometry !== stoneGeo) node.geometry.dispose();
+          const mat = node.material;
           const extras = (Array.isArray(mat) ? mat : [mat]).filter(
             (m) => m !== blackMat && m !== whiteMat,
           );
           extras.forEach((m) => m.dispose());
-        }
+        });
       }
       const step = GRID / (n - 1);
       const stoneR = step * 0.46;
@@ -469,6 +531,29 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
           mesh.position.set(at.x, 0.02, at.z);
           mesh.scale.set(stoneR, stoneR, stoneR);
           mesh.castShadow = true;
+          if (cell !== 'first') {
+            const rim = new THREE.Mesh(
+              new THREE.TorusGeometry(0.97, 0.05, 10, 36),
+              new THREE.MeshBasicMaterial({
+                color: new THREE.Color(cssColor('--stone-white-rim')),
+              }),
+            );
+            rim.rotation.x = Math.PI / 2;
+            rim.position.y = 0.12;
+            mesh.add(rim);
+          }
+          const blob = new THREE.Mesh(
+            new THREE.CircleGeometry(stoneR * 1.08, 24),
+            new THREE.MeshBasicMaterial({
+              color: new THREE.Color(cssColor('--stone-shadow')),
+              transparent: true,
+              opacity: dark ? 0.28 : 0.22,
+              depthWrite: false,
+            }),
+          );
+          blob.rotation.x = -Math.PI / 2;
+          blob.position.set(at.x, 0.004, at.z);
+          stones.add(blob);
           stones.add(mesh);
           if (
             p.lastPoint !== undefined &&
@@ -479,7 +564,7 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
             const mark = new THREE.Mesh(
               new THREE.RingGeometry(stoneR * 0.28, stoneR * 0.4, 24),
               new THREE.MeshBasicMaterial({
-                color: new THREE.Color(cssColor('--accent')),
+                color: new THREE.Color(cssColor('--m-last')),
                 side: THREE.DoubleSide,
               }),
             );
@@ -619,6 +704,8 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       board.geometry.dispose();
       topMat.dispose();
       sideMat.dispose();
+      blackMat.map?.dispose();
+      whiteMat.map?.dispose();
       blackMat.dispose();
       whiteMat.dispose();
       boardTex.dispose();

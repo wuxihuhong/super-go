@@ -1,7 +1,12 @@
+@import '@fontsource/chakra-petch/500.css';
+@import '@fontsource/chakra-petch/600.css';
+@import '@fontsource/chakra-petch/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/600.css';
+@import '@fontsource/jetbrains-mono/700.css';
 @import './tokens.css';
 @import 'tailwindcss';
 
-/* token → Tailwind 工具类映射（bg-surface / text-muted-foreground / border-border …） */
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
@@ -11,51 +16,76 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-danger: var(--danger);
-  --color-board-surface: var(--board-surface);
+  --color-acc: var(--acc);
+  --color-acc-bg: var(--acc-bg);
+  --color-acc-on: var(--acc-on);
+  --color-pink: var(--pink);
+  --color-pink-txt: var(--pink-txt);
+  --color-dim: var(--dim);
+  --color-dim2: var(--dim2);
+  --color-ok: var(--ok);
+  --color-ok-txt: var(--ok-txt);
+  --color-ok-bg: var(--ok-bg);
+  --color-ok-line: var(--ok-line);
+  --color-hair: var(--hair);
+  --color-eval-pos: var(--eval-pos);
+  --color-eval-neg: var(--eval-neg);
+  --color-eval-none: var(--eval-none);
+  --color-danger-txt: var(--danger-txt);
+  --color-danger-bg: var(--danger-bg);
+  --color-board-surface: var(--board-hi);
   --color-board-line: var(--board-line);
   --color-piece-red: var(--piece-red);
   --color-piece-black: var(--piece-black);
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
 }
 
 html,
 body,
 #root {
   height: 100%;
-  /* 桌面应用视口：布局自适应（棋盘列宽按可用空间收敛），不出现页面级滚动条 */
   overflow: hidden;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable', 'Segoe UI',
-    'PingFang SC', 'Hiragino Sans', 'Microsoft YaHei', Meiryo, sans-serif;
-  -webkit-font-smoothing: antialiased;
+html[data-chrome='win'] body {
+  background: var(--bg-win);
 }
 
-/* 键盘可达性：统一焦点环（单一强调色） */
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  transition:
+    background-color 200ms ease,
+    color 200ms ease;
+}
+
+.tabular-nums,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
 button:focus-visible,
 select:focus-visible,
 input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--acc);
   outline-offset: 1px;
 }
 
-/* 细滚动条（着法列表等滚动区域） */
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 3px;
+  height: 3px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+  background: var(--scroll);
+  border-radius: 2px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* 终局结果浮层渐入（克制动效：仅透明度） */
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -66,4 +96,76 @@ input:focus-visible {
 }
 .fade-in {
   animation: fade-in 0.25s ease-out;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes sweep {
+  from {
+    top: -80px;
+  }
+  to {
+    top: 100%;
+  }
+}
+
+.sg-pulse {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.sg-scan {
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, var(--scan) 0 1px, transparent 1px 3px);
+}
+
+.sg-sweep {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: linear-gradient(var(--sweep), transparent);
+  animation: sweep 5.5s linear infinite;
+}
+
+.sg-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--grp);
+  border: 1px solid var(--grp-line);
+  border-radius: var(--r-grp);
+}
+
+.sg-btn-solid {
+  background: var(--acc-solid);
+  color: var(--acc-on);
+  box-shadow: var(--acc-glow);
+}
+
+.sg-popover {
+  border: 1px solid var(--line);
+  background: var(--grp);
+  box-shadow: var(--dock-shadow);
+}
+
+.sg-label {
+  font: 600 9.5px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  color: var(--dim2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sg-pulse,
+  .sg-sweep {
+    animation: none;
+  }
 }
