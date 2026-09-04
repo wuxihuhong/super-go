@@ -4,6 +4,8 @@ import {
   formatGtpScoreRaw,
   formatScoreNumber,
   formatScoreSideMargin,
+  isAreaRuleSet,
+  resolveGoScoreView,
 } from './goScoreFormat';
 
 const zh = { black: '黑', white: '白', draw: '和棋', resign: '认输', timeout: '超时' };
@@ -27,6 +29,25 @@ describe('formatScoreSideMargin', () => {
   });
 });
 
+describe('resolveGoScoreView', () => {
+  it('只有胜率或认输 raw、没有 lead 时不编造面积', () => {
+    expect(
+      resolveGoScoreView({ raw: '', komi: 7.5, boardSize: 19, rules: 'chinese' }),
+    ).toEqual({ kind: 'empty' });
+    expect(
+      resolveGoScoreView({ raw: 'B+R', komi: 7.5, boardSize: 19, rules: 'chinese' }),
+    ).toEqual({ kind: 'raw', raw: 'B+R' });
+  });
+
+  it('日本规则只报目差，不拆数子面积', () => {
+    expect(
+      resolveGoScoreView({ lead: -1, raw: '', komi: 6.5, boardSize: 19, rules: 'japanese' }),
+    ).toEqual({ kind: 'lead', lead: -1 });
+    expect(isAreaRuleSet('japanese')).toBe(false);
+    expect(isAreaRuleSet('chinese')).toBe(true);
+  });
+});
+
 describe('estimateAreaScores', () => {
   it('19 路贴目 7.5、黑领先 3.5 → 黑面积带括号贴目后', () => {
     const a = estimateAreaScores(3.5, 7.5, 19);
@@ -36,5 +57,14 @@ describe('estimateAreaScores', () => {
     expect(formatScoreNumber(a.black)).toBe('186');
     expect(formatScoreNumber(a.white)).toBe('175');
     expect(formatScoreNumber(a.blackAfterKomi)).toBe('178.5');
+  });
+
+  it('让子补给黑方，两侧各移 H/2', () => {
+    const even = estimateAreaScores(0, 7.5, 19, 0);
+    const hc = estimateAreaScores(0, 7.5, 19, 2);
+    expect(hc.black - even.black).toBeCloseTo(1);
+    expect(even.white - hc.white).toBeCloseTo(1);
+    expect(hc.black + hc.white).toBe(361);
+    expect(hc.black - hc.white - 7.5 - 2).toBeCloseTo(0);
   });
 });

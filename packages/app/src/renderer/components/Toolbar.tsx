@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { GameKind } from '@super-go/core';
-import { estimateAreaScores, formatScoreNumber } from '@shared/goScoreFormat';
+import type { GameKind, RuleSet } from '@super-go/core';
+import {
+  formatGtpScoreRaw,
+  formatScoreNumber,
+  formatScoreSideMargin,
+  resolveGoScoreView,
+} from '@shared/goScoreFormat';
 import type {
   AppSettings,
   EngineStatusPayload,
@@ -358,6 +363,8 @@ export function ScoreEstimatePanel(props: {
   thinking: boolean;
   komi: number;
   boardSize: number;
+  rules?: RuleSet;
+  handicap?: number;
 }): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<EstimateScoreResult | null>(null);
@@ -398,6 +405,8 @@ export function ScoreEstimatePanel(props: {
           score={result.score}
           komi={props.komi}
           boardSize={props.boardSize}
+          rules={props.rules}
+          handicap={props.handicap}
         />
       )}
     </div>
@@ -409,43 +418,63 @@ function ScoreBreakdown(props: {
   score: GoScoreEstimate;
   komi: number;
   boardSize: number;
+  rules?: RuleSet;
+  handicap?: number;
 }): React.JSX.Element {
   const { engine } = props.score;
   if (engine === undefined) {
     return <p className="px-1 text-xs text-dim">{props.t('toolbar.score.noEngine')}</p>;
   }
-  const lead = engine.lead ?? engine.margin;
-  const area = lead === undefined ? undefined : estimateAreaScores(lead, props.komi, props.boardSize);
-  if (area === undefined) {
+  const view = resolveGoScoreView({
+    lead: engine.lead,
+    raw: engine.raw,
+    komi: props.komi,
+    boardSize: props.boardSize,
+    rules: props.rules,
+    handicap: props.handicap,
+  });
+  const winRate =
+    engine.winRate !== undefined ? (
+      <div className="flex justify-between px-1 pt-1 text-xs text-dim">
+        <span>{props.t('toolbar.score.winRate')}</span>
+        <span className="tabular-nums font-mono">{Math.round(engine.winRate * 1000) / 10}%</span>
+      </div>
+    ) : null;
+  if (view.kind === 'empty') {
     return (
       <div className="space-y-1.5">
         <p className="px-1 text-xs text-dim">{props.t('toolbar.score.noEngine')}</p>
-        {engine.winRate !== undefined && (
-          <div className="flex justify-between px-1 text-xs text-dim">
-            <span>{props.t('toolbar.score.winRate')}</span>
-            <span className="tabular-nums font-mono">{Math.round(engine.winRate * 1000) / 10}%</span>
-          </div>
-        )}
+        {winRate}
       </div>
     );
   }
+  const labels = {
+    black: props.t('toolbar.score.black'),
+    white: props.t('toolbar.score.white'),
+    draw: props.t('toolbar.score.draw'),
+    resign: props.t('toolbar.score.resign'),
+    timeout: props.t('toolbar.score.timeout'),
+  };
+  const headline =
+    view.kind === 'area'
+      ? [
+          props
+            .t('toolbar.score.blackArea')
+            .replace('{n}', formatScoreNumber(view.black))
+            .replace('{after}', formatScoreNumber(view.blackAfterKomi)),
+          props.t('toolbar.score.whiteArea').replace('{n}', formatScoreNumber(view.white)),
+        ]
+      : view.kind === 'lead'
+        ? [formatScoreSideMargin(view.lead, labels.black, labels.white)]
+        : [formatGtpScoreRaw(view.raw, labels)];
   return (
     <div className="space-y-1.5 font-mono">
-      <div className="px-1 text-sm tabular-nums">
-        {props
-          .t('toolbar.score.blackArea')
-          .replace('{n}', formatScoreNumber(area.black))
-          .replace('{after}', formatScoreNumber(area.blackAfterKomi))}
-      </div>
-      <div className="px-1 text-sm tabular-nums">
-        {props.t('toolbar.score.whiteArea').replace('{n}', formatScoreNumber(area.white))}
-      </div>
-      {engine.winRate !== undefined && (
-        <div className="flex justify-between px-1 pt-1 text-xs text-dim">
-          <span>{props.t('toolbar.score.winRate')}</span>
-          <span className="tabular-nums">{Math.round(engine.winRate * 1000) / 10}%</span>
+      {headline.map((line) => (
+        <div key={line} className="px-1 text-sm tabular-nums">
+          {line}
         </div>
-      )}
+      ))}
+      {winRate}
     </div>
   );
 }

@@ -18,22 +18,32 @@ export function PopoverLayer(props: {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') props.onClose();
     };
-    /** 不用 fixed 遮罩：dock 有 translate，会把 fixed 困在胶囊里，点盘面关不掉 */
-    const onPointerDown = (e: PointerEvent): void => {
-      const target = e.target;
-      if (!(target instanceof Node)) {
-        props.onClose();
-        return;
-      }
+    /** 不用 dock 内 fixed 遮罩：translate 会把遮罩困在胶囊里。capture 关层时必须吞掉事件，否则会点穿落子。 */
+    const outside = (target: EventTarget | null): boolean => {
+      if (!(target instanceof Node)) return true;
       const root = panelRef.current?.parentElement;
-      if (root?.contains(target)) return;
-      if (
+      if (root?.contains(target)) return false;
+      return !(
         props.toggle !== undefined &&
         target instanceof Element &&
         target.closest(`[data-popover-toggle="${props.toggle}"]`) !== null
-      ) {
-        return;
-      }
+      );
+    };
+    const onPointerDown = (e: PointerEvent): void => {
+      if (!outside(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // 关层会同步重渲染并卸载本 effect，吞 click 的监听不能挂在 effect 生命周期里
+      const swallow = (ev: MouseEvent): void => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      };
+      const release = (): void => {
+        setTimeout(() => document.removeEventListener('click', swallow, true), 0);
+      };
+      document.addEventListener('click', swallow, { capture: true, once: true });
+      document.addEventListener('pointerup', release, { capture: true, once: true });
+      document.addEventListener('pointercancel', release, { capture: true, once: true });
       props.onClose();
     };
     window.addEventListener('keydown', onKey);

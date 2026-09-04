@@ -114,6 +114,8 @@ describe('MatchService 围棋', () => {
     expect((await match.setKind('go')).ok).toBe(true);
     expect(latest().kind).toBe('go');
     expect((await match.newGame({ engineSide: 'second', goSetup: { boardSize: 19 } })).ok).toBe(true);
+    expect(latest().rules).toBe('chinese');
+    expect(latest().handicap).toBe(0);
     expect(match.playMove({ point: gtpToPoint('Q16', 19) }).ok).toBe(true);
     const snap = await waitFor(
       latest,

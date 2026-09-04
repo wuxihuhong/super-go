@@ -67,7 +67,8 @@ export default function EvalChart(props: EvalChartProps) {
 
     if (pts.length < 1) {
       ctx.fillStyle = muted;
-      ctx.font = '10px var(--font-mono), monospace';
+      const mono = cssColor('--font-mono') || 'ui-monospace, monospace';
+      ctx.font = `10px ${mono}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(props.emptyText, width / 2, H / 2);

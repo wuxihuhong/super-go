@@ -168,4 +168,7 @@ input:focus-visible {
   .sg-sweep {
     animation: none;
   }
+  .sg-sweep {
+    display: none;
+  }
 }

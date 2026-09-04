@@ -1,6 +1,6 @@
 import type { GameSnapshot, LiveEval, MainlineItem } from '@shared/game';
 import type { EngineStatusPayload } from '@shared/ipc';
-import { estimateAreaScores, formatScoreNumber } from '../../shared/goScoreFormat';
+import { estimateAreaScores, formatScoreNumber, isAreaRuleSet } from '../../shared/goScoreFormat';
 import { delayingBannerText, engineStatusText } from './engineStatusText';
 import {
   evalProportion,
@@ -99,22 +99,35 @@ export function buildTelemetry(
     },
   ];
   if (isGo) {
-    const area =
-      go.lead === undefined
-        ? undefined
-        : estimateAreaScores(go.lead, snapshot?.komi ?? 7.5, snapshot?.boardSize ?? 19);
-    rows.push(
-      {
-        id: 'blackArea',
-        label: t('panel.area.black'),
-        value: area === undefined ? '—' : formatScoreNumber(area.black),
-      },
-      {
-        id: 'whiteArea',
-        label: t('panel.area.white'),
-        value: area === undefined ? '—' : formatScoreNumber(area.white),
-      },
-    );
+    if (isAreaRuleSet(snapshot?.rules)) {
+      const area =
+        go.lead === undefined
+          ? undefined
+          : estimateAreaScores(
+              go.lead,
+              snapshot?.komi ?? 7.5,
+              snapshot?.boardSize ?? 19,
+              snapshot?.handicap ?? 0,
+            );
+      rows.push(
+        {
+          id: 'blackArea',
+          label: t('panel.area.black'),
+          value: area === undefined ? '—' : formatScoreNumber(area.black),
+        },
+        {
+          id: 'whiteArea',
+          label: t('panel.area.white'),
+          value: area === undefined ? '—' : formatScoreNumber(area.white),
+        },
+      );
+    } else {
+      rows.push({
+        id: 'lead',
+        label: t('eval.lead'),
+        value: goLeadText(go.lead),
+      });
+    }
     return rows;
   }
   rows.push({

@@ -1,6 +1,7 @@
 import { normalizeGoStrength, normalizeXiangqiStrength, type GameKind } from '@super-go/core';
 import { dialog, ipcMain, nativeTheme, shell, type BrowserWindow } from 'electron';
 import { isAllowedExternalUrl } from '../shared/about';
+import { windowsTitleBarOverlay } from '../shared/windowsTitleBar';
 import {
   IPC_CHANNELS,
   type AppSettings,
@@ -106,11 +107,7 @@ export function registerIpc(
     const win = getMainWindow();
     win?.webContents.send(IPC_CHANNELS.themeChanged, nativeTheme.shouldUseDarkColors);
     if (win !== null && !win.isDestroyed() && process.platform === 'win32') {
-      win.setTitleBarOverlay({
-        height: 32,
-        color: nativeTheme.shouldUseDarkColors ? '#0b1119' : '#ffffff',
-        symbolColor: nativeTheme.shouldUseDarkColors ? '#8fb4c6' : '#3d5a68',
-      });
+      win.setTitleBarOverlay(windowsTitleBarOverlay(nativeTheme.shouldUseDarkColors));
     }
   });
 

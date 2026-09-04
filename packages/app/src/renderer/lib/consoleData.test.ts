@@ -82,6 +82,29 @@ describe('buildTelemetry', () => {
     expect(rows[4]?.bar).toBeUndefined();
     expect(rows[5]?.bar).toBeUndefined();
   });
+
+  it('让子局黑白目数各补 H/2', () => {
+    const rows = buildTelemetry(
+      t,
+      { ...goSnap, handicap: 2 },
+      { status: 'ready', name: 'KataGo' },
+      null,
+    );
+    const area = estimateAreaScores(3.2, 7.5, 19, 2);
+    expect(rows[4]).toMatchObject({ value: formatScoreNumber(area.black) });
+    expect(rows[5]).toMatchObject({ value: formatScoreNumber(area.white) });
+  });
+
+  it('日本规则只展示目差，不拆面积', () => {
+    const rows = buildTelemetry(
+      t,
+      { ...goSnap, rules: 'japanese' },
+      { status: 'ready', name: 'KataGo' },
+      null,
+    );
+    expect(rows.map((r) => r.id)).toEqual(['engine', 'status', 'strength', 'depth', 'lead']);
+    expect(rows[4]).toMatchObject({ label: 'eval.lead', value: '+3.2' });
+  });
 });
 
 describe('moveEvalCell', () => {

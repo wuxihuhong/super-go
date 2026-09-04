@@ -5,6 +5,7 @@ import { normalizeGoStrength, normalizeXiangqiStrength } from '@super-go/core';
 import { aboutMenuLabel } from '../shared/about';
 import { GO_ANALYSIS_DEFAULT, IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
 import { moveDelayMs } from '../shared/moveDelay';
+import { windowsTitleBarOverlay } from '../shared/windowsTitleBar';
 import { cpuThreadCount } from './cpuThreads';
 import {
   enginesRootCandidates,
@@ -93,11 +94,7 @@ function createWindow(alwaysOnTop: boolean): BrowserWindow {
       : process.platform === 'win32'
         ? {
             titleBarStyle: 'hidden' as const,
-            titleBarOverlay: {
-              height: 32,
-              color: nativeTheme.shouldUseDarkColors ? '#0b1119' : '#ffffff',
-              symbolColor: nativeTheme.shouldUseDarkColors ? '#8fb4c6' : '#3d5a68',
-            },
+            titleBarOverlay: windowsTitleBarOverlay(nativeTheme.shouldUseDarkColors),
           }
         : {}),
     webPreferences: {

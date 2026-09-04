@@ -285,6 +285,7 @@ interface GoSceneHandle {
   schedule: () => void;
   frameCamera: (flip: boolean) => void;
   rebuildStones: () => void;
+  applyTheme: () => void;
   drawHintOverlay: () => void;
 }
 
@@ -438,6 +439,24 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       clearcoat: 0.38,
       envMapIntensity: 0.28,
     });
+    const rimGeo = new THREE.TorusGeometry(0.97, 0.05, 10, 36);
+    const blobGeo = new THREE.CircleGeometry(1, 24);
+    const lastMarkGeo = new THREE.RingGeometry(0.28, 0.4, 24);
+    const rimMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(cssColor('--stone-white-rim')),
+    });
+    const blobMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(cssColor('--stone-shadow')),
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+    });
+    const lastMarkMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(cssColor('--m-last')),
+      side: THREE.DoubleSide,
+    });
+    const sharedGeo = new Set<THREE.BufferGeometry>([stoneGeo, rimGeo, blobGeo, lastMarkGeo, hintGeo]);
+    const sharedMat = new Set<THREE.Material>([blackMat, whiteMat, rimMat, blobMat, lastMarkMat]);
 
     const raycaster = new THREE.Raycaster();
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -477,12 +496,12 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
     const frameCamera = (flip: boolean): void => {
       frameGoBoard(camera, flip);
     };
-    const rebuildStones = (): void => {
-      const p = propsRef.current;
-      const pos = p.position;
-      const n = pos.size;
+    let paintedSize = 0;
+    const applyTheme = (): void => {
+      const n = propsRef.current.position.size;
       paintGoBoard(boardCtx, n);
       boardTex.needsUpdate = true;
+      paintedSize = n;
       paintWoodGrain(sideCtx, { side: true });
       sideTex.needsUpdate = true;
       const dark = isDarkTheme();
@@ -502,26 +521,42 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       sideMat.roughness = dark ? 0.5 : 0.68;
       sideMat.clearcoat = dark ? 0.2 : 0.06;
       sideMat.envMapIntensity = dark ? 0.1 : 0.04;
+      rimMat.color.set(cssColor('--stone-white-rim'));
+      blobMat.color.set(cssColor('--stone-shadow'));
+      blobMat.opacity = dark ? 0.28 : 0.22;
+      lastMarkMat.color.set(cssColor('--m-last'));
       sideMat.needsUpdate = true;
       blackMat.needsUpdate = true;
       whiteMat.needsUpdate = true;
       topMat.needsUpdate = true;
+      schedule();
+    };
+
+    const rebuildStones = (): void => {
+      const p = propsRef.current;
+      const pos = p.position;
+      const n = pos.size;
+      if (n !== paintedSize) {
+        paintGoBoard(boardCtx, n);
+        boardTex.needsUpdate = true;
+        paintedSize = n;
+      }
 
       while (stones.children.length > 0) {
         const child = stones.children[0]!;
         stones.remove(child);
         child.traverse((node) => {
           if (!(node instanceof THREE.Mesh)) return;
-          if (node.geometry !== stoneGeo) node.geometry.dispose();
-          const mat = node.material;
-          const extras = (Array.isArray(mat) ? mat : [mat]).filter(
-            (m) => m !== blackMat && m !== whiteMat,
-          );
-          extras.forEach((m) => m.dispose());
+          if (!sharedGeo.has(node.geometry)) node.geometry.dispose();
+          const mats = Array.isArray(node.material) ? node.material : [node.material];
+          mats.forEach((m) => {
+            if (!sharedMat.has(m)) m.dispose();
+          });
         });
       }
       const step = GRID / (n - 1);
       const stoneR = step * 0.46;
+      const blobScale = stoneR * 1.08;
       for (let y = 0; y < n; y++) {
         for (let x = 0; x < n; x++) {
           const cell = cellAt(pos, { x, y });
@@ -532,27 +567,15 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
           mesh.scale.set(stoneR, stoneR, stoneR);
           mesh.castShadow = true;
           if (cell !== 'first') {
-            const rim = new THREE.Mesh(
-              new THREE.TorusGeometry(0.97, 0.05, 10, 36),
-              new THREE.MeshBasicMaterial({
-                color: new THREE.Color(cssColor('--stone-white-rim')),
-              }),
-            );
+            const rim = new THREE.Mesh(rimGeo, rimMat);
             rim.rotation.x = Math.PI / 2;
             rim.position.y = 0.12;
             mesh.add(rim);
           }
-          const blob = new THREE.Mesh(
-            new THREE.CircleGeometry(stoneR * 1.08, 24),
-            new THREE.MeshBasicMaterial({
-              color: new THREE.Color(cssColor('--stone-shadow')),
-              transparent: true,
-              opacity: dark ? 0.28 : 0.22,
-              depthWrite: false,
-            }),
-          );
+          const blob = new THREE.Mesh(blobGeo, blobMat);
           blob.rotation.x = -Math.PI / 2;
           blob.position.set(at.x, 0.004, at.z);
+          blob.scale.set(blobScale, blobScale, 1);
           stones.add(blob);
           stones.add(mesh);
           if (
@@ -561,15 +584,10 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
             p.lastPoint.x === x &&
             p.lastPoint.y === y
           ) {
-            const mark = new THREE.Mesh(
-              new THREE.RingGeometry(stoneR * 0.28, stoneR * 0.4, 24),
-              new THREE.MeshBasicMaterial({
-                color: new THREE.Color(cssColor('--m-last')),
-                side: THREE.DoubleSide,
-              }),
-            );
+            const mark = new THREE.Mesh(lastMarkGeo, lastMarkMat);
             mark.rotation.x = -Math.PI / 2;
             mark.position.set(at.x, 0.16, at.z);
+            mark.scale.setScalar(stoneR);
             stones.add(mark);
           }
         }
@@ -689,10 +707,12 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       schedule,
       frameCamera,
       rebuildStones,
+      applyTheme,
       drawHintOverlay,
     };
     sceneRef.current = handle;
     frameCamera(propsRef.current.flip);
+    applyTheme();
     rebuildStones();
 
     return () => {
@@ -701,6 +721,12 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
       clearHintMeshes();
       hintGeo.dispose();
       stoneGeo.dispose();
+      rimGeo.dispose();
+      blobGeo.dispose();
+      lastMarkGeo.dispose();
+      rimMat.dispose();
+      blobMat.dispose();
+      lastMarkMat.dispose();
       board.geometry.dispose();
       topMat.dispose();
       sideMat.dispose();
@@ -738,8 +764,12 @@ export default function GoBoard3D(props: GoBoard3DProps): React.JSX.Element {
   }, [props.flip]);
 
   useEffect(() => {
+    sceneRef.current?.applyTheme();
+  }, [props.themeTick]);
+
+  useEffect(() => {
     sceneRef.current?.rebuildStones();
-  }, [props.position, props.lastPoint, props.themeTick]);
+  }, [props.position, props.lastPoint]);
 
   useEffect(() => {
     sceneRef.current?.rebuildHints();

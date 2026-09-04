@@ -67,15 +67,16 @@ export default function SidePanel(props: SidePanelProps) {
 
   const shownWidth = props.open ? width : 0;
   const trendValue =
-    gauge.kind === 'go' ? `${gauge.leftValue}%` : gauge.leftValue;
+    gauge.kind === 'go' && gauge.leftValue !== '—' ? `${gauge.leftValue}%` : gauge.leftValue;
 
   return (
     <aside
-      className={`flex shrink-0 flex-col overflow-hidden border-l border-[color:var(--line)] [background:var(--sidebar)] transition-[width,opacity] duration-[240ms] ease-[cubic-bezier(.4,0,.2,1)] ${
+      className={`relative flex shrink-0 flex-col overflow-hidden border-l border-[color:var(--line)] [background:var(--sidebar)] transition-[width,opacity] duration-[240ms] ease-[cubic-bezier(.4,0,.2,1)] ${
         props.overlay ? 'absolute inset-y-0 right-0 z-20 shadow-xl' : ''
-      }`}
+      } ${props.open ? '' : 'pointer-events-none'}`}
       style={{ width: shownWidth, opacity: props.open ? 1 : 0 }}
       aria-hidden={!props.open}
+      inert={!props.open}
     >
       <div className="flex min-h-0 w-full min-w-[300px] flex-1 flex-col" style={{ width }}>
         <div
@@ -125,7 +126,7 @@ export default function SidePanel(props: SidePanelProps) {
                 }`}
               >
                 {gauge.leftValue}
-                {gauge.kind === 'go' && (
+                {gauge.kind === 'go' && gauge.leftValue !== '—' && (
                   <span className="ml-0.5 text-[12px] font-semibold text-dim2">%</span>
                 )}
               </div>
@@ -138,7 +139,7 @@ export default function SidePanel(props: SidePanelProps) {
                 }`}
               >
                 {gauge.rightValue}
-                {gauge.kind === 'go' && (
+                {gauge.kind === 'go' && gauge.rightValue !== '—' && (
                   <span className="ml-0.5 text-[12px] font-semibold text-dim2">%</span>
                 )}
               </div>

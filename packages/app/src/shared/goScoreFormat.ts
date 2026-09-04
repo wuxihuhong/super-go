@@ -29,14 +29,50 @@ export function formatScoreSideMargin(
   return rounded > 0 ? `${black}+${n}` : `${white}+${n}`;
 }
 
-/** 中国规则面积：黑+白 = 路数²，lead = 黑 − 白 − 贴目 */
+/** 中国 / AGA 数子：黑+白 = 路数²。日本地盘规则不成立。 */
+export function isAreaRuleSet(rules?: string): boolean {
+  return rules !== 'japanese';
+}
+
+export type GoScoreView =
+  | { kind: 'empty' }
+  | { kind: 'area'; black: number; white: number; blackAfterKomi: number }
+  | { kind: 'lead'; lead: number }
+  | { kind: 'raw'; raw: string };
+
+/** 仅在引擎给出真实 lead 时拆目数；margin 兜底 0 不得编造面积 */
+export function resolveGoScoreView(input: {
+  lead?: number;
+  raw?: string;
+  komi: number;
+  boardSize: number;
+  rules?: string;
+  handicap?: number;
+}): GoScoreView {
+  if (input.lead !== undefined) {
+    if (isAreaRuleSet(input.rules)) {
+      return {
+        kind: 'area',
+        ...estimateAreaScores(input.lead, input.komi, input.boardSize, input.handicap ?? 0),
+      };
+    }
+    return { kind: 'lead', lead: input.lead };
+  }
+  if (input.raw !== undefined && input.raw !== '') {
+    return { kind: 'raw', raw: input.raw };
+  }
+  return { kind: 'empty' };
+}
+
+/** 中国规则面积：黑+白 = 路数²，lead = 黑 − 白 − 贴目；让子补给黑，否则两侧各偏 H/2 */
 export function estimateAreaScores(
   lead: number,
   komi: number,
   size: number,
+  handicap = 0,
 ): { black: number; white: number; blackAfterKomi: number } {
   const total = size * size;
-  const black = (total + lead + komi) / 2;
+  const black = (total + lead + komi + handicap) / 2;
   const white = total - black;
   return { black, white, blackAfterKomi: black - komi };
 }

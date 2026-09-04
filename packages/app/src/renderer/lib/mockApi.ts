@@ -217,6 +217,8 @@ function createMockApi(): SuperGoApi {
       depth: items.at(-1)?.depth,
       boardSize: pos.size,
       komi: pos.komi,
+      rules: pos.rules,
+      handicap: pos.handicap,
     };
   };
 

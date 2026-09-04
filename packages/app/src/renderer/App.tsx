@@ -337,7 +337,9 @@ export default function App() {
         if (canUndo) runIntent(() => window.superGo.undoMove());
       } else if (code === 'Comma') {
         e.preventDefault();
-        togglePopover('settings');
+        setPopover((cur) =>
+          cur === 'settings' || cur === 'settingsDock' ? 'none' : 'settings',
+        );
       } else if (code === 'KeyB') {
         e.preventDefault();
         setPanelOpen((v) => {
@@ -347,7 +349,7 @@ export default function App() {
         });
       } else if (code === 'KeyR' && e.shiftKey) {
         e.preventDefault();
-        if (canResign) runIntent(() => window.superGo.resign());
+        if (canResign) togglePopover('resignConfirm');
       } else if (code === 'KeyP') {
         e.preventDefault();
         if (kind === 'go' && playing) runIntent(() => window.superGo.playMove({ point: null }));
@@ -400,6 +402,7 @@ export default function App() {
     handleToggleEngineSide,
     handleToggleAlwaysOnTop,
     togglePopover,
+    setPopover,
     aboutOpen,
   ]);
 
@@ -629,6 +632,8 @@ export default function App() {
             thinking={snapshot?.thinking === true}
             komi={snapshot?.komi ?? 7.5}
             boardSize={snapshot?.boardSize ?? 19}
+            rules={snapshot?.rules}
+            handicap={snapshot?.handicap}
             popover={popover}
             onPopoverChange={setPopover}
             onNewGame={(side, goSetup?: GameSetup) => {

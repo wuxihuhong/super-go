@@ -1,4 +1,4 @@
-import type { GameKind, GameSetup, Player } from '@super-go/core';
+import type { GameKind, GameSetup, Player, RuleSet } from '@super-go/core';
 import type { AppSettings } from '@shared/ipc';
 import type { MessageKey, TFunction } from '../i18n';
 import SettingsPanel from './SettingsPanel';
@@ -29,6 +29,8 @@ export interface BoardDockProps {
   thinking: boolean;
   komi: number;
   boardSize: number;
+  rules?: RuleSet;
+  handicap?: number;
   popover: Popover;
   onPopoverChange: (popover: Popover) => void;
   onNewGame: (humanSide: Player, goSetup?: GameSetup) => void;
@@ -215,6 +217,8 @@ export default function BoardDock(props: BoardDockProps): React.JSX.Element {
                   thinking={props.thinking}
                   komi={props.komi}
                   boardSize={props.boardSize}
+                  rules={props.rules}
+                  handicap={props.handicap}
                 />
               </PopoverLayer>
             </div>

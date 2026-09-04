@@ -127,8 +127,15 @@ export default function LinkerLiveStatus(props: LinkerLiveStatusProps): React.JS
         ? 'text-dim'
         : 'text-ok-txt';
 
+  const shell =
+    status.phase === 'error' || status.phase === 'attention'
+      ? 'border-[color:var(--danger-line)] bg-[color:var(--danger-bg)]'
+      : status.phase === 'paused' || status.phase === 'idle'
+        ? 'border-[color:var(--line)] bg-[color:var(--grp)]'
+        : 'border-[color:var(--ok-line)] bg-[color:var(--ok-bg)]';
+
   return (
-    <div className="rounded-[9px] border border-[color:var(--ok-line)] bg-[color:var(--ok-bg)] px-3 py-2.5">
+    <div className={`rounded-[9px] border px-3 py-2.5 ${shell}`}>
       <div className="flex items-center gap-2">
         <span
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot} ${tone.pulse ? 'sg-pulse' : ''}`}
@@ -138,7 +145,9 @@ export default function LinkerLiveStatus(props: LinkerLiveStatusProps): React.JS
         </span>
         {active && (
           <span className="ml-auto font-mono text-[9.5px] font-semibold text-dim2">
-            {status.fps}FPS {status.inferMs}MS
+            {t('linker.status.fps')
+              .replace('{fps}', String(status.fps))
+              .replace('{ms}', String(status.inferMs))}
           </span>
         )}
       </div>
