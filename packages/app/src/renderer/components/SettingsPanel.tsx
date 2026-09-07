@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   defaultKomi,
   GO_VISITS_PRESETS,
@@ -18,6 +18,7 @@ import { LINKER_SETTINGS_DEFAULT, supportsBackgroundClick, type LinkerSettings }
 import { MOVE_DELAY_MAX_SEC, normalizeMoveDelay } from '@shared/moveDelay';
 import { guessCpuThreads, resolveCpuThreads } from '../lib/cpuThreads';
 import { commitNumberInput } from '../lib/numberInput';
+import { useCommitOnUnmount } from '../lib/useCommitOnUnmount';
 import { AppMark } from './AppMark';
 import StrengthFields from './StrengthFields';
 import type { TFunction } from '../i18n';
@@ -97,30 +98,19 @@ export default function SettingsPanel(props: SettingsPanelProps) {
       inputKey: string;
       disabled?: boolean;
     },
-  ): React.JSX.Element => {
-    const step = opts.step ?? 1;
-    return (
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        defaultValue={value}
-        key={opts.inputKey}
-        aria-label={opts.ariaLabel}
-        disabled={opts.disabled}
-        onBlur={(e) => {
-          if (opts.disabled) return;
-          const next = commitNumberInput(e.target.value, value, min, max, step);
-          e.target.value = String(next);
-          if (next !== value) onCommit(next);
-        }}
-        className={`${opts.widthClass ?? 'w-20'} rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums ${
-          opts.disabled ? 'cursor-not-allowed opacity-40' : ''
-        }`}
-      />
-    );
-  };
+  ): React.JSX.Element => (
+    <SettingsNumberInput
+      value={value}
+      min={min}
+      max={max}
+      onCommit={onCommit}
+      step={opts.step}
+      widthClass={opts.widthClass}
+      ariaLabel={opts.ariaLabel}
+      inputKey={opts.inputKey}
+      disabled={opts.disabled}
+    />
+  );
 
   const numberField = (
     label: string,
@@ -178,7 +168,7 @@ export default function SettingsPanel(props: SettingsPanelProps) {
   ];
 
   return (
-    <div className="max-h-[80vh] w-96 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-xl">
+    <div className="sg-popover max-h-[80vh] w-96 overflow-y-auto rounded-xl p-3">
       <div className="mb-3">
         {segmented(tabs, tab, setTab, false, true)}
       </div>
@@ -221,6 +211,13 @@ export default function SettingsPanel(props: SettingsPanelProps) {
               (value) => patch({ view: { board3d: value === 'true' } }),
             )}
           </Row>
+          <Row label={props.t('settings.view.hudSweep')} hint={props.t('settings.view.hudSweep.hint')}>
+            {segmented(
+              onOff,
+              (settings?.view?.hudSweep !== false) ? 'true' : 'false',
+              (value) => patch({ view: { hudSweep: value === 'true' } }),
+            )}
+          </Row>
           <Row label={props.t('settings.about')}>
             <button
               type="button"
@@ -238,18 +235,15 @@ export default function SettingsPanel(props: SettingsPanelProps) {
         <Section>
           <Row label={props.t('settings.enginePath')} hint={props.t('settings.enginePath.rowHint')}>
             <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
-              <input
-                type="text"
-                aria-label={props.t('settings.enginePath')}
+              <SettingsTextInput
+                ariaLabel={props.t('settings.enginePath')}
                 placeholder={props.t('settings.enginePath.hint')}
-                defaultValue={settings?.xiangqi?.enginePath ?? ''}
-                onBlur={(e) => {
-                  const value = e.target.value.trim();
+                value={settings?.xiangqi?.enginePath ?? ''}
+                onCommit={(value) => {
                   if (value !== (settings?.xiangqi?.enginePath ?? '')) {
                     patchXiangqi({ enginePath: value });
                   }
                 }}
-                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
               />
               <button
                 type="button"
@@ -305,15 +299,12 @@ export default function SettingsPanel(props: SettingsPanelProps) {
         <Section>
           <Row label={props.t('settings.go.enginePath')} hint={props.t('settings.go.enginePath.hint')}>
             <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
-              <input
-                type="text"
-                defaultValue={settings?.go?.enginePath ?? ''}
+              <SettingsTextInput
+                value={settings?.go?.enginePath ?? ''}
                 placeholder={props.t('settings.go.enginePath.hint')}
-                onBlur={(e) => {
-                  const value = e.target.value.trim();
+                onCommit={(value) => {
                   if (value !== (settings?.go?.enginePath ?? '')) patchGo({ enginePath: value });
                 }}
-                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
               />
               <button
                 type="button"
@@ -330,14 +321,11 @@ export default function SettingsPanel(props: SettingsPanelProps) {
           </Row>
           <Row label={props.t('settings.go.modelPath')} hint={props.t('settings.go.modelPath.hint')}>
             <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
-              <input
-                type="text"
-                defaultValue={settings?.go?.modelPath ?? ''}
-                onBlur={(e) => {
-                  const value = e.target.value.trim();
+              <SettingsTextInput
+                value={settings?.go?.modelPath ?? ''}
+                onCommit={(value) => {
                   if (value !== (settings?.go?.modelPath ?? '')) patchGo({ modelPath: value });
                 }}
-                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
               />
               <button
                 type="button"
@@ -354,14 +342,11 @@ export default function SettingsPanel(props: SettingsPanelProps) {
           </Row>
           <Row label={props.t('settings.go.configPath')} hint={props.t('settings.go.configPath.hint')}>
             <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
-              <input
-                type="text"
-                defaultValue={settings?.go?.configPath ?? ''}
-                onBlur={(e) => {
-                  const value = e.target.value.trim();
+              <SettingsTextInput
+                value={settings?.go?.configPath ?? ''}
+                onCommit={(value) => {
                   if (value !== (settings?.go?.configPath ?? '')) patchGo({ configPath: value });
                 }}
-                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
               />
               <button
                 type="button"
@@ -524,6 +509,69 @@ export default function SettingsPanel(props: SettingsPanelProps) {
         </Section>
       )}
     </div>
+  );
+}
+
+function SettingsNumberInput(props: {
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (v: number) => void;
+  step?: number;
+  widthClass?: string;
+  ariaLabel?: string;
+  inputKey: string;
+  disabled?: boolean;
+}): React.JSX.Element {
+  const step = props.step ?? 1;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const commit = (raw: string): void => {
+    if (props.disabled) return;
+    const next = commitNumberInput(raw, props.value, props.min, props.max, step);
+    if (inputRef.current !== null) inputRef.current.value = String(next);
+    if (next !== props.value) props.onCommit(next);
+  };
+  useCommitOnUnmount(inputRef, commit);
+  return (
+    <input
+      ref={inputRef}
+      type="number"
+      min={props.min}
+      max={props.max}
+      step={step}
+      defaultValue={props.value}
+      key={props.inputKey}
+      aria-label={props.ariaLabel}
+      disabled={props.disabled}
+      onBlur={(e) => commit(e.target.value)}
+      className={`${props.widthClass ?? 'w-20'} rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums ${
+        props.disabled ? 'cursor-not-allowed opacity-40' : ''
+      }`}
+    />
+  );
+}
+
+function SettingsTextInput(props: {
+  value: string;
+  onCommit: (value: string) => void;
+  placeholder?: string;
+  ariaLabel?: string;
+}): React.JSX.Element {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const commit = (raw: string): void => {
+    props.onCommit(raw.trim());
+  };
+  useCommitOnUnmount(inputRef, commit);
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      aria-label={props.ariaLabel}
+      placeholder={props.placeholder}
+      defaultValue={props.value}
+      onBlur={(e) => commit(e.target.value)}
+      className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+    />
   );
 }
 

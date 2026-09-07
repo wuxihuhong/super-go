@@ -79,6 +79,7 @@ export default function Board(props: BoardProps) {
       emboss: cssColor('--piece-emboss'),
       shadow: cssColor('--piece-shadow'),
       accent: cssColor('--accent'),
+      last: cssColor('--m-last'),
       danger: cssColor('--danger'),
     };
 
@@ -203,7 +204,7 @@ export default function Board(props: BoardProps) {
     if (props.lastMove !== null) {
       const from = toScreen(props.lastMove.from.x, props.lastMove.from.y);
       const to = toScreen(props.lastMove.to.x, props.lastMove.to.y);
-      drawMoveMarks(ctx, from.sx, from.sy, to.sx, to.sy, cell, c.accent);
+      drawMoveMarks(ctx, from.sx, from.sy, to.sx, to.sy, cell, c.last);
     }
 
     // ---- 被将军的王 ----

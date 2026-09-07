@@ -54,7 +54,7 @@ export default function GamePanel(props: GamePanelProps) {
       });
     };
     return (
-      <div className="w-80 rounded-xl border border-border bg-surface p-3 shadow-xl">
+      <div className="sg-popover w-80 rounded-xl p-3">
         <div className="rounded-lg border border-border bg-background">
           <div className="flex flex-col gap-1 px-3 py-2.5">
             <div className="flex items-center justify-between gap-3">
@@ -94,7 +94,7 @@ export default function GamePanel(props: GamePanelProps) {
 
   const strength = normalizeXiangqiStrength(settings.xiangqi?.strength, cpuThreads);
   return (
-    <div className="w-80 rounded-xl border border-border bg-surface p-3 shadow-xl">
+    <div className="sg-popover w-80 rounded-xl p-3">
       <div className="rounded-lg border border-border bg-background">
         <StrengthFields
           t={props.t}

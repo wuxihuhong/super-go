@@ -4,6 +4,7 @@ import type { GoHintPoint } from '@shared/game';
 import {
   formatHintLoss,
   formatHintVisits,
+  isDisplayedBestLoss,
   sameHintPoint,
   uniqueBestHint,
 } from '@shared/goBestMove';
@@ -126,7 +127,7 @@ export function drawGoBoard(
 
   if (opts.lastPoint) {
     const p = goToPx(layout, opts.lastPoint.x, opts.lastPoint.y, opts.flip);
-    ctx.strokeStyle = cssColor('--accent');
+    ctx.strokeStyle = cssColor('--m-last');
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(p.x, p.y, r * 0.38, 0, Math.PI * 2);
@@ -153,10 +154,10 @@ export function drawGoBoard(
   }
 }
 
-/** 目损色阶：蓝=唯一 +0.0，绿=接近正手，黄/橙/红=坏手 */
+/** 目损色阶：蓝=唯一 -0.0，绿=接近正手，黄/橙/红=坏手 */
 export function hintColorToken(hint: GoHintPoint, bestHint?: GoHintPoint): string {
   const isBest =
-    bestHint !== undefined ? sameHintPoint(hint, bestHint) : hint.best && formatHintLoss(hint.loss) === '+0.0';
+    bestHint !== undefined ? sameHintPoint(hint, bestHint) : hint.best && isDisplayedBestLoss(hint.loss);
   if (isBest) return '--go-hint-best';
   if (hint.loss < 0.5) return '--go-hint-good';
   if (hint.loss < 1.5) return '--go-hint-ok';
@@ -171,7 +172,7 @@ export function hintDotVisual(
   bestHint?: GoHintPoint,
 ): { isBest: boolean; good: boolean; radius: number; alpha: number; color: string } {
   const isBest =
-    bestHint !== undefined ? sameHintPoint(hint, bestHint) : hint.best && formatHintLoss(hint.loss) === '+0.0';
+    bestHint !== undefined ? sameHintPoint(hint, bestHint) : hint.best && isDisplayedBestLoss(hint.loss);
   const good = isBest || hint.loss < 0.5;
   return {
     isBest,
@@ -287,7 +288,7 @@ function drawStone(
   ctx.fill();
   if (!black) {
     ctx.strokeStyle = cssColor('--stone-white-rim');
-    ctx.lineWidth = 1;
+    ctx.lineWidth = Math.max(1.6, r * 0.08);
     ctx.stroke();
   }
 }

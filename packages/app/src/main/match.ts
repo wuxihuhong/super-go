@@ -1181,6 +1181,8 @@ export class MatchService {
       depth,
       boardSize: pos.size,
       komi: pos.komi,
+      rules: pos.rules,
+      handicap: pos.handicap,
     };
   }
 

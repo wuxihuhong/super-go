@@ -35,7 +35,7 @@ export default function AboutPanel(props: AboutPanelProps): React.JSX.Element {
       role="dialog"
       aria-labelledby="about-title"
       tabIndex={-1}
-      className="w-80 select-none rounded-xl border border-border bg-surface p-5 text-foreground shadow-xl outline-none"
+      className="sg-popover w-80 select-none rounded-xl p-5 text-foreground outline-none"
     >
       <div className="flex flex-col items-center text-center">
         <AppMark className="h-[72px] w-[72px]" />

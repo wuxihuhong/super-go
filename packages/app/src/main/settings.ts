@@ -16,7 +16,7 @@ import { MOVE_DELAY_DEFAULT } from '../shared/moveDelay';
 
 const DEFAULTS: AppSettings = {
   theme: 'system',
-  view: { board3d: true, alwaysOnTop: false },
+  view: { board3d: true, alwaysOnTop: false, hudSweep: true },
   activeKind: 'xiangqi',
   xiangqi: {
     strength: {},

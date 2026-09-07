@@ -1,6 +1,7 @@
 import { normalizeGoStrength, normalizeXiangqiStrength, type GameKind } from '@super-go/core';
 import { dialog, ipcMain, nativeTheme, shell, type BrowserWindow } from 'electron';
 import { isAllowedExternalUrl } from '../shared/about';
+import { windowsTitleBarOverlay } from '../shared/windowsTitleBar';
 import {
   IPC_CHANNELS,
   type AppSettings,
@@ -103,7 +104,11 @@ export function registerIpc(
   );
 
   nativeTheme.on('updated', () => {
-    getMainWindow()?.webContents.send(IPC_CHANNELS.themeChanged, nativeTheme.shouldUseDarkColors);
+    const win = getMainWindow();
+    win?.webContents.send(IPC_CHANNELS.themeChanged, nativeTheme.shouldUseDarkColors);
+    if (win !== null && !win.isDestroyed() && process.platform === 'win32') {
+      win.setTitleBarOverlay(windowsTitleBarOverlay(nativeTheme.shouldUseDarkColors));
+    }
   });
 
   // ---- 对弈意图（P1）----

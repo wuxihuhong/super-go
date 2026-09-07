@@ -368,9 +368,10 @@ function cachedPieceSideMaterial(
   ctx.fillRect(0, 0, 256, 256);
   // 横向车削环纹（v 沿轮廓高度 → 恒 v 条带 = 围绕盘身的环）
   ctx.strokeStyle = grain;
+  const grainAmp = dark ? 1 : 2.4;
   for (let i = 0; i < 26; i++) {
     const y0 = (i / 26) * 256 + rnd(i) * 4;
-    ctx.globalAlpha = 0.05 + rnd(i + 40) * 0.07;
+    ctx.globalAlpha = (0.05 + rnd(i + 40) * 0.07) * grainAmp;
     ctx.lineWidth = 0.8 + rnd(i + 80) * 1.6;
     ctx.beginPath();
     for (let x = 0; x <= 256; x += 16) {
@@ -394,10 +395,10 @@ function cachedPieceSideMaterial(
   tex.repeat.set(2, 1);
   const mat = new THREE.MeshPhysicalMaterial({
     map: tex,
-    roughness: 0.42,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.2,
-    envMapIntensity: 0.18,
+    roughness: dark ? 0.42 : 0.55,
+    clearcoat: dark ? 1.0 : 0.28,
+    clearcoatRoughness: dark ? 0.2 : 0.45,
+    envMapIntensity: dark ? 0.18 : 0.05,
   });
   cache.set(key, mat);
   return mat;
@@ -433,9 +434,10 @@ function cachedFaceMaterial(
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, S, S);
   // 车削同心环（细密弧纹；交替色用不透明深色/浅色）
+  const ringAmp = dark ? 1 : 2.6;
   for (let i = 0; i < 42; i++) {
     const r = 30 + i * 4.2;
-    ctx.globalAlpha = 0.04 + rnd(i) * 0.05;
+    ctx.globalAlpha = (0.04 + rnd(i) * 0.05) * ringAmp;
     ctx.strokeStyle = i % 2 === 0 ? c.black : c.faceHi;
     ctx.lineWidth = 1.1;
     ctx.beginPath();
@@ -541,13 +543,13 @@ function cachedFaceMaterial(
   const mat = new THREE.MeshPhysicalMaterial({
     map,
     bumpMap: bumpTex,
-    bumpScale: 0.6,
+    bumpScale: dark ? 0.6 : 0.85,
     roughness: 1.0, // 实际粗糙度 = G/255（107→0.42，字区 191→0.75）
     roughnessMap: maskTex,
-    clearcoat: 0.9, // 实际漆强 = R/255（230→0.9，字区 0）
+    clearcoat: dark ? 0.9 : 0.18, // 实际漆强 = R/255（230→0.9，字区 0）；浅色降漆免冲成塑料白
     clearcoatMap: maskTex,
-    clearcoatRoughness: 0.28,
-    envMapIntensity: 0.15,
+    clearcoatRoughness: dark ? 0.28 : 0.55,
+    envMapIntensity: dark ? 0.15 : 0.03,
   });
   cache.set(key, mat);
   return mat;
@@ -564,6 +566,7 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
     river: cssColor('--board-river-text'),
     label: cssColor('--board-label'),
     accent: cssColor('--accent'),
+    last: cssColor('--m-last'),
     danger: cssColor('--danger'),
   };
 
@@ -738,7 +741,7 @@ function paintBoardTexture(ctx: CanvasRenderingContext2D, props: Board3DProps): 
   if (props.lastMove !== null) {
     const from = P(props.lastMove.from);
     const to = P(props.lastMove.to);
-    drawMoveMarks(ctx, from.x, from.y, to.x, to.y, cell, c.accent);
+    drawMoveMarks(ctx, from.x, from.y, to.x, to.y, cell, c.last);
   }
   if (props.checkedKing !== null) {
     const k = P(props.checkedKing);

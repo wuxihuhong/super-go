@@ -1,169 +1,356 @@
 /**
- * 语义色 token（§7.5）：浅深两套同源定义，组件禁止硬编码色值。
- *
- * 生效通道：
- * - Electron：跟随系统走 prefers-color-scheme 媒体查询；手动浅/深由 main 进程
- *   nativeTheme.themeSource 驱动同一条媒体查询（无需 JS 分支）。
- * - 浏览器开发模式（mock API）：无 nativeTheme，用 html.theme-dark/.theme-light
- *   class 覆盖（class 特异性高于 :root，写在媒体查询之后）。
- *
- * Canvas 棋盘从 getComputedStyle 消费同一批变量。
- *
- * 棋盘色板（参考 macOS Chess 的质感：木框、木纹、立体棋子、软阴影）：
- * 棋盘/棋子渲染属内容数据域，UI 骨架仍守 §7.1（灰阶 + 单一强调色、控件无拟物）。
+ * 对局台 HUD token：暗色为默认，亮色走 data-theme='light'。
+ * 旧语义名（--background / --accent …）映射到新变量，弹层无需整页改类名。
+ * Canvas / Three 棋盘只消费不透明色（rgba 描边已按盘面底预混）。
  */
 :root {
-  --background: #f5f4f1;
-  --surface: #ffffff;
-  --border: #e3e2de;
-  --foreground: #1d1c1a;
-  --muted-foreground: #75736e;
-  --accent: #4f46e5;
-  --accent-foreground: #ffffff;
-  --danger: #dc2626;
-  /* 棋盘（Canvas 与 DOM 同源） */
-  --board-frame: #97713b; /* 深木外框 */
-  --board-frame-hi: #a67f48; /* 外框受光面 */
-  --board-hi: #f1dfb8; /* 盘面亮部（左上） */
-  --board-lo: #e5c99a; /* 盘面暗部（右下） */
-  --board-grain: rgba(122, 92, 50, 0.06); /* 木纹 */
-  --board-line: #7c6437; /* 格线 */
-  --board-label: #f7ecd2; /* 边沿坐标编号（框上刻字，高对比奶白） */
-  --board-river-text: #8d7548;
-  --board-label: #f7ecd2; /* 楚河汉界 */
-  --piece-face-hi: #fdf6e4; /* 棋子受光面 */
-  --piece-face-lo: #e9dab6; /* 棋子暗面 */
-  --piece-rim: #b3a077; /* 棋子边圈 */
-  --piece-red: #a63424; /* 红方字 */
-  --piece-black: #383327; /* 黑方字 */
-  --piece-emboss: rgba(90, 66, 30, 0.35); /* 刻字浮雕暗侧 */
-  --piece-shadow: rgba(74, 54, 22, 0.35); /* 棋子投影 */
-  --stone-black: #1a1a1a;
-  --stone-black-hi: #3a3a3a;
-  --stone-white: #f4f1ea;
+  color-scheme: dark;
+  --bg: #05070b;
+  --bg-win: linear-gradient(150deg, #0a1119, #06090e 55%, #04060a);
+  --chrome: linear-gradient(#0b1119, #070b11);
+  --win-title: rgba(77, 232, 255, 0.04);
+  --sidebar: linear-gradient(#0a121b, #060a10);
+  --panel: linear-gradient(#0a121b, #060a10);
+  --grp: #0a121b;
+  --area: radial-gradient(90% 70% at 50% 30%, #0d1926 0%, #060a10 60%, #03060a 100%);
+  --dock: rgba(8, 16, 24, 0.86);
+
+  --line: rgba(77, 232, 255, 0.16);
+  --hair: rgba(77, 232, 255, 0.12);
+  --grp-line: rgba(77, 232, 255, 0.13);
+
+  --txt: #dff1f7;
+  --dim: #8fb4c6;
+  --dim2: #5d7789;
+
+  --acc: #7df3ff;
+  --acc-bg: rgba(77, 232, 255, 0.16);
+  --acc-solid: linear-gradient(#7df3ff, #2ec7e0);
+  --acc-on: #04141a;
+  --acc-glow: 0 0 18px rgba(77, 232, 255, 0.4);
+  --pink: #ff4d9d;
+  --pink-txt: #ff8cc0;
+  --ok: #4dffa3;
+  --ok-txt: #9dffcd;
+  --ok-bg: rgba(77, 255, 163, 0.08);
+  --ok-line: rgba(77, 255, 163, 0.3);
+  --danger: #ff4d6d;
+  --danger-txt: #ff9caa;
+  --danger-bg: rgba(255, 77, 109, 0.14);
+  --danger-line: rgba(255, 77, 109, 0.45);
+
+  --eval-pos: #6fb98f;
+  --eval-neg: #c9503a;
+  --eval-none: #4a463f;
+
+  --track: #04080c;
+  --bar-black: linear-gradient(90deg, #2ec7e0, #7df3ff);
+  --bar-black-glow: 0 0 12px rgba(77, 232, 255, 0.7);
+  --bar-white: linear-gradient(90deg, #7a2a52, #ff4d9d);
+  --tele: linear-gradient(90deg, #2ec7e0, #7df3ff);
+  --tele-track: #0e1a24;
+  --scroll: rgba(255, 255, 255, 0.26);
+
+  --slab: linear-gradient(180deg, #12212e, #0a141d 60%, #070f16);
+  --slab-shadow:
+    0 20px 0 -3px #060c13, 0 24px 0 -3px rgba(77, 232, 255, 0.12), 0 0 60px rgba(77, 232, 255, 0.12),
+    0 50px 84px rgba(0, 0, 0, 0.8);
+  --plane: linear-gradient(180deg, #0d1a26, #08121b);
+  --gline: rgba(77, 232, 255, 0.3);
+  --hoshi: rgba(77, 232, 255, 0.7);
+  --stone-black: #0a1219;
+  --stone-black-hi: #2b3d4d;
+  --stone-white: #c9e6ef;
   --stone-white-hi: #ffffff;
-  --stone-white-rim: #c8c2b6;
-  --go-hoshi: #5c4a2a;
-  /* 候选选点：蓝=唯一最优，绿=接近正手，黄/橙/红=坏手 */
-  --go-hint-best: #2563eb;
-  --go-hint-good: #1a9a4a;
-  --go-hint-ok: #c9a227;
-  --go-hint-poor: #d4652f;
-  --go-hint-bad: #c43c2c;
-}
+  --stone-white-rim: #7fa6b4;
+  --stone-shadow: rgba(0, 0, 0, 0.7);
+  --piece: radial-gradient(circle at 36% 26%, #1c3040, #0c1a26 60%, #060f18);
+  --piece-shadow: rgba(0, 0, 0, 0.75);
+  --piece-black-text: #cfe9f2;
+  --piece-red-text: #ff8cc0;
+  --river: linear-gradient(180deg, #0b1a26, #08131d);
+  --river-text: #3d6b7a;
+  --m-last: #ff4d9d;
+  --m-last-shadow: 0 0 14px rgba(255, 77, 157, 0.7);
+  --m-best: #4de8ff;
+  --m-best-bg: rgba(77, 232, 255, 0.16);
+  --m-best-text: #c8f6ff;
+  --m-best-shadow: 0 0 16px rgba(77, 232, 255, 0.55);
+  --m-good: #4dffa3;
+  --m-good-bg: rgba(77, 255, 163, 0.13);
+  --m-good-text: #9dffcd;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #191817;
-    --surface: #232220;
-    --border: #34322e;
-    --foreground: #f2f1ed;
-    --muted-foreground: #a09e97;
-    --accent: #8f89f2;
-    --accent-foreground: #141312;
-    --danger: #f07a6e;
-    /* 棋盘（暗色一等公民：暗木盘 + 提亮墨色保证可读） */
-    --board-frame: #3d3021;
-    --board-frame-hi: #4c3d2a;
-    --board-hi: #3b3325;
-    --board-lo: #2e2819;
-    --board-grain: rgba(240, 222, 180, 0.05);
-    --board-line: #8b7a55;
-    --board-river-text: #7a6b49;
-    --board-label: #d8c496;
-    --board-label: #d8c496; /* 暗框上的暖亮刻字 */
-    --piece-face-hi: #565040;
-    --piece-face-lo: #3e392d;
-    --piece-rim: #6b6350;
-    --piece-red: #e88070;
-    --piece-black: #e6e1d3;
-    --piece-emboss: rgba(0, 0, 0, 0.45);
-    --piece-shadow: rgba(0, 0, 0, 0.55);
-    --stone-black: #0d0d0d;
-    --stone-black-hi: #2c2c2c;
-    --stone-white: #ece8df;
-    --stone-white-hi: #f7f4ee;
-    --stone-white-rim: #9a9488;
-    --go-hoshi: #c4b48a;
-    --go-hint-best: #5b9fff;
-    --go-hint-good: #3dcc6e;
-    --go-hint-ok: #e0b94a;
-    --go-hint-poor: #e8844a;
-    --go-hint-bad: #f07a6e;
-  }
-}
+  --win-btn: rgba(143, 180, 198, 0.9);
+  --win-close-hover: #c42b1c;
+  --dock-shadow:
+    0 0 34px rgba(77, 232, 255, 0.2), 0 18px 44px rgba(0, 0, 0, 0.66),
+    0 1px 0 rgba(255, 255, 255, 0.14) inset;
+  --scan: rgba(77, 232, 255, 0.045);
+  --sweep: rgba(77, 232, 255, 0.09);
+  --glow-text: 0 0 22px rgba(77, 232, 255, 0.55);
+  --dot-black: #0a1219;
+  --dot-black-ring: rgba(77, 232, 255, 0.6);
+  --dot-white: #dff1f7;
+  --dot-white-ring: #8fb4c6;
+  --dot-red: #ff4d6d;
 
-/* 浏览器开发模式的手动主题覆盖（Electron 内由 nativeTheme 驱动媒体查询，不经过这里） */
-html.theme-dark {
-  --background: #191817;
-  --surface: #232220;
-  --border: #34322e;
-  --foreground: #f2f1ed;
-  --muted-foreground: #a09e97;
-  --accent: #8f89f2;
-  --accent-foreground: #141312;
-  --danger: #f07a6e;
-  --board-frame: #3d3021;
-  --board-frame-hi: #4c3d2a;
-  --board-hi: #3b3325;
-  --board-lo: #2e2819;
-  --board-grain: rgba(240, 222, 180, 0.05);
-  --board-line: #8b7a55;
-  --board-river-text: #7a6b49;
-  --board-label: #d8c496;
-  --piece-face-hi: #565040;
-  --piece-face-lo: #3e392d;
-  --piece-rim: #6b6350;
-  --piece-red: #e88070;
-  --piece-black: #e6e1d3;
+  --board-frame: #0a141d;
+  --board-frame-hi: #12212e;
+  --board-hi: #0d1a26;
+  --board-lo: #08121b;
+  --board-grain: rgba(77, 232, 255, 0.06);
+  --board-line: #205867;
+  --board-label: #8fb4c6;
+  --board-river-text: #3d6b7a;
+  --piece-face-hi: #1c3040;
+  --piece-face-lo: #0c1a26;
+  --piece-rim: #3a6d7a;
+  --piece-red: #ff8cc0;
+  --piece-black: #cfe9f2;
   --piece-emboss: rgba(0, 0, 0, 0.45);
-  --piece-shadow: rgba(0, 0, 0, 0.55);
-  --stone-black: #0d0d0d;
-  --stone-black-hi: #2c2c2c;
-  --stone-white: #ece8df;
-  --stone-white-hi: #f7f4ee;
-  --stone-white-rim: #9a9488;
-  --go-hoshi: #c4b48a;
-  --go-hint-best: #5b9fff;
-  --go-hint-good: #3dcc6e;
+  --go-hoshi: #3aaabe;
+  --go-hint-best: #4de8ff;
+  --go-hint-good: #4dffa3;
   --go-hint-ok: #e0b94a;
   --go-hint-poor: #e8844a;
   --go-hint-bad: #f07a6e;
+
+  --r-sm: 5px;
+  --r-btn: 8px;
+  --r-md: 9px;
+  --r-grp: 10px;
+  --r-dock-btn: 11px;
+  --r-dock: 14px;
+  --r-chip: 7px;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+  --t-hover: 120ms;
+  --t-press: 80ms;
+  --t-move: 140ms;
+  --t-switch: 200ms;
+  --t-panel: 240ms;
+
+  --font-ui: 'Chakra Petch', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans',
+    'Microsoft YaHei', system-ui, sans-serif;
+  --font-ui-win: 'Chakra Petch', 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --background: var(--bg);
+  --surface: var(--grp);
+  --border: var(--line);
+  --foreground: var(--txt);
+  --muted-foreground: var(--dim);
+  --accent: var(--acc);
+  --accent-foreground: var(--acc-on);
 }
 
-html.theme-light {
-  --background: #f5f4f1;
-  --surface: #ffffff;
-  --border: #e3e2de;
-  --foreground: #1d1c1a;
-  --muted-foreground: #75736e;
-  --accent: #4f46e5;
-  --accent-foreground: #ffffff;
-  --danger: #dc2626;
-  --board-frame: #97713b;
-  --board-frame-hi: #a67f48;
-  --board-hi: #f1dfb8;
-  --board-lo: #e5c99a;
-  --board-grain: rgba(122, 92, 50, 0.06);
-  --board-line: #7c6437;
-  --board-river-text: #8d7548;
-  --board-label: #f7ecd2;
-  --piece-face-hi: #fdf6e4;
-  --piece-face-lo: #e9dab6;
-  --piece-rim: #b3a077;
-  --piece-red: #a63424;
-  --piece-black: #383327;
-  --piece-emboss: rgba(90, 66, 30, 0.35);
-  --piece-shadow: rgba(74, 54, 22, 0.35);
-  --stone-black: #1a1a1a;
-  --stone-black-hi: #3a3a3a;
-  --stone-white: #f4f1ea;
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #eff4f8;
+  --bg-win: linear-gradient(150deg, #f7fafc, #eaf1f6 55%, #e2ebf2);
+  --chrome: linear-gradient(#ffffff, #f2f7fa);
+  --win-title: rgba(255, 255, 255, 0.72);
+  --sidebar: #ffffff;
+  --panel: #ffffff;
+  --grp: #ffffff;
+  --area: radial-gradient(90% 70% at 50% 28%, #ffffff 0%, #e9f1f6 60%, #dde8ef 100%);
+  --dock: rgba(255, 255, 255, 0.88);
+
+  --line: rgba(13, 74, 96, 0.16);
+  --hair: rgba(13, 74, 96, 0.11);
+  --grp-line: rgba(13, 74, 96, 0.13);
+
+  --txt: #0c2733;
+  --dim: #4a6b7a;
+  --dim2: #587787;
+
+  --acc: #0d7490;
+  --acc-bg: rgba(13, 116, 144, 0.12);
+  --acc-solid: linear-gradient(#12a2c4, #0b7994);
+  --acc-on: #f4fdff;
+  --acc-glow: 0 1px 2px rgba(12, 39, 51, 0.22);
+  --pink: #c4267c;
+  --pink-txt: #a81f69;
+  --ok: #0f9b6c;
+  --ok-txt: #0c7a55;
+  --ok-bg: rgba(15, 155, 108, 0.07);
+  --ok-line: rgba(15, 155, 108, 0.28);
+  --danger: #d1365a;
+  --danger-txt: #b32a4b;
+  --danger-bg: rgba(209, 54, 90, 0.09);
+  --danger-line: rgba(209, 54, 90, 0.3);
+
+  --eval-pos: #1a7a45;
+  --eval-neg: #b1432f;
+  --eval-none: #b3ac9e;
+
+  --track: #dbe6ec;
+  --bar-black: linear-gradient(90deg, #0b7994, #12a2c4);
+  --bar-black-glow: none;
+  --bar-white: linear-gradient(90deg, #e6a8c6, #c4267c);
+  --tele: linear-gradient(90deg, #0b7994, #12a2c4);
+  --tele-track: #e2ecf1;
+  --scroll: rgba(13, 74, 96, 0.24);
+
+  --slab: linear-gradient(180deg, #c3d6e0, #a8bfcc 60%, #95afbe);
+  --slab-shadow:
+    0 20px 0 -3px #7f9aaa, 0 24px 0 -3px rgba(13, 116, 144, 0.18), 0 42px 70px rgba(20, 60, 80, 0.26);
+  --plane: linear-gradient(180deg, #f3f8fb, #e5eff4);
+  --gline: rgba(13, 74, 96, 0.5);
+  --hoshi: rgba(13, 74, 96, 0.72);
+  --stone-black: #141d24;
+  --stone-black-hi: #4a5c68;
+  --stone-white: #ffffff;
   --stone-white-hi: #ffffff;
-  --stone-white-rim: #c8c2b6;
-  --go-hoshi: #5c4a2a;
-  --go-hint-best: #2563eb;
-  --go-hint-good: #1a9a4a;
+  --stone-white-rim: #5a7684;
+  --stone-shadow: rgba(20, 60, 80, 0.42);
+  --piece: radial-gradient(circle at 36% 26%, #ffffff, #eef5f9 58%, #cfdee6);
+  --piece-shadow: rgba(20, 60, 80, 0.26);
+  --piece-black-text: #123240;
+  --piece-red-text: #c4267c;
+  --river: linear-gradient(180deg, #e9f2f7, #dfebf1);
+  --river-text: #6a8a99;
+  --m-last: #c4267c;
+  --m-last-shadow: 0 2px 8px rgba(196, 38, 124, 0.3);
+  --m-best: #0d7490;
+  --m-best-bg: rgba(13, 116, 144, 0.14);
+  --m-best-text: #0a4f63;
+  --m-best-shadow: 0 2px 8px rgba(13, 116, 144, 0.24);
+  --m-good: #0f9b6c;
+  --m-good-bg: rgba(15, 155, 108, 0.12);
+  --m-good-text: #0c7a55;
+
+  --win-btn: #3d5a68;
+  --dock-shadow:
+    0 14px 36px rgba(20, 60, 80, 0.2), 0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 0 0 1px rgba(13, 74, 96, 0.08);
+  --scan: rgba(13, 116, 144, 0.03);
+  --sweep: rgba(13, 116, 144, 0.05);
+  --glow-text: none;
+  --dot-black: #141d24;
+  --dot-black-ring: rgba(13, 74, 96, 0.3);
+  --dot-white: #ffffff;
+  --dot-white-ring: #3d5a68;
+  --dot-red: #d1365a;
+
+  --board-frame: #a8bfcc;
+  --board-frame-hi: #c3d6e0;
+  --board-hi: #7f9aab;
+  --board-lo: #6a8798;
+  --board-grain: rgba(13, 74, 96, 0.08);
+  --board-line: #80a1ad;
+  --board-label: #4a6b7a;
+  --board-river-text: #6a8a99;
+  --piece-face-hi: #efe6d8;
+  --piece-face-lo: #a9b8c2;
+  --piece-rim: #5c7584;
+  --piece-red: #c4267c;
+  --piece-black: #123240;
+  --piece-emboss: rgba(20, 60, 80, 0.35);
+  --go-hoshi: #4d7b8b;
+  --go-hint-best: #0d7490;
+  --go-hint-good: #0f9b6c;
   --go-hint-ok: #c9a227;
   --go-hint-poor: #d4652f;
   --go-hint-bad: #c43c2c;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg: #eff4f8;
+    --bg-win: linear-gradient(150deg, #f7fafc, #eaf1f6 55%, #e2ebf2);
+    --chrome: linear-gradient(#ffffff, #f2f7fa);
+    --win-title: rgba(255, 255, 255, 0.72);
+    --sidebar: #ffffff;
+    --panel: #ffffff;
+    --grp: #ffffff;
+    --area: radial-gradient(90% 70% at 50% 28%, #ffffff 0%, #e9f1f6 60%, #dde8ef 100%);
+    --dock: rgba(255, 255, 255, 0.88);
+    --line: rgba(13, 74, 96, 0.16);
+    --hair: rgba(13, 74, 96, 0.11);
+    --grp-line: rgba(13, 74, 96, 0.13);
+    --txt: #0c2733;
+    --dim: #4a6b7a;
+    --dim2: #587787;
+    --acc: #0d7490;
+    --acc-bg: rgba(13, 116, 144, 0.12);
+    --acc-solid: linear-gradient(#12a2c4, #0b7994);
+    --acc-on: #f4fdff;
+    --acc-glow: 0 1px 2px rgba(12, 39, 51, 0.22);
+    --pink: #c4267c;
+    --pink-txt: #a81f69;
+    --ok: #0f9b6c;
+    --ok-txt: #0c7a55;
+    --ok-bg: rgba(15, 155, 108, 0.07);
+    --ok-line: rgba(15, 155, 108, 0.28);
+    --danger: #d1365a;
+    --danger-txt: #b32a4b;
+    --danger-bg: rgba(209, 54, 90, 0.09);
+    --danger-line: rgba(209, 54, 90, 0.3);
+    --eval-pos: #1a7a45;
+    --eval-neg: #b1432f;
+    --eval-none: #b3ac9e;
+    --track: #dbe6ec;
+    --bar-black: linear-gradient(90deg, #0b7994, #12a2c4);
+    --bar-black-glow: none;
+    --bar-white: linear-gradient(90deg, #e6a8c6, #c4267c);
+    --tele: linear-gradient(90deg, #0b7994, #12a2c4);
+    --tele-track: #e2ecf1;
+    --scroll: rgba(13, 74, 96, 0.24);
+    --slab: linear-gradient(180deg, #c3d6e0, #a8bfcc 60%, #95afbe);
+    --plane: linear-gradient(180deg, #f3f8fb, #e5eff4);
+    --stone-black: #141d24;
+    --stone-black-hi: #4a5c68;
+    --stone-white: #ffffff;
+    --stone-white-hi: #ffffff;
+    --stone-white-rim: #5a7684;
+    --stone-shadow: rgba(20, 60, 80, 0.42);
+    --piece-shadow: rgba(20, 60, 80, 0.26);
+    --piece-black-text: #123240;
+    --piece-red-text: #c4267c;
+    --river-text: #6a8a99;
+    --m-last: #c4267c;
+    --m-best: #0d7490;
+    --m-good: #0f9b6c;
+    --win-btn: #3d5a68;
+    --dock-shadow:
+      0 14px 36px rgba(20, 60, 80, 0.2), 0 1px 0 rgba(255, 255, 255, 0.9) inset,
+      0 0 0 1px rgba(13, 74, 96, 0.08);
+    --scan: rgba(13, 116, 144, 0.03);
+    --sweep: rgba(13, 116, 144, 0.05);
+    --glow-text: none;
+    --dot-black: #141d24;
+    --dot-black-ring: rgba(13, 74, 96, 0.3);
+    --dot-white: #ffffff;
+    --dot-white-ring: #3d5a68;
+    --dot-red: #d1365a;
+    --board-frame: #a8bfcc;
+    --board-frame-hi: #c3d6e0;
+    --board-hi: #7f9aab;
+    --board-lo: #6a8798;
+    --board-grain: rgba(13, 74, 96, 0.08);
+    --board-line: #80a1ad;
+    --board-label: #4a6b7a;
+    --board-river-text: #6a8a99;
+    --piece-face-hi: #efe6d8;
+    --piece-face-lo: #a9b8c2;
+    --piece-rim: #5c7584;
+    --piece-red: #c4267c;
+    --piece-black: #123240;
+    --piece-emboss: rgba(20, 60, 80, 0.35);
+    --go-hoshi: #4d7b8b;
+    --go-hint-best: #0d7490;
+    --go-hint-good: #0f9b6c;
+    --go-hint-ok: #c9a227;
+    --go-hint-poor: #d4652f;
+    --go-hint-bad: #c43c2c;
+    --background: var(--bg);
+    --surface: var(--grp);
+    --border: var(--line);
+    --foreground: var(--txt);
+    --muted-foreground: var(--dim);
+    --accent: var(--acc);
+    --accent-foreground: var(--acc-on);
+  }
 }

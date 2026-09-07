@@ -5,6 +5,7 @@ import { normalizeGoStrength, normalizeXiangqiStrength } from '@super-go/core';
 import { aboutMenuLabel } from '../shared/about';
 import { GO_ANALYSIS_DEFAULT, IPC_CHANNELS, type EngineStatusPayload } from '../shared/ipc';
 import { moveDelayMs } from '../shared/moveDelay';
+import { windowsTitleBarOverlay } from '../shared/windowsTitleBar';
 import { cpuThreadCount } from './cpuThreads';
 import {
   enginesRootCandidates,
@@ -87,11 +88,15 @@ function createWindow(alwaysOnTop: boolean): BrowserWindow {
     autoHideMenuBar: true,
     alwaysOnTop, // 置顶属视图偏好（settings.view），随设置持久化
     ...(icon !== undefined ? { icon } : {}),
-    // mac 融合原生观感（参考 Chess.app）：藏标题栏、红绿灯内嵌进工具栏；
-    // Windows/Linux 保留系统窗框
+    // mac：hiddenInset 红绿灯内嵌；Windows：自绘 32px 标题栏 + WCO 系统按钮
     ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 18 } }
-      : {}),
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 20 } }
+      : process.platform === 'win32'
+        ? {
+            titleBarStyle: 'hidden' as const,
+            titleBarOverlay: windowsTitleBarOverlay(nativeTheme.shouldUseDarkColors),
+          }
+        : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,

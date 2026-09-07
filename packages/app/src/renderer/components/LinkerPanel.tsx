@@ -138,7 +138,7 @@ export default function LinkerPanel(props: LinkerPanelProps) {
       : t('linker.window.empty');
 
   return (
-    <div className="max-h-[80vh] w-96 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-xl">
+    <div className="sg-popover max-h-[80vh] w-96 overflow-y-auto rounded-xl p-3">
       <section className="mb-3">
         <h3 className="mb-1.5 flex items-center justify-between px-1 text-xs font-semibold text-muted-foreground">
           <span>{t('linker.window')}</span>
@@ -260,7 +260,7 @@ export default function LinkerPanel(props: LinkerPanelProps) {
             type="button"
             onClick={start}
             disabled={!canStart}
-            className="w-full rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground disabled:opacity-40"
+            className="sg-btn-solid w-full rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-40"
           >
             {t('linker.start')}
           </button>

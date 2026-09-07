@@ -9,12 +9,12 @@ export function bestPointFromPv(pv: readonly string[] | undefined, size: number)
   return pointFromGtp(pv?.[0], size);
 }
 
-/** 盘上写成 +0.0 才算正手；+0.4 绝不能当最优 */
+/** 盘上写成 -0.0 才算正手；-0.4 绝不能当最优 */
 export function isDisplayedBestLoss(loss: number): boolean {
-  return formatHintLoss(loss) === '+0.0';
+  return formatHintLoss(loss) === '-0.0';
 }
 
-/** 蓝色只给「写成 +0.0 且访问量最高」的那一个；忽略错误的 best 旗标 */
+/** 蓝色只给「写成 -0.0 且访问量最高」的那一个；忽略错误的 best 旗标 */
 export function uniqueBestHint(hints: readonly GoHintPoint[]): GoHintPoint | undefined {
   let best: GoHintPoint | undefined;
   for (const hint of hints) {
@@ -95,9 +95,9 @@ export function hintsSignature(points: readonly GoHintPoint[]): string {
     .join('|');
 }
 
-/** 相对最佳手的目损（截图 "+0.0"） */
+/** 相对最佳手的目损（盘上写成 -0.0 / -0.4） */
 export function formatHintLoss(loss: number): string {
-  return `+${Math.max(0, loss).toFixed(1)}`;
+  return `-${Math.max(0, loss).toFixed(1)}`;
 }
 
 /** 访问量：2800 → 2.8k */

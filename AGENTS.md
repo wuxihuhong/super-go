@@ -26,7 +26,7 @@
 
 - 全 TypeScript；技术栈已定案勿替换：Electron、nut.js（鼠标监听/注入）、koffi（Win PrintWindow）、onnxruntime-node（YOLO 推理）。
 - UI：Tailwind CSS + 无头组件（Radix/shadcn 风格）自建轻组件集，**不引重型组件库**；棋盘用 Canvas，按 devicePixelRatio 高分屏渲染。
-- UI 观感硬规则（§7.1）：中性灰阶骨架 + 全局单一强调色，彩色只承担数据语义（红黑双方、胜率涨跌）；无拟物（禁渐变按钮/立体斜面）；间距走 4/8 网格；评分与时钟用 tabular-nums；暗色主题一等公民；动效克制（缓动位移可以有，弹跳/发光禁止）。
+- UI 观感硬规则（§7.1）：暗底 HUD + 青色主强调 / 洋红次强调，彩色承担数据语义；数字走 JetBrains Mono + tabular-nums；间距 4/8 网格；暗色一等公民；主操作在浮动 dock、无底栏；动效克制（扫掠/pulse 可关，禁弹跳）。
 - i18n 与主题（§7.5）：UI 文案禁止硬编码，一律走路由键资源包（中/英/日）；颜色禁止硬编码色值，走语义 token（浅/深 + 跟随系统），Canvas 棋盘消费同一套 token。
 - 引擎 stdout 按行解析须保护性编程：info 行 schema 在引擎间有变体，**解析失败降级不崩**。
 

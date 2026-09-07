@@ -1,7 +1,7 @@
 /**
  * 对弈共享类型：快照 + 意图（main 生产、renderer 消费；禁止 Node/Electron 类型）。
  */
-import type { EngineSide, GameKind, GameResult, GameSetup, Player, Point } from '@super-go/core';
+import type { EngineSide, GameKind, GameResult, GameSetup, Player, Point, RuleSet } from '@super-go/core';
 
 export interface MainlineItem {
   nodeId: number;
@@ -54,6 +54,10 @@ export interface GameSnapshot {
   depth?: number;
   boardSize?: number;
   komi?: number;
+  /** 围棋规则集；缺省按中国数子（与 core normalizeRules 一致） */
+  rules?: RuleSet;
+  /** 让子数 */
+  handicap?: number;
 }
 
 /** 盘上一个候选交叉点：loss=0 为正手，越大越坏 */

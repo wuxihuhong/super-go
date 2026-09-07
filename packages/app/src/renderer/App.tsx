@@ -26,14 +26,17 @@ import type { GameSnapshot } from '@shared/game';
 import AboutPanel from './components/AboutPanel';
 import Board from './components/Board';
 import Board3D from './components/Board3D';
+import BoardDock from './components/BoardDock';
 import GoBoard from './components/GoBoard';
 import GoBoard3D from './components/GoBoard3D';
 import SidePanel from './components/SidePanel';
-import StatusBar from './components/StatusBar';
 import Toolbar, { type Popover } from './components/Toolbar';
+import { WindowsTitleBar } from './components/WindowsTitleBar';
 import { createT, detectLanguage } from './i18n';
+import { blurActiveInput } from './lib/blurActiveInput';
 import { nextBoardFlip } from './lib/boardOrientation';
-import { isToolbarShortcutMod } from './lib/shortcuts';
+import { chromePlatform, isToolbarShortcutMod } from './lib/shortcuts';
+import { applyTheme } from './lib/theme';
 import { useElementSize } from './lib/useElementSize';
 import { playSound, setSoundEnabled } from './lib/sound';
 
@@ -52,8 +55,11 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [themeTick, setThemeTick] = useState(0);
   const [popover, setPopover] = useState<Popover>('none');
+  const popoverRef = useRef(popover);
+  popoverRef.current = popover;
   const [aboutOpen, setAboutOpen] = useState(false);
   const [board3d, setBoard3d] = useState(true);
+  const [hudSweep, setHudSweep] = useState(true);
   const [glFailed, setGlFailed] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   const [showBestMove, setShowBestMove] = useState(false);
@@ -81,14 +87,17 @@ export default function App() {
       setLang(s.language ?? detectLanguage(navigator.languages));
       setSoundEnabled(s.sound ?? true);
       setBoard3d(s.view?.board3d ?? true);
+      setHudSweep(s.view?.hudSweep !== false);
       setAlwaysOnTop(s.view?.alwaysOnTop ?? false);
       setShowBestMove(s.go?.showBestMove === true);
       setBoard3dScale(s.view?.board3dScale ?? 1);
       setKind(s.activeKind === 'go' ? 'go' : 'xiangqi');
     });
     void window.superGo.getSnapshot().then(setSnapshot);
-    // 主题变化时 CSS 变量已自动切换，这里只为触发 canvas 重绘
-    return window.superGo.onThemeChanged(() => setThemeTick((tick) => tick + 1));
+    return window.superGo.onThemeChanged((dark) => {
+      applyTheme(dark);
+      setThemeTick((tick) => tick + 1);
+    });
   }, []);
 
   useEffect(() => {
@@ -104,6 +113,7 @@ export default function App() {
       setLinkerLogs((cur) => [...cur.slice(-60), entry]);
     });
     const offAbout = window.superGo.onShowAbout(() => {
+      blurActiveInput();
       setPopover('none');
       setAboutOpen(true);
     });
@@ -239,6 +249,7 @@ export default function App() {
     setLang(next.language ?? detectLanguage(navigator.languages));
     setSoundEnabled(next.sound ?? true);
     setBoard3d(next.view?.board3d ?? true);
+    setHudSweep(next.view?.hudSweep !== false);
     setAlwaysOnTop(next.view?.alwaysOnTop ?? false);
     setShowBestMove(next.go?.showBestMove === true);
     setBoard3dScale(next.view?.board3dScale ?? 1);
@@ -284,10 +295,12 @@ export default function App() {
   }, []);
 
   const togglePopover = useCallback((which: Popover): void => {
+    if (popoverRef.current === which) blurActiveInput();
     setPopover((cur) => (cur === which ? 'none' : which));
   }, []);
 
   const openAbout = useCallback((): void => {
+    blurActiveInput();
     setPopover('none');
     setAboutOpen(true);
   }, []);
@@ -330,7 +343,12 @@ export default function App() {
         if (canUndo) runIntent(() => window.superGo.undoMove());
       } else if (code === 'Comma') {
         e.preventDefault();
-        togglePopover('settings');
+        if (popoverRef.current === 'settings' || popoverRef.current === 'settingsDock') {
+          blurActiveInput();
+        }
+        setPopover((cur) =>
+          cur === 'settings' || cur === 'settingsDock' ? 'none' : 'settings',
+        );
       } else if (code === 'KeyB') {
         e.preventDefault();
         setPanelOpen((v) => {
@@ -340,7 +358,7 @@ export default function App() {
         });
       } else if (code === 'KeyR' && e.shiftKey) {
         e.preventDefault();
-        if (canResign) runIntent(() => window.superGo.resign());
+        if (canResign) togglePopover('resignConfirm');
       } else if (code === 'KeyP') {
         e.preventDefault();
         if (kind === 'go' && playing) runIntent(() => window.superGo.playMove({ point: null }));
@@ -393,6 +411,7 @@ export default function App() {
     handleToggleEngineSide,
     handleToggleAlwaysOnTop,
     togglePopover,
+    setPopover,
     aboutOpen,
   ]);
 
@@ -455,8 +474,25 @@ export default function App() {
     }
   }, [snapshot?.phase, linkerStatus]);
 
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 1100,
+  );
+  const wasNarrow = useRef(narrow);
+  useEffect(() => {
+    const onResize = (): void => {
+      const next = window.innerWidth < 1100;
+      setNarrow(next);
+      if (next && !wasNarrow.current) setPanelOpen(false);
+      wasNarrow.current = next;
+    };
+    window.addEventListener('resize', onResize);
+    if (narrow) setPanelOpen(false);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   if (lang === null) return null;
   const t = createT(lang);
+  const chrome = chromePlatform();
 
   const playing = snapshot?.phase === 'playing';
 
@@ -464,6 +500,7 @@ export default function App() {
    * return 之后，不可用 useCallback（hooks 顺序违规，React #310） */
   const handleLinkerStart = (intent: Parameters<typeof window.superGo.linkerStart>[0]): void => {
     if (!alwaysOnTop) setNotice({ text: t('linker.notice.alwaysOnTop'), bad: false });
+    blurActiveInput();
     setPopover('none');
     void window.superGo.linkerStart(intent).then((r) => {
       if (!r.ok) setNotice({ text: r.error, bad: true });
@@ -472,17 +509,12 @@ export default function App() {
 
   return (
     <div className="relative flex h-full flex-col bg-background">
+      {chrome === 'win' && (
+        <WindowsTitleBar t={t} kind={kind} snapshot={snapshot} onOpenAbout={openAbout} />
+      )}
       <Toolbar
         t={t}
-        title={t('app.name')}
         playing={playing}
-        paused={snapshot?.paused === true}
-        canUndo={
-          (playing === true || snapshot?.phase === 'ended') &&
-          (snapshot?.moves.length ?? 0) > 0 &&
-          !linkerActive
-        }
-        canResign={playing === true && !spectating && !linkerActive}
         panelOpen={panelOpen}
         alwaysOnTop={alwaysOnTop}
         engineStatus={engineStatus}
@@ -495,14 +527,6 @@ export default function App() {
           void window.superGo.setSettings({ activeKind: next });
           runIntent(() => window.superGo.setKind(next));
         }}
-        onPass={() => runIntent(() => window.superGo.playMove({ point: null }))}
-        onNewGame={(side, goSetup?: GameSetup) => {
-          pendingAnchorRef.current = side;
-          runIntent(() => window.superGo.newGame({ fromCursor: false, goSetup }));
-        }}
-        onUndo={() => runIntent(() => window.superGo.undoMove())}
-        onResign={() => runIntent(() => window.superGo.resign())}
-        onPauseToggle={() => runIntent(() => window.superGo.togglePause())}
         onToggleEngineSide={handleToggleEngineSide}
         onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
         boardZoomDisabled={!board3d || glFailed}
@@ -518,8 +542,6 @@ export default function App() {
           });
         }}
         onSettingsChanged={handleSettingsChanged}
-        showBestMove={showBestMove}
-        onToggleBestMove={() => persistShowBestMove(!showBestMove)}
         linkerStatus={linkerStatus}
         linkerLogs={linkerLogs}
         onLinkerStart={handleLinkerStart}
@@ -529,28 +551,30 @@ export default function App() {
         onOpenAbout={openAbout}
       />
 
-      {/* 通知浮层（不挤压布局） */}
       {notice !== null && (
         <div
           className={`pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-md border border-border bg-surface px-4 py-2 text-xs shadow-md ${
-            notice.bad ? 'text-danger' : 'text-muted-foreground'
+            notice.bad ? 'text-danger' : 'text-dim'
           }`}
         >
           {notice.text}
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <main
           ref={mainRef}
-          className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-6"
+          className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden pt-[30px] pb-24"
+          style={{ background: 'var(--area)' }}
         >
+          <div className="sg-scan absolute inset-0" />
+          {hudSweep && <div className="sg-sweep" />}
           {mainReady && (
             <div
               className={`relative overflow-hidden rounded-xl ${
                 kind === 'go' ? '' : 'max-w-full'
               } ${
-                board3d && !glFailed ? '' : 'shadow-md' // 3D 自带接地投影，CSS 盒阴影会叠出"外框"
+                board3d && !glFailed ? '' : 'shadow-md'
               }`}
               style={{ width: boardColumnWidth, height: boardHeight }}
             >
@@ -603,32 +627,56 @@ export default function App() {
               )}
             </div>
           )}
+          <BoardDock
+            t={t}
+            kind={kind}
+            playing={playing === true}
+            paused={snapshot?.paused === true}
+            canUndo={
+              (playing === true || snapshot?.phase === 'ended') &&
+              (snapshot?.moves.length ?? 0) > 0 &&
+              !linkerActive
+            }
+            canResign={playing === true && !spectating && !linkerActive}
+            showBestMove={showBestMove}
+            thinking={snapshot?.thinking === true}
+            komi={snapshot?.komi ?? 7.5}
+            boardSize={snapshot?.boardSize ?? 19}
+            rules={snapshot?.rules}
+            handicap={snapshot?.handicap}
+            popover={popover}
+            onPopoverChange={setPopover}
+            onNewGame={(side, goSetup?: GameSetup) => {
+              pendingAnchorRef.current = side;
+              runIntent(() => window.superGo.newGame({ fromCursor: false, goSetup }));
+            }}
+            onUndo={() => runIntent(() => window.superGo.undoMove())}
+            onResign={() => runIntent(() => window.superGo.resign())}
+            onPauseToggle={() => runIntent(() => window.superGo.togglePause())}
+            onPass={() => runIntent(() => window.superGo.playMove({ point: null }))}
+            onToggleBestMove={() => persistShowBestMove(!showBestMove)}
+            onOpenAbout={openAbout}
+            onSettingsChanged={handleSettingsChanged}
+          />
         </main>
 
-        {panelOpen && (
-          <SidePanel
-            t={t}
-            snapshot={snapshot}
-            liveEval={liveEval}
-            themeTick={themeTick}
-            onGoto={(nodeId) => runIntent(() => window.superGo.gotoNode(nodeId))}
-            onContinue={() => runIntent(() => window.superGo.newGame({ fromCursor: true }))}
-            linkerStatus={linkerStatus}
-            onLinkerStop={() => window.superGo.linkerStop()}
-            onLinkerPauseToggle={() => window.superGo.linkerPauseToggle()}
-            onLinkerResolve={(r) => window.superGo.linkerResolve(r)}
-            onLinkerDismiss={() => setLinkerStatus(null)}
-          />
-        )}
+        <SidePanel
+          t={t}
+          snapshot={snapshot}
+          liveEval={liveEval}
+          engineStatus={engineStatus}
+          themeTick={themeTick}
+          onGoto={(nodeId) => runIntent(() => window.superGo.gotoNode(nodeId))}
+          onContinue={() => runIntent(() => window.superGo.newGame({ fromCursor: true }))}
+          linkerStatus={linkerStatus}
+          onLinkerStop={() => window.superGo.linkerStop()}
+          onLinkerPauseToggle={() => window.superGo.linkerPauseToggle()}
+          onLinkerResolve={(r) => window.superGo.linkerResolve(r)}
+          onLinkerDismiss={() => setLinkerStatus(null)}
+          open={panelOpen}
+          overlay={narrow && panelOpen}
+        />
       </div>
-
-      <StatusBar
-        t={t}
-        snapshot={snapshot}
-        engineStatus={engineStatus}
-        liveEval={liveEval}
-        boardFlipped={flip}
-      />
 
       {aboutOpen && (
         <div

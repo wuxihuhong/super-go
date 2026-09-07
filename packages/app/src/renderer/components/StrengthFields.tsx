@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import {
   xiangqiThreadCap,
   XIANGQI_ELO_MAX,
@@ -8,6 +9,7 @@ import {
   type XiangqiStrengthConfig,
 } from '@super-go/core';
 import type { TFunction } from '../i18n';
+import { useCommitOnUnmount } from '../lib/useCommitOnUnmount';
 
 export interface StrengthFieldsProps {
   t: TFunction;
@@ -162,15 +164,18 @@ function NumberField(props: {
   unit?: string;
   onCommit: (value: number) => void;
 }): React.JSX.Element {
+  const inputRef = useRef<HTMLInputElement>(null);
   const commit = (raw: string): void => {
     const value = Number(raw);
     if (Number.isFinite(value) && value !== props.value) {
       props.onCommit(Math.max(props.min, Math.min(props.max, value)));
     }
   };
+  useCommitOnUnmount(inputRef, commit);
   return (
     <span className="flex items-center gap-1">
       <input
+        ref={inputRef}
         key={props.value}
         type="number"
         aria-label={props.ariaLabel}
