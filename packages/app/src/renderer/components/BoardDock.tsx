@@ -3,6 +3,7 @@ import type { AppSettings } from '@shared/ipc';
 import type { MessageKey, TFunction } from '../i18n';
 import SettingsPanel from './SettingsPanel';
 import SetupPanel from './SetupPanel';
+import { blurActiveInput } from '../lib/blurActiveInput';
 import { hintKeyOf, ScoreEstimatePanel, type Popover } from './Toolbar';
 import { IconButton } from './ui/IconButton';
 import { PopoverLayer } from './ui/PopoverLayer';
@@ -44,7 +45,10 @@ export interface BoardDockProps {
 }
 
 export default function BoardDock(props: BoardDockProps): React.JSX.Element {
-  const close = (): void => props.onPopoverChange('none');
+  const close = (): void => {
+    blurActiveInput();
+    props.onPopoverChange('none');
+  };
   const icon = (
     key: MessageKey,
     node: React.ReactNode,
@@ -117,7 +121,8 @@ export default function BoardDock(props: BoardDockProps): React.JSX.Element {
       {icon(
         'settings.title',
         <IconGear className="h-[17px] w-[17px]" />,
-        () => props.onPopoverChange(props.popover === 'settingsDock' ? 'none' : 'settingsDock'),
+        () =>
+          props.popover === 'settingsDock' ? close() : props.onPopoverChange('settingsDock'),
         { shortcut: ',', toggle: true, accent: props.popover === 'settingsDock' },
       )}
       <PopoverLayer

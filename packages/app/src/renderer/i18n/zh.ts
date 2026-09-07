@@ -46,6 +46,8 @@ export default {
   'panel.gauge.blackWin': '黑胜率',
   'panel.gauge.whiteWin': '白胜率',
   'panel.gauge.redAdvantage': '红方优势',
+  'panel.gauge.blackAdvantage': '黑方优势',
+  'panel.gauge.even': '均势',
   'panel.gauge.depth': '深度',
   'panel.moveLog': '着法',
   'panel.moveLog.ply': '{n} 手',

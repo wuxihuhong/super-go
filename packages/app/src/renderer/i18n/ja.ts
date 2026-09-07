@@ -43,6 +43,8 @@ export default {
   'panel.gauge.blackWin': '黒勝率',
   'panel.gauge.whiteWin': '白勝率',
   'panel.gauge.redAdvantage': '紅の優勢',
+  'panel.gauge.blackAdvantage': '黒の優勢',
+  'panel.gauge.even': '互角',
   'panel.gauge.depth': '深さ',
   'panel.moveLog': '棋譜',
   'panel.moveLog.ply': '{n}手',

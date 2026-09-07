@@ -44,6 +44,8 @@ export default {
   'panel.gauge.blackWin': 'Black win',
   'panel.gauge.whiteWin': 'White win',
   'panel.gauge.redAdvantage': 'Red advantage',
+  'panel.gauge.blackAdvantage': 'Black advantage',
+  'panel.gauge.even': 'Equal',
   'panel.gauge.depth': 'Depth',
   'panel.moveLog': 'Move log',
   'panel.moveLog.ply': '{n} ply',

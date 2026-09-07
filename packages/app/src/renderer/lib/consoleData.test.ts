@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GameSnapshot } from '@shared/game';
 import { estimateAreaScores, formatScoreNumber } from '../../shared/goScoreFormat';
 import type { TFunction } from '../i18n';
-import { buildGauge, buildTelemetry, moveEvalCell, windowSubtitle } from './consoleData';
+import { buildGauge, buildTelemetry, moveEvalCell, windowSubtitle, xiangqiGaugeHead } from './consoleData';
 
 const t = ((key: string): string => key) as TFunction;
 
@@ -47,8 +47,31 @@ describe('buildGauge', () => {
   it('象棋用红方优势与深度', () => {
     const g = buildGauge(t, xiangqiSnap, null);
     expect(g.kind).toBe('xiangqi');
+    expect(g.leftLabel).toBe('panel.gauge.redAdvantage');
     expect(g.leftValue).toBe('+124');
+    expect(g.leftTone).toBe('acc');
     expect(g.rightValue).toBe('28');
+  });
+
+  it('负分改标黑方优势，数字取绝对值', () => {
+    const g = buildGauge(t, { ...xiangqiSnap, redCp: -1239 }, null);
+    expect(g.leftLabel).toBe('panel.gauge.blackAdvantage');
+    expect(g.leftValue).toBe('+1239');
+    expect(g.leftTone).toBe('pink');
+    expect(g.barRatio).toBeLessThan(0.5);
+  });
+});
+
+describe('xiangqiGaugeHead', () => {
+  it('均势与杀棋标题跟归属方走', () => {
+    expect(xiangqiGaugeHead(t, 0).leftLabel).toBe('panel.gauge.even');
+    expect(xiangqiGaugeHead(t, undefined, 3)).toMatchObject({
+      leftLabel: 'panel.gauge.redAdvantage',
+      leftValue: 'eval.mateN',
+      leftTone: 'acc',
+    });
+    expect(xiangqiGaugeHead(t, undefined, -4).leftLabel).toBe('panel.gauge.blackAdvantage');
+    expect(xiangqiGaugeHead(t, undefined, -4).leftTone).toBe('pink');
   });
 });
 

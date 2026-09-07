@@ -33,6 +33,7 @@ import SidePanel from './components/SidePanel';
 import Toolbar, { type Popover } from './components/Toolbar';
 import { WindowsTitleBar } from './components/WindowsTitleBar';
 import { createT, detectLanguage } from './i18n';
+import { blurActiveInput } from './lib/blurActiveInput';
 import { nextBoardFlip } from './lib/boardOrientation';
 import { chromePlatform, isToolbarShortcutMod } from './lib/shortcuts';
 import { applyTheme } from './lib/theme';
@@ -54,6 +55,8 @@ export default function App() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [themeTick, setThemeTick] = useState(0);
   const [popover, setPopover] = useState<Popover>('none');
+  const popoverRef = useRef(popover);
+  popoverRef.current = popover;
   const [aboutOpen, setAboutOpen] = useState(false);
   const [board3d, setBoard3d] = useState(true);
   const [hudSweep, setHudSweep] = useState(true);
@@ -110,6 +113,7 @@ export default function App() {
       setLinkerLogs((cur) => [...cur.slice(-60), entry]);
     });
     const offAbout = window.superGo.onShowAbout(() => {
+      blurActiveInput();
       setPopover('none');
       setAboutOpen(true);
     });
@@ -291,10 +295,12 @@ export default function App() {
   }, []);
 
   const togglePopover = useCallback((which: Popover): void => {
+    if (popoverRef.current === which) blurActiveInput();
     setPopover((cur) => (cur === which ? 'none' : which));
   }, []);
 
   const openAbout = useCallback((): void => {
+    blurActiveInput();
     setPopover('none');
     setAboutOpen(true);
   }, []);
@@ -337,6 +343,9 @@ export default function App() {
         if (canUndo) runIntent(() => window.superGo.undoMove());
       } else if (code === 'Comma') {
         e.preventDefault();
+        if (popoverRef.current === 'settings' || popoverRef.current === 'settingsDock') {
+          blurActiveInput();
+        }
         setPopover((cur) =>
           cur === 'settings' || cur === 'settingsDock' ? 'none' : 'settings',
         );
@@ -491,6 +500,7 @@ export default function App() {
    * return 之后，不可用 useCallback（hooks 顺序违规，React #310） */
   const handleLinkerStart = (intent: Parameters<typeof window.superGo.linkerStart>[0]): void => {
     if (!alwaysOnTop) setNotice({ text: t('linker.notice.alwaysOnTop'), bad: false });
+    blurActiveInput();
     setPopover('none');
     void window.superGo.linkerStart(intent).then((r) => {
       if (!r.ok) setNotice({ text: r.error, bad: true });

@@ -17,6 +17,7 @@ import type {
 import { BOARD3D_SCALE, isLinkerActivePhase } from '@shared/ipc';
 import type { EstimateScoreResult, GameSnapshot, GoScoreEstimate } from '@shared/game';
 import type { MessageKey, TFunction } from '../i18n';
+import { blurActiveInput } from '../lib/blurActiveInput';
 import { chromePlatform, formatToolbarShortcut } from '../lib/shortcuts';
 import { AppMark } from './AppMark';
 import GamePanel from './GamePanel';
@@ -119,7 +120,10 @@ function EngineSideButton(props: {
 }
 
 export default function Toolbar(props: ToolbarProps) {
-  const closePopover = (): void => props.onPopoverChange('none');
+  const closePopover = (): void => {
+    blurActiveInput();
+    props.onPopoverChange('none');
+  };
   const mac = chromePlatform() === 'mac';
   const linkerOn = props.linkerStatus !== null && isLinkerActivePhase(props.linkerStatus.phase);
 
@@ -328,7 +332,8 @@ export default function Toolbar(props: ToolbarProps) {
               {icon(
                 'settings.title',
                 <IconGear className="h-[15px] w-[15px]" />,
-                () => props.onPopoverChange(props.popover === 'settings' ? 'none' : 'settings'),
+                () =>
+                  props.popover === 'settings' ? closePopover() : props.onPopoverChange('settings'),
                 { shortcut: ',', toggle: true, accent: props.popover === 'settings' },
               )}
             </span>

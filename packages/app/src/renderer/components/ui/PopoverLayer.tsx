@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { blurActiveInput } from '../../lib/blurActiveInput';
 
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
 
@@ -15,8 +16,13 @@ export function PopoverLayer(props: {
 
   useEffect(() => {
     if (!props.open) return;
+    const close = (): void => {
+      // pointerdown preventDefault 会拦住输入失焦；关层前先 blur，设置才能提交
+      blurActiveInput(panelRef.current);
+      props.onClose();
+    };
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') props.onClose();
+      if (e.key === 'Escape') close();
     };
     /** 不用 dock 内 fixed 遮罩：translate 会把遮罩困在胶囊里。capture 关层时必须吞掉事件，否则会点穿落子。 */
     const outside = (target: EventTarget | null): boolean => {
@@ -44,7 +50,7 @@ export function PopoverLayer(props: {
       document.addEventListener('click', swallow, { capture: true, once: true });
       document.addEventListener('pointerup', release, { capture: true, once: true });
       document.addEventListener('pointercancel', release, { capture: true, once: true });
-      props.onClose();
+      close();
     };
     window.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onPointerDown, true);

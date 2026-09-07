@@ -58,16 +58,53 @@ export function buildGauge(
     };
   }
   const shown = resolveDisplayedEval(liveEval, snapshot);
-  const ev = evalValueText(t, shown.redCp, shown.redMate, false);
+  const head = xiangqiGaugeHead(t, shown.redCp, shown.redMate);
   return {
     kind: 'xiangqi',
-    leftLabel: t('panel.gauge.redAdvantage'),
-    leftValue: ev.text,
+    ...head,
     rightLabel: t('panel.gauge.depth'),
     rightValue: shown.depth !== undefined ? String(shown.depth) : '—',
     barRatio: evalProportion(shown.redCp, shown.redMate),
-    leftTone: 'pink',
   };
+}
+
+/**
+ * 仪表标题跟优势方走：负分不能再写「红方优势」。
+ * 数字改成领先方视角（黑优时取绝对值带 +），杀棋文案仍写清谁杀谁。
+ */
+export function xiangqiGaugeHead(
+  t: TFunction,
+  redCp?: number,
+  redMate?: number,
+): Pick<GaugeModel, 'leftLabel' | 'leftValue' | 'leftTone'> {
+  const ev = evalValueText(t, redCp, redMate, false);
+  if (redMate !== undefined) {
+    const red = redMate >= 0;
+    return {
+      leftLabel: t(red ? 'panel.gauge.redAdvantage' : 'panel.gauge.blackAdvantage'),
+      leftValue: ev.text,
+      leftTone: red ? 'acc' : 'pink',
+    };
+  }
+  if (redCp === undefined) {
+    return { leftLabel: t('panel.gauge.redAdvantage'), leftValue: ev.text, leftTone: 'pink' };
+  }
+  const n = Math.round(redCp);
+  if (n < 0) {
+    return {
+      leftLabel: t('panel.gauge.blackAdvantage'),
+      leftValue: `+${Math.abs(n)}`,
+      leftTone: 'pink',
+    };
+  }
+  if (n > 0) {
+    return {
+      leftLabel: t('panel.gauge.redAdvantage'),
+      leftValue: ev.text,
+      leftTone: 'acc',
+    };
+  }
+  return { leftLabel: t('panel.gauge.even'), leftValue: '0', leftTone: 'acc' };
 }
 
 export function buildTelemetry(
