@@ -31,7 +31,7 @@ export function evalFromBottom(
 
 /**
  * 评估文案。`redCp` / `redMate` 一律红方视角（正 = 红优 / 红杀）。
- * 数字分随棋盘翻转改成「下方优势」；杀棋文案始终写清谁杀谁，不随翻转改口。
+ * 数字分随棋盘翻转改成「下方口径」（执黑则正分 = 黑优）；杀棋文案始终写清谁杀谁。
  */
 export function evalValueText(
   t: TFunction,

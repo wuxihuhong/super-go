@@ -3,6 +3,7 @@ import type { EngineStatusPayload } from '@shared/ipc';
 import { estimateAreaScores, formatScoreNumber, isAreaRuleSet } from '../../shared/goScoreFormat';
 import { delayingBannerText, engineStatusText } from './engineStatusText';
 import {
+  evalFromBottom,
   evalProportion,
   evalValueText,
   goLeadText,
@@ -40,6 +41,7 @@ export function buildGauge(
   t: TFunction,
   snapshot: GameSnapshot | null,
   liveEval: LiveEval | null,
+  boardFlipped = false,
 ): GaugeModel {
   if (snapshot?.kind === 'go') {
     const go = resolveGoEval(liveEval, snapshot);
@@ -58,53 +60,46 @@ export function buildGauge(
     };
   }
   const shown = resolveDisplayedEval(liveEval, snapshot);
-  const head = xiangqiGaugeHead(t, shown.redCp, shown.redMate);
+  const head = xiangqiGaugeHead(t, shown.redCp, shown.redMate, boardFlipped);
+  const redShare = evalProportion(shown.redCp, shown.redMate);
   return {
     kind: 'xiangqi',
     ...head,
     rightLabel: t('panel.gauge.depth'),
     rightValue: shown.depth !== undefined ? String(shown.depth) : '—',
-    barRatio: evalProportion(shown.redCp, shown.redMate),
+    // 左条 = 下方那一方：执黑时左条是黑，和数字同一口径
+    barRatio: boardFlipped ? 1 - redShare : redShare,
   };
 }
 
 /**
- * 仪表标题跟优势方走：负分不能再写「红方优势」。
- * 数字改成领先方视角（黑优时取绝对值带 +），杀棋文案仍写清谁杀谁。
+ * 标题固定为棋盘下方那一方的优势（执黑 = 黑方优势）。
+ * 数字是下方视角：正分 = 你领先，负分 = 你落后。杀棋文案仍写清谁杀谁。
  */
 export function xiangqiGaugeHead(
   t: TFunction,
   redCp?: number,
   redMate?: number,
+  boardFlipped = false,
 ): Pick<GaugeModel, 'leftLabel' | 'leftValue' | 'leftTone'> {
-  const ev = evalValueText(t, redCp, redMate, false);
+  const axis = t(boardFlipped ? 'panel.gauge.blackAdvantage' : 'panel.gauge.redAdvantage');
+  const ev = evalValueText(t, redCp, redMate, boardFlipped);
   if (redMate !== undefined) {
-    const red = redMate >= 0;
-    return {
-      leftLabel: t(red ? 'panel.gauge.redAdvantage' : 'panel.gauge.blackAdvantage'),
-      leftValue: ev.text,
-      leftTone: red ? 'acc' : 'pink',
-    };
+    const viewed = evalFromBottom(undefined, redMate, boardFlipped);
+    const bottomMates = (viewed.mate ?? 0) >= 0;
+    return { leftLabel: axis, leftValue: ev.text, leftTone: bottomMates ? 'acc' : 'pink' };
   }
   if (redCp === undefined) {
-    return { leftLabel: t('panel.gauge.redAdvantage'), leftValue: ev.text, leftTone: 'pink' };
+    return { leftLabel: axis, leftValue: ev.text, leftTone: 'acc' };
   }
-  const n = Math.round(redCp);
-  if (n < 0) {
-    return {
-      leftLabel: t('panel.gauge.blackAdvantage'),
-      leftValue: `+${Math.abs(n)}`,
-      leftTone: 'pink',
-    };
-  }
-  if (n > 0) {
-    return {
-      leftLabel: t('panel.gauge.redAdvantage'),
-      leftValue: ev.text,
-      leftTone: 'acc',
-    };
-  }
-  return { leftLabel: t('panel.gauge.even'), leftValue: '0', leftTone: 'acc' };
+  const viewed = evalFromBottom(redCp, undefined, boardFlipped);
+  const n = Math.round(viewed.cp ?? 0);
+  if (n === 0) return { leftLabel: t('panel.gauge.even'), leftValue: '0', leftTone: 'acc' };
+  return {
+    leftLabel: axis,
+    leftValue: ev.text,
+    leftTone: n > 0 ? 'acc' : 'pink',
+  };
 }
 
 export function buildTelemetry(
@@ -112,6 +107,7 @@ export function buildTelemetry(
   snapshot: GameSnapshot | null,
   engineStatus: EngineStatusPayload | null,
   liveEval: LiveEval | null,
+  boardFlipped = false,
 ): TelemetryRow[] {
   const isGo = snapshot?.kind === 'go';
   const shown = resolveDisplayedEval(liveEval, snapshot);
@@ -167,30 +163,36 @@ export function buildTelemetry(
     }
     return rows;
   }
+  const redShare = evalProportion(shown.redCp, shown.redMate);
   rows.push({
     id: 'eval',
     label: t('panel.engine.eval'),
-    value: evalValueText(t, shown.redCp, shown.redMate, false).text,
+    value: evalValueText(t, shown.redCp, shown.redMate, boardFlipped).text,
     bar: 'acc',
-    barRatio: evalProportion(shown.redCp, shown.redMate),
+    barRatio: boardFlipped ? 1 - redShare : redShare,
   });
   return rows;
 }
 
-export function moveEvalCell(item: MainlineItem, kind: 'go' | 'xiangqi'): MoveEvalCell {
+export function moveEvalCell(
+  item: MainlineItem,
+  kind: 'go' | 'xiangqi',
+  boardFlipped = false,
+): MoveEvalCell {
   if (kind === 'go') {
     if (item.lead === undefined) return { text: '—', tone: 'none' };
     const text = goLeadText(item.lead);
     return { text, tone: item.lead > 0 ? 'pos' : item.lead < 0 ? 'neg' : 'none' };
   }
-  if (item.redMate !== undefined) {
+  const viewed = evalFromBottom(item.redCp, item.redMate, boardFlipped);
+  if (viewed.mate !== undefined) {
     return {
-      text: `#${Math.abs(item.redMate)}`,
-      tone: item.redMate > 0 ? 'pos' : 'neg',
+      text: `#${Math.abs(viewed.mate)}`,
+      tone: viewed.mate > 0 ? 'pos' : 'neg',
     };
   }
-  if (item.redCp === undefined) return { text: '—', tone: 'none' };
-  const n = Math.round(item.redCp);
+  if (viewed.cp === undefined) return { text: '—', tone: 'none' };
+  const n = Math.round(viewed.cp);
   const sign = n > 0 ? '+' : n < 0 ? '−' : '';
   return {
     text: `${sign}${Math.abs(n)}`,

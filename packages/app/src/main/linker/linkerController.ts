@@ -147,6 +147,11 @@ export class LinkerController {
     return this.session?.resolve(resolution) ?? Promise.resolve();
   }
 
+  /** 工具栏改执方后立刻纠正轮值（连线重开后再选执方必须出招） */
+  onEngineSideChanged(): void {
+    this.session?.onEngineSideChanged();
+  }
+
   dispose(): void {
     this.unregisterStopShortcut();
     this.session?.stop('user');

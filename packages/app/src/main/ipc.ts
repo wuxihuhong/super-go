@@ -129,7 +129,11 @@ export function registerIpc(
   ipcMain.handle(IPC_CHANNELS.gameResign, () => (linker.active ? LINKER_BUSY : match.resign()));
   ipcMain.handle(
     IPC_CHANNELS.gameSetEngineSide,
-    (_e, side: Parameters<MatchService['setEngineSide']>[0]) => match.setEngineSide(side),
+    (_e, side: Parameters<MatchService['setEngineSide']>[0]) => {
+      const result = match.setEngineSide(side);
+      if (result.ok) linker.onEngineSideChanged();
+      return result;
+    },
   );
   ipcMain.handle(IPC_CHANNELS.gamePauseToggle, () => match.togglePause());
   ipcMain.handle(IPC_CHANNELS.gameGoto, (_e, nodeId: number) => match.goto(nodeId));

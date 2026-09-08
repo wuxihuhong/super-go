@@ -103,6 +103,7 @@ function makeFakeMatch(engineReplies: string[]) {
   let ended = false;
   const queue = [...engineReplies];
   const newGames: NewGameIntent[] = [];
+  let newGameError: string | null = null;
 
   const maybeEngineTurn = async (): Promise<void> => {
     if (engineSide === null || engineSide === 'both') return;
@@ -122,6 +123,11 @@ function makeFakeMatch(engineReplies: string[]) {
 
   const bridge: LinkerMatchBridge = {
     newGame: async (intent) => {
+      if (newGameError !== null) {
+        const error = newGameError;
+        newGameError = null;
+        return { ok: false, error };
+      }
       newGames.push(intent);
       tree = new FakeTree();
       if (intent.initialFen !== undefined) tree.root.position = parseFen(intent.initialFen);
@@ -196,6 +202,10 @@ function makeFakeMatch(engineReplies: string[]) {
     setEnded: () => {
       ended = true;
     },
+    failNextNewGame: (error: string) => {
+      newGameError = error;
+    },
+    isPaused: () => matchPaused,
   };
 }
 
@@ -227,6 +237,8 @@ interface Harness {
   newGames: NewGameIntent[];
   moveCount(): number;
   setMatchEnded(): void;
+  failNextNewGame(error: string): void;
+  isMatchPaused(): boolean;
 }
 
 function makeHarness(engineReplies: string[]): Harness {
@@ -287,7 +299,10 @@ function makeHarness(engineReplies: string[]): Harness {
     setReversedSource: (r) => {
       reversedSource = r;
     },
-    setEngineSide: fake.bridge.setEngineSide,
+    setEngineSide: (side) => {
+      fake.bridge.setEngineSide(side);
+      session.onEngineSideChanged();
+    },
     setClickChannel: (ok) => {
       clickOk = ok;
     },
@@ -306,6 +321,8 @@ function makeHarness(engineReplies: string[]): Harness {
     newGames: fake.newGames,
     moveCount: fake.moveCount,
     setMatchEnded: fake.setEnded,
+    failNextNewGame: fake.failNextNewGame,
+    isMatchPaused: fake.isPaused,
   };
 }
 
@@ -489,7 +506,7 @@ describe('LinkerSession 走子失败（§6.6 先自愈，再请人工介入）',
   }, 30_000);
 
   it('待介入中选择"以平台局面重开" → 按识别局面开新局并恢复扫描', async () => {
-    const h = makeHarness([]);
+    const h = makeHarness(['h0g2']);
     h.session.start();
     await waitFor(() => h.newGames.length >= 1);
     h.setBoard(AFTER_CANNON);
@@ -499,12 +516,94 @@ describe('LinkerSession 走子失败（§6.6 先自愈，再请人工介入）',
     h.setRawBoard(broken);
     await waitFor(() => h.statuses.some((s) => s.reason === 'boardMismatch'), 15_000);
 
+    h.setEngineSide('first');
+    const clicksBefore = h.clicks.length;
     await h.session.resolve('resync');
     expect(h.newGames).toHaveLength(2);
+    expect(h.newGames[1]!.engineSide).toBe('first');
+    // 掉子盘无法推断轮值 → 按引擎执红行棋（不能沿用本地已超前的 turn）
+    expect(h.newGames[1]!.initialFen!.split(' ')[1]).toBe('w');
     expect(h.newGames[1]!.initialFen!.split(' ')[0]).toBe(
       toFen({ ...AFTER_CANNON, board: broken } as XiangqiPosition).split(' ')[0],
     );
     await waitFor(() => h.statuses.at(-1)?.phase !== 'attention', 5000);
+    await waitFor(() => h.clicks.length >= clicksBefore + 2, 10_000);
+    h.session.stop('user');
+  }, 30_000);
+
+  it('以平台局面重开：能推断则用推断；再选执方纠正轮值并出招', async () => {
+    const h = makeHarness(['h0g2']);
+    h.setBoard(AFTER_CANNON);
+    h.session.start();
+    await waitFor(() => h.newGames.length >= 1);
+    expect(h.newGames[0]!.initialFen!.split(' ')[1]).toBe('b');
+    h.setEngineSide('first'); // 轮黑，引擎执红等待
+    h.setCaptureOk(false);
+    await waitFor(() => h.statuses.some((s) => s.reason === 'boardLost'), 15_000);
+
+    await h.session.resolve('resync');
+    expect(h.newGames).toHaveLength(2);
+    expect(h.newGames[1]!.engineSide).toBe('first');
+    expect(h.newGames[1]!.initialFen!.split(' ')[1]).toBe('b'); // 盘面能推断：红已走中炮 → 黑走
+
+    h.setCaptureOk(true);
+    const clicksBefore = h.clicks.length;
+    h.setEngineSide('first'); // 再选执红：纠正为红走并出招
+    await waitFor(() => h.newGames.length >= 3, 5000);
+    expect(h.newGames.at(-1)!.initialFen!.split(' ')[1]).toBe('w');
+    await waitFor(() => h.clicks.length >= clicksBefore + 2, 10_000);
+    h.session.stop('user');
+  }, 30_000);
+
+  it('以平台局面重开失败 → 待介入保留，决断按钮仍可用，对局保持冻结', async () => {
+    const h = makeHarness([]);
+    h.session.start();
+    await waitFor(() => h.newGames.length >= 1);
+    h.setBoard(AFTER_CANNON);
+    await waitFor(() => h.moveCount() === 1);
+    const broken = AFTER_CANNON.board.slice();
+    broken[27] = null;
+    h.setRawBoard(broken);
+    await waitFor(() => h.statuses.some((s) => s.reason === 'boardMismatch'), 15_000);
+    expect(h.session.needsAttention).toBe(true);
+    expect(h.isMatchPaused()).toBe(true);
+
+    h.failNextNewGame('engine down');
+    await h.session.resolve('resync');
+    expect(h.newGames).toHaveLength(1);
+    expect(h.session.needsAttention).toBe(true);
+    expect(h.isMatchPaused()).toBe(true);
+    expect(h.statuses.at(-1)?.phase).toBe('attention');
+    expect(h.statuses.at(-1)?.reason).toBe('boardMismatch');
+
+    await h.session.resolve('spectate');
+    expect(h.session.needsAttention).toBe(false);
+    expect(h.isMatchPaused()).toBe(false);
+    h.session.stop('user');
+  }, 30_000);
+
+  it('重开后再定位开新局：justResynced 不串局，点执方不会覆盖已推断轮值', async () => {
+    const afterBoth = applyMove(AFTER_CANNON, BLACK_KNIGHT).position;
+    const mid = applyMove(afterBoth, { kind: 'xiangqi', from: { x: 7, y: 9 }, to: { x: 6, y: 7 } })
+      .position;
+    const h = makeHarness([]);
+    h.setBoard(AFTER_CANNON);
+    h.session.start();
+    await waitFor(() => h.newGames.length >= 1);
+    h.setEngineSide('first');
+    h.setCaptureOk(false);
+    await waitFor(() => h.statuses.some((s) => s.reason === 'boardLost'), 15_000);
+    await h.session.resolve('resync');
+    expect(h.newGames[1]!.initialFen!.split(' ')[1]).toBe('b');
+
+    h.setCaptureOk(true);
+    h.setBoard(mid);
+    await waitFor(() => h.newGames.length >= 3, 15_000);
+    expect(h.newGames.at(-1)!.initialFen!.split(' ')[1]).toBe('w'); // 中局无法推断 → 按执红
+    const afterArm = h.newGames.length;
+    h.setEngineSide('second');
+    await new Promise((r) => setTimeout(r, 80));
+    expect(h.newGames).toHaveLength(afterArm); // 不得因残留 justResynced 改成黑走
     h.session.stop('user');
   }, 30_000);
 

@@ -44,8 +44,8 @@ describe('buildGauge', () => {
     expect(g.barRatio).toBeCloseTo(0.614);
   });
 
-  it('象棋用红方优势与深度', () => {
-    const g = buildGauge(t, xiangqiSnap, null);
+  it('象棋红在下：红方优势与深度', () => {
+    const g = buildGauge(t, xiangqiSnap, null, false);
     expect(g.kind).toBe('xiangqi');
     expect(g.leftLabel).toBe('panel.gauge.redAdvantage');
     expect(g.leftValue).toBe('+124');
@@ -53,25 +53,45 @@ describe('buildGauge', () => {
     expect(g.rightValue).toBe('28');
   });
 
-  it('负分改标黑方优势，数字取绝对值', () => {
-    const g = buildGauge(t, { ...xiangqiSnap, redCp: -1239 }, null);
+  it('执黑时按黑方口径：红优显示为负分，标题仍是黑方优势', () => {
+    const g = buildGauge(t, { ...xiangqiSnap, redCp: 335 }, null, true);
     expect(g.leftLabel).toBe('panel.gauge.blackAdvantage');
-    expect(g.leftValue).toBe('+1239');
+    expect(g.leftValue).toBe('−335');
     expect(g.leftTone).toBe('pink');
     expect(g.barRatio).toBeLessThan(0.5);
+  });
+
+  it('执黑且黑优：正分', () => {
+    const g = buildGauge(t, { ...xiangqiSnap, redCp: -1239 }, null, true);
+    expect(g.leftLabel).toBe('panel.gauge.blackAdvantage');
+    expect(g.leftValue).toBe('+1239');
+    expect(g.leftTone).toBe('acc');
+    expect(g.barRatio).toBeGreaterThan(0.5);
   });
 });
 
 describe('xiangqiGaugeHead', () => {
-  it('均势与杀棋标题跟归属方走', () => {
+  it('红在下：标题固定红方优势，负分表示红落后', () => {
     expect(xiangqiGaugeHead(t, 0).leftLabel).toBe('panel.gauge.even');
+    expect(xiangqiGaugeHead(t, -1239).leftLabel).toBe('panel.gauge.redAdvantage');
+    expect(xiangqiGaugeHead(t, -1239).leftValue).toBe('−1239');
+    expect(xiangqiGaugeHead(t, -1239).leftTone).toBe('pink');
     expect(xiangqiGaugeHead(t, undefined, 3)).toMatchObject({
       leftLabel: 'panel.gauge.redAdvantage',
       leftValue: 'eval.mateN',
       leftTone: 'acc',
     });
-    expect(xiangqiGaugeHead(t, undefined, -4).leftLabel).toBe('panel.gauge.blackAdvantage');
-    expect(xiangqiGaugeHead(t, undefined, -4).leftTone).toBe('pink');
+    expect(xiangqiGaugeHead(t, undefined, -4, false).leftTone).toBe('pink');
+  });
+
+  it('黑在下：标题固定黑方优势', () => {
+    expect(xiangqiGaugeHead(t, 335, undefined, true)).toMatchObject({
+      leftLabel: 'panel.gauge.blackAdvantage',
+      leftValue: '−335',
+      leftTone: 'pink',
+    });
+    expect(xiangqiGaugeHead(t, undefined, 3, true).leftLabel).toBe('panel.gauge.blackAdvantage');
+    expect(xiangqiGaugeHead(t, undefined, 3, true).leftTone).toBe('pink');
   });
 });
 
@@ -135,6 +155,10 @@ describe('moveEvalCell', () => {
     expect(moveEvalCell({ nodeId: 1, iccs: '', notation: '', redCp: 80 }, 'xiangqi')).toEqual({
       text: '+80',
       tone: 'pos',
+    });
+    expect(moveEvalCell({ nodeId: 1, iccs: '', notation: '', redCp: 80 }, 'xiangqi', true)).toEqual({
+      text: '−80',
+      tone: 'neg',
     });
     expect(moveEvalCell({ nodeId: 1, iccs: '', notation: '', redMate: -2 }, 'xiangqi').text).toBe('#2');
   });

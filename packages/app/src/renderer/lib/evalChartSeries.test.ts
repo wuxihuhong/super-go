@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildEvalChartSeries } from './evalChartSeries';
+import { buildEvalChartSeries, evalChartLineToken } from './evalChartSeries';
 
 describe('buildEvalChartSeries', () => {
   it('只有历史 cp 时按有限分取刻度', () => {
@@ -24,6 +24,17 @@ describe('buildEvalChartSeries', () => {
     expect(pts).toHaveLength(1);
     expect(pts[0]!.v).toBe(Number.POSITIVE_INFINITY);
     expect(yScale).toBe(200);
+  });
+
+  it('黑在下：纵轴取反，正分 = 下方优势', () => {
+    const { pts } = buildEvalChartSeries([{ redCp: 213 }, { redCp: -80 }], null, true);
+    expect(pts.map((p) => p.v)).toEqual([-213, 80]);
+  });
+
+  it('曲线颜色跟执方：红在下洋红，黑在下青色', () => {
+    expect(evalChartLineToken(false, false)).toBe('--pink');
+    expect(evalChartLineToken(false, true)).toBe('--acc');
+    expect(evalChartLineToken(true, false)).toBe('--acc');
   });
 
   it('思考中的实时杀接在下一 ply，不改历史刻度', () => {

@@ -1,9 +1,9 @@
 /**
- * 音效（DESIGN.md §7.4：走子/吃子/将军/终局，可关）。
+ * 音效（DESIGN.md §7.4：走子/吃子/将军/终局；连线出错另加 alert，可关）。
  * WebAudio 现场合成（木子敲击 = 短噪声爆发 + 低频衰减），不携带音频素材；
  * AudioContext 惰性创建（浏览器要求用户手势后才允许发声）。
  */
-export type SoundKind = 'move' | 'capture' | 'check' | 'end';
+export type SoundKind = 'move' | 'capture' | 'check' | 'end' | 'alert';
 
 let ctx: AudioContext | null = null;
 let enabled = true;
@@ -95,6 +95,12 @@ export function playSound(kind: SoundKind): void {
     case 'end':
       tone(ac, t, 523, 0.18, 0.25);
       tone(ac, t + 0.16, 392, 0.3, 0.25);
+      break;
+    case 'alert':
+      // 连线待介入/出错：三声急促，比将军更响、更长，避免只扫到侧栏才发现
+      tone(ac, t, 784, 0.16, 0.42);
+      tone(ac, t + 0.18, 784, 0.16, 0.42);
+      tone(ac, t + 0.36, 523, 0.32, 0.48);
       break;
   }
 }

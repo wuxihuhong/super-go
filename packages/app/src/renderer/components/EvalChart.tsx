@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { LiveEval, MainlineItem } from '@shared/game';
-import { buildEvalChartSeries } from '../lib/evalChartSeries';
+import { buildEvalChartSeries, evalChartLineToken } from '../lib/evalChartSeries';
 import { cssColor } from '../lib/theme';
 import { useElementSize } from '../lib/useElementSize';
 
@@ -10,6 +10,8 @@ export interface EvalChartProps {
   themeTick: number;
   emptyText: string;
   mode?: 'cp' | 'winRate';
+  /** 象棋：纵轴和曲线颜色都跟执棋方（棋盘下方）走 */
+  boardFlipped?: boolean;
 }
 
 export default function EvalChart(props: EvalChartProps) {
@@ -29,7 +31,8 @@ export default function EvalChart(props: EvalChartProps) {
     ctx.clearRect(0, 0, width, H);
 
     const winRate = props.mode === 'winRate';
-    const stroke = cssColor(winRate ? '--acc' : '--pink');
+    const fromBottom = props.mode !== 'winRate' && props.boardFlipped === true;
+    const stroke = cssColor(evalChartLineToken(winRate, fromBottom));
     const line = cssColor('--line');
     const muted = cssColor('--dim2');
     const padX = 4;
@@ -52,7 +55,7 @@ export default function EvalChart(props: EvalChartProps) {
               ),
             yScale: 50,
           }
-        : buildEvalChartSeries(props.moves, props.liveEval ?? null);
+        : buildEvalChartSeries(props.moves, props.liveEval ?? null, fromBottom);
     const { pts, yScale } = series;
 
     ctx.save();
@@ -108,7 +111,15 @@ export default function EvalChart(props: EvalChartProps) {
       ctx.fill();
     }
     ctx.restore();
-  }, [props.moves, props.liveEval, props.themeTick, props.emptyText, props.mode, width]);
+  }, [
+    props.moves,
+    props.liveEval,
+    props.themeTick,
+    props.emptyText,
+    props.mode,
+    props.boardFlipped,
+    width,
+  ]);
 
   return (
     <div ref={ref} className="w-full" style={{ height: H }}>

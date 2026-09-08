@@ -458,6 +458,7 @@ export default function App() {
     if (entered) {
       userClosedPanel.current = false;
       setPanelOpen(true);
+      playSound('alert');
     }
     const leftLinker =
       prev !== undefined &&
@@ -675,6 +676,7 @@ export default function App() {
           onLinkerDismiss={() => setLinkerStatus(null)}
           open={panelOpen}
           overlay={narrow && panelOpen}
+          boardFlipped={flip}
         />
       </div>
 

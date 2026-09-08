@@ -222,6 +222,11 @@ export class LinkerSession {
    * 用户之后点执红/执黑（围棋执黑/执白）且盘面仍同步、尚无本地着法时，按该方纠正轮值。
    */
   private turnUncertain = false;
+  /**
+   * 刚以平台局面重开：用户再点执方时按该方纠正轮值（即使盘面曾推断出另一方）。
+   * 有着法或已纠正后清掉，避免中局换边误改轮值。
+   */
+  private justResynced = false;
   /** 开局定位首次失败已提示过（成功识别后清掉 locateHint，不再重复刷） */
   private locateMissReported = false;
 
@@ -243,6 +248,7 @@ export class LinkerSession {
     this.running = true;
     this.gameArmed = false;
     this.turnUncertain = false;
+    this.justResynced = false;
     this.reason = null;
     this.locateHint = null;
     this.message = null;
@@ -306,6 +312,16 @@ export class LinkerSession {
     this.log('info', this.paused ? 'paused' : 'resumed');
   }
 
+  /**
+   * 工具栏改了引擎执方：中局轮值不确定或刚从平台重开时，按该方纠正轮值并出招。
+   * IPC 在 setEngineSide 成功后调用——只等扫描同步会让「再选执方」看起来没反应。
+   */
+  onEngineSideChanged(): void {
+    if (!this.running) return;
+    if (this.kind === 'go') void this.adoptGoEngineTurnIfNeeded(true);
+    else void this.adoptEngineTurnIfNeeded(true);
+  }
+
   /** 用户对"待人工介入"的决断（§6.6） */
   async resolve(resolution: LinkerResolution): Promise<void> {
     if (!this.running || this.attention === null) return;
@@ -352,29 +368,49 @@ export class LinkerSession {
     this.setPhase('scanning', null);
   }
 
+  /**
+   * 开局/重开轮值（与 armGame 同一条）：能从盘面推断就用推断；
+   * 否则引擎已执一方则该方行棋，尚未选执方则红/黑先并标不确定。
+   * 不能沿用本地 turn：走子失败时本地已超前，再点执方引擎也不出招。
+   */
+  private resolveOpenTurn(inferred: Player | null): {
+    turn: Player;
+    engineSide: EngineSide;
+    uncertain: boolean;
+  } {
+    const keepSide = this.opts.match.snapshot().engineSide ?? null;
+    if (inferred !== null) return { turn: inferred, engineSide: keepSide, uncertain: false };
+    const mid = this.midGameTurn();
+    return { turn: mid.turn, engineSide: mid.engineSide ?? keepSide, uncertain: mid.engineSide === null };
+  }
+
   /** 以平台当前识别局面重开一局（丢弃本地着法树，用户显式决断才走这条） */
   private async resyncFromPlatform(): Promise<void> {
     this.invalidateCalibration();
+    const inferred =
+      this.kind === 'go'
+        ? this.lastGo !== null
+          ? inferGoTurn(this.lastGo.cells, this.lastGo.size)
+          : null
+        : this.lastBoard !== null
+          ? inferTurnFromBoard(this.lastBoard)
+          : null;
+    const { turn, engineSide, uncertain } = this.resolveOpenTurn(inferred);
     if (this.kind === 'go') {
       const frame = this.lastGo;
       if (frame === null) {
         this.log('warn', 'resync skipped: no recognized frame yet');
         return;
       }
-      const turn: Player = isInitialGoBoard(frame.cells, frame.size)
-        ? 'first'
-        : this.opts.match.currentGoPosition().turn;
-      const pos = recognizedToGoPosition(frame.cells, frame.size, turn, this.goRules());
-      const result = await this.opts.match.newGame({
-        engineSide: null,
-        initialFen: serializeGo(pos),
-        goSetup: { boardSize: pos.size, komi: pos.komi, rules: pos.rules },
-      });
-      if (!result.ok) {
-        this.log('error', `resync failed: ${result.error}`);
-        return;
-      }
-      this.exitAttention(`resynced from platform (turn=${turn})`);
+      await this.finishResync(turn, engineSide, uncertain, () =>
+        this.opts.match.newGame({
+          engineSide,
+          initialFen: serializeGo(
+            recognizedToGoPosition(frame.cells, frame.size, turn, this.goRules()),
+          ),
+          goSetup: { boardSize: frame.size, komi: this.goRules().komi, rules: this.goRules().rules },
+        }),
+      );
       return;
     }
     const board = this.lastBoard;
@@ -382,18 +418,50 @@ export class LinkerSession {
       this.log('warn', 'resync skipped: no recognized frame yet');
       return;
     }
-    // 轮值未知：标准初始局面按红先，否则沿用本地轮值（多数分歧只差一方一步）；
-    // 判错也不致命——工具栏的引擎执红/执黑随时可改。
-    const turn: Player = isInitialBoard(board) ? 'first' : this.opts.match.currentPosition().turn;
-    const result = await this.opts.match.newGame({
-      engineSide: null,
-      initialFen: toFen(toPosition(board, turn)),
-    });
-    if (!result.ok) {
-      this.log('error', `resync failed: ${result.error}`);
-      return;
+    await this.finishResync(turn, engineSide, uncertain, () =>
+      this.opts.match.newGame({
+        engineSide,
+        initialFen: toFen(toPosition(board, turn)),
+      }),
+    );
+  }
+
+  /**
+   * 先撤待介入再 newGame：attention 未清时拦截器直接失败，本地已超前，
+   * 再选执方也不出招。injecting 挡住扫描，避免 newGame 期间旧盘面再点一次。
+   * start 失败必须把待介入加回去，否则 resolve() 因 attention===null 全部空转，
+   * 对局仍停在 enterAttention 的暂停里，只能停连线才能恢复。
+   */
+  private async finishResync(
+    turn: Player,
+    engineSide: EngineSide,
+    uncertain: boolean,
+    start: () => Promise<IntentResult>,
+  ): Promise<void> {
+    this.injecting = true;
+    const pending = this.attention;
+    try {
+      this.attention = null;
+      this.reason = null;
+      const result = await start();
+      if (!result.ok) {
+        if (pending !== null) {
+          this.attention = pending;
+          this.reason = pending.reason;
+          this.setPhase('attention', pending.message);
+        }
+        this.log('error', `resync failed: ${result.error}`);
+        return;
+      }
+      this.turnUncertain = uncertain;
+      this.justResynced = true;
+      this.gameArmed = true;
+      this.opts.match.setPaused(this.paused);
+      this.log('info', `resynced from platform (turn=${turn}, engine=${engineSide})`);
+      this.setPhase('scanning', null);
+    } finally {
+      this.injecting = false;
     }
-    this.exitAttention(`resynced from platform (turn=${turn})`);
   }
 
   // -------------------------------------------------------------------------
@@ -468,11 +536,13 @@ export class LinkerSession {
   private async armGame(gen: number, base: RecognizedFrame): Promise<void> {
     // 重开一局作废一切旧分歧：残留的 attention 会让引擎被永久冻结在新局里
     this.exitAttention('new game supersedes the pending issue');
+    this.justResynced = false;
     this.setPhase('initializing', null);
-    this.turnUncertain = false;
     const inferred = inferTurnFromBoard(base.board);
+    const { turn, engineSide, uncertain } = this.resolveOpenTurn(inferred);
+    this.turnUncertain = uncertain;
+    if (!(await this.startGame(toPosition(base.board, turn), engineSide ?? undefined))) return;
     if (inferred !== null) {
-      if (!(await this.startGame(toPosition(base.board, inferred)))) return;
       this.log(
         'info',
         isInitialBoard(base.board)
@@ -481,9 +551,6 @@ export class LinkerSession {
       );
       return;
     }
-    const { turn, engineSide } = this.midGameTurn();
-    this.turnUncertain = engineSide === null;
-    if (!(await this.startGame(toPosition(base.board, turn), engineSide ?? undefined))) return;
     this.log(
       'info',
       engineSide !== null
@@ -563,28 +630,26 @@ export class LinkerSession {
 
   private async armGoGame(gen: number, base: RecognizedGoFrame): Promise<void> {
     this.exitAttention('new game supersedes the pending issue');
+    this.justResynced = false;
     this.setPhase('initializing', null);
-    this.turnUncertain = false;
     const inferred = inferGoTurn(base.cells, base.size);
-    if (inferred !== null) {
-      if (!(await this.startGoGame(recognizedToGoPosition(base.cells, base.size, inferred, this.goRules()))))
-        return;
-      this.log(
-        'info',
-        isInitialGoBoard(base.cells, base.size)
-          ? `new go game from platform (${base.size} empty/handicap)`
-          : `new go game from platform (inferred turn=${inferred})`,
-      );
-      return;
-    }
-    const { turn, engineSide } = this.midGameTurn();
-    this.turnUncertain = engineSide === null;
+    const { turn, engineSide, uncertain } = this.resolveOpenTurn(inferred);
+    this.turnUncertain = uncertain;
     if (
       !(await this.startGoGame(
         recognizedToGoPosition(base.cells, base.size, turn, this.goRules()),
         engineSide ?? undefined,
       ))
     ) {
+      return;
+    }
+    if (inferred !== null) {
+      this.log(
+        'info',
+        isInitialGoBoard(base.cells, base.size)
+          ? `new go game from platform (${base.size} empty/handicap)`
+          : `new go game from platform (inferred turn=${inferred})`,
+      );
       return;
     }
     this.log(
@@ -765,46 +830,58 @@ export class LinkerSession {
   }
 
   /**
-   * 轮值不确定时：用户点了引擎执红/执黑，且平台与本地同步、尚无本地着法，
-   * 把根局面改成该方行棋并保留执方——否则执黑会永远等一个已经走过的红方。
+   * 轮值不确定，或刚以平台局面重开：用户点了引擎执红/执黑，且尚无本地着法，
+   * 把根局面改成该方行棋并保留执方——否则再选执方也不会出招。
    */
-  private async adoptEngineTurnIfNeeded(): Promise<void> {
-    if (!this.turnUncertain) return;
+  private async adoptEngineTurnIfNeeded(fromUserSide = false): Promise<void> {
+    if (!this.turnUncertain && !(this.justResynced && fromUserSide)) return;
     const snap = this.opts.match.snapshot();
-    if (snap.phase !== 'playing' || snap.thinking || snap.moves.length > 0) return;
+    if (snap.phase !== 'playing' || snap.thinking || snap.moves.length > 0) {
+      if (snap.moves.length > 0) this.justResynced = false;
+      return;
+    }
     const side = snap.engineSide;
     if (side !== 'first' && side !== 'second') return;
     const local = this.opts.match.currentPosition();
     if (isInitialBoard(local.board)) {
       this.turnUncertain = false;
+      this.justResynced = false;
       return;
     }
     if (local.turn === side) {
       this.turnUncertain = false;
+      this.justResynced = false;
       return;
     }
     this.turnUncertain = false;
+    this.justResynced = false;
     if (await this.startGame(toPosition(local.board, side))) {
       this.log('info', `turn adopted from engine side (${side})`);
     }
   }
 
-  private async adoptGoEngineTurnIfNeeded(): Promise<void> {
-    if (!this.turnUncertain) return;
+  private async adoptGoEngineTurnIfNeeded(fromUserSide = false): Promise<void> {
+    if (!this.turnUncertain && !(this.justResynced && fromUserSide)) return;
     const snap = this.opts.match.snapshot();
-    if (snap.phase !== 'playing' || snap.thinking || snap.moves.length > 0) return;
+    if (snap.phase !== 'playing' || snap.thinking || snap.moves.length > 0) {
+      if (snap.moves.length > 0) this.justResynced = false;
+      return;
+    }
     const side = snap.engineSide;
     if (side !== 'first' && side !== 'second') return;
     const local = this.opts.match.currentGoPosition();
     if (isInitialGoBoard(local.cells, local.size)) {
       this.turnUncertain = false;
+      this.justResynced = false;
       return;
     }
     if (local.turn === side) {
       this.turnUncertain = false;
+      this.justResynced = false;
       return;
     }
     this.turnUncertain = false;
+    this.justResynced = false;
     if (await this.startGoGame(recognizedToGoPosition(local.cells, local.size, side, this.goRules()))) {
       this.log('info', `turn adopted from engine side (${side})`);
     }

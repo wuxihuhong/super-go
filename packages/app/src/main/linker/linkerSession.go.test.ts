@@ -176,7 +176,10 @@ function makeHarness(
     clicks,
     clickCaptureSeq,
     statuses,
-    setEngineSide: fake.bridge.setEngineSide,
+    setEngineSide: (side) => {
+      fake.bridge.setEngineSide(side);
+      session.onEngineSideChanged();
+    },
   };
 }
 

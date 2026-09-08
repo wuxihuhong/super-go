@@ -26,6 +26,8 @@ export interface SidePanelProps {
   onLinkerDismiss: () => void;
   open: boolean;
   overlay: boolean;
+  /** 棋盘是否翻转（黑在下）；评估走势按下方视角 */
+  boardFlipped?: boolean;
 }
 
 export default function SidePanel(props: SidePanelProps) {
@@ -33,8 +35,9 @@ export default function SidePanel(props: SidePanelProps) {
   const browsing = snapshot !== null && snapshot.phase !== 'playing';
   const status = statusBanner(props.t, snapshot);
   const canContinue = snapshot !== null && browsing && snapshot.moves.length > 0;
-  const gauge = buildGauge(props.t, snapshot, props.liveEval);
-  const telemetry = buildTelemetry(props.t, snapshot, props.engineStatus, props.liveEval);
+  const flipped = props.boardFlipped === true;
+  const gauge = buildGauge(props.t, snapshot, props.liveEval, flipped);
+  const telemetry = buildTelemetry(props.t, snapshot, props.engineStatus, props.liveEval, flipped);
   const go = snapshot?.kind === 'go';
 
   const [width, setWidth] = useState((): number => {
@@ -191,7 +194,13 @@ export default function SidePanel(props: SidePanelProps) {
                 )}
             </span>
           </div>
-          <MoveList t={props.t} snapshot={snapshot} browsing={browsing} onGoto={props.onGoto} />
+          <MoveList
+            t={props.t}
+            snapshot={snapshot}
+            browsing={browsing}
+            onGoto={props.onGoto}
+            boardFlipped={flipped}
+          />
           {linkerLiveVisible(props.linkerStatus) && props.linkerStatus !== null && (
             <div className="mx-3 mb-2.5">
               <LinkerLiveStatus
@@ -228,6 +237,7 @@ export default function SidePanel(props: SidePanelProps) {
               themeTick={props.themeTick}
               emptyText={props.t('panel.chart.empty')}
               mode={go ? 'winRate' : 'cp'}
+              boardFlipped={flipped}
             />
           )}
         </div>
@@ -241,11 +251,13 @@ function MoveList({
   snapshot,
   browsing,
   onGoto,
+  boardFlipped,
 }: {
   t: TFunction;
   snapshot: GameSnapshot | null;
   browsing: boolean;
   onGoto: (nodeId: number) => void;
+  boardFlipped: boolean;
 }): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const moves = snapshot?.moves ?? [];
@@ -263,7 +275,7 @@ function MoveList({
 
   const evalOf = (item: (typeof moves)[number] | undefined): React.JSX.Element => {
     if (item === undefined) return <span className="w-11 shrink-0 text-right text-eval-none">—</span>;
-    const cell = moveEvalCell(item, kind);
+    const cell = moveEvalCell(item, kind, boardFlipped);
     const color =
       cell.tone === 'pos' ? 'text-eval-pos' : cell.tone === 'neg' ? 'text-eval-neg' : 'text-eval-none';
     return <span className={`w-11 shrink-0 text-right font-mono tabular-nums ${color}`}>{cell.text}</span>;
