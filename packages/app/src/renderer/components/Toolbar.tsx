@@ -39,7 +39,8 @@ export type Popover =
   | 'zoom'
   | 'kindConfirm'
   | 'score'
-  | 'resignConfirm';
+  | 'resignConfirm'
+  | 'newGameConfirm';
 
 export interface ToolbarProps {
   t: TFunction;

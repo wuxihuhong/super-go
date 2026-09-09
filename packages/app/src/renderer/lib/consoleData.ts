@@ -67,14 +67,27 @@ export function buildGauge(
     ...head,
     rightLabel: t('panel.gauge.depth'),
     rightValue: shown.depth !== undefined ? String(shown.depth) : '—',
-    // 左条 = 下方那一方：执黑时左条是黑，和数字同一口径
+    // 左条 = 下方那一方的份额；颜色由 leftTone（下方颜色）决定
     barRatio: boardFlipped ? 1 - redShare : redShare,
   };
 }
 
+/** 数字/左条颜色跟棋盘下方走：红在下洋红，黑在下青色。 */
+function bottomTone(boardFlipped: boolean): 'acc' | 'pink' {
+  return boardFlipped ? 'acc' : 'pink';
+}
+
+function xiangqiAxisLabel(t: TFunction, boardFlipped: boolean, viewed: number): string {
+  if (viewed === 0) return t('panel.gauge.even');
+  if (boardFlipped) {
+    return t(viewed > 0 ? 'panel.gauge.blackAdvantage' : 'panel.gauge.blackDisadvantage');
+  }
+  return t(viewed > 0 ? 'panel.gauge.redAdvantage' : 'panel.gauge.redDisadvantage');
+}
+
 /**
- * 标题固定为棋盘下方那一方的优势（执黑 = 黑方优势）。
- * 数字是下方视角：正分 = 你领先，负分 = 你落后。杀棋文案仍写清谁杀谁。
+ * 棋盘下方为主视角：红在下写红优/红劣，黑在下写黑优/黑劣。
+ * 数字是下方分数（正 = 你领先）。颜色始终是下方那一方，不跟谁领先走。
  */
 export function xiangqiGaugeHead(
   t: TFunction,
@@ -82,23 +95,25 @@ export function xiangqiGaugeHead(
   redMate?: number,
   boardFlipped = false,
 ): Pick<GaugeModel, 'leftLabel' | 'leftValue' | 'leftTone'> {
-  const axis = t(boardFlipped ? 'panel.gauge.blackAdvantage' : 'panel.gauge.redAdvantage');
+  const tone = bottomTone(boardFlipped);
   const ev = evalValueText(t, redCp, redMate, boardFlipped);
   if (redMate !== undefined) {
     const viewed = evalFromBottom(undefined, redMate, boardFlipped);
-    const bottomMates = (viewed.mate ?? 0) >= 0;
-    return { leftLabel: axis, leftValue: ev.text, leftTone: bottomMates ? 'acc' : 'pink' };
+    return {
+      leftLabel: xiangqiAxisLabel(t, boardFlipped, viewed.mate ?? 0),
+      leftValue: ev.text,
+      leftTone: tone,
+    };
   }
   if (redCp === undefined) {
-    return { leftLabel: axis, leftValue: ev.text, leftTone: 'acc' };
+    return { leftLabel: t('panel.gauge.even'), leftValue: ev.text, leftTone: tone };
   }
   const viewed = evalFromBottom(redCp, undefined, boardFlipped);
   const n = Math.round(viewed.cp ?? 0);
-  if (n === 0) return { leftLabel: t('panel.gauge.even'), leftValue: '0', leftTone: 'acc' };
   return {
-    leftLabel: axis,
+    leftLabel: xiangqiAxisLabel(t, boardFlipped, n),
     leftValue: ev.text,
-    leftTone: n > 0 ? 'acc' : 'pink',
+    leftTone: tone,
   };
 }
 
@@ -107,7 +122,6 @@ export function buildTelemetry(
   snapshot: GameSnapshot | null,
   engineStatus: EngineStatusPayload | null,
   liveEval: LiveEval | null,
-  boardFlipped = false,
 ): TelemetryRow[] {
   const isGo = snapshot?.kind === 'go';
   const shown = resolveDisplayedEval(liveEval, snapshot);
@@ -163,14 +177,6 @@ export function buildTelemetry(
     }
     return rows;
   }
-  const redShare = evalProportion(shown.redCp, shown.redMate);
-  rows.push({
-    id: 'eval',
-    label: t('panel.engine.eval'),
-    value: evalValueText(t, shown.redCp, shown.redMate, boardFlipped).text,
-    bar: 'acc',
-    barRatio: boardFlipped ? 1 - redShare : redShare,
-  });
   return rows;
 }
 

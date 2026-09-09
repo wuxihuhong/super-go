@@ -29,7 +29,7 @@ export function anchorFlipFor(humanSide: Player): boolean {
 
 /** 能改变朝向的全部事件——只有这两个 */
 export type OrientationEvent =
-  /** 开了一局本机对弈：按弹窗所选执方（视角）锚定 */
+  /** 开了一局本机对弈（含对局中再开）：按弹窗所选执方（视角）锚定 */
   | { type: 'newGame'; humanSide: Player }
   /** 连线识别到平台视角（开局锚定，或对局中平台自己翻了） */
   | { type: 'platformView'; reversed: boolean };

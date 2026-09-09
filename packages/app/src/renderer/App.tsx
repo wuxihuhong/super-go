@@ -421,23 +421,6 @@ export default function App() {
   // （linkerActive 在上方 interactive 处已算过）
   /** 棋盘朝向：**状态**而非每次渲染现算——现算会在停止连线的瞬间凭空翻一次 */
   const [flip, setFlip] = useState(false);
-  /** 待消费的开局视角（新对局弹窗的选择；进入对局那一刻锚定后即清空） */
-  const pendingAnchorRef = useRef<Player | null>(null);
-  const prevPhaseRef = useRef<string>('idle');
-  useEffect(() => {
-    const phase = snapshot?.phase ?? 'idle';
-    const was = prevPhaseRef.current;
-    prevPhaseRef.current = phase;
-    // 只在"进入对局"这一刻、且弹窗留有视角选择时锚定：
-    // 续弈 / 终局悔棋复活 / 连线重开都不重新锚定（局面没变，棋盘就不能动，见 boardOrientation）
-    if (phase === 'playing' && was !== 'playing' && !linkerActive) {
-      const anchor = pendingAnchorRef.current;
-      if (anchor !== null) {
-        pendingAnchorRef.current = null;
-        setFlip((cur) => nextBoardFlip(cur, { type: 'newGame', humanSide: anchor }));
-      }
-    }
-  }, [snapshot?.phase, linkerActive]);
 
   // 连线：跟随平台视角（§6.1）。连线也是开局，锚定来自平台；对局中平台自己翻了也跟着翻。
   // 停止连线不在此列——对局保留、局面没动，棋盘就不能动。
@@ -648,7 +631,8 @@ export default function App() {
             popover={popover}
             onPopoverChange={setPopover}
             onNewGame={(side, goSetup?: GameSetup) => {
-              pendingAnchorRef.current = side;
+              // 对局中再开一局 phase 仍是 playing，不能等 idle→playing 才翻盘
+              setFlip((cur) => nextBoardFlip(cur, { type: 'newGame', humanSide: side }));
               runIntent(() => window.superGo.newGame({ fromCursor: false, goSetup }));
             }}
             onUndo={() => runIntent(() => window.superGo.undoMove())}

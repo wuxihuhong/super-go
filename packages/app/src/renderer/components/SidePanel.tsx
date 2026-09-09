@@ -37,7 +37,7 @@ export default function SidePanel(props: SidePanelProps) {
   const canContinue = snapshot !== null && browsing && snapshot.moves.length > 0;
   const flipped = props.boardFlipped === true;
   const gauge = buildGauge(props.t, snapshot, props.liveEval, flipped);
-  const telemetry = buildTelemetry(props.t, snapshot, props.engineStatus, props.liveEval, flipped);
+  const telemetry = buildTelemetry(props.t, snapshot, props.engineStatus, props.liveEval);
   const go = snapshot?.kind === 'go';
 
   const [width, setWidth] = useState((): number => {
@@ -122,7 +122,17 @@ export default function SidePanel(props: SidePanelProps) {
           )}
           <div className="mb-2.5 flex items-end justify-between">
             <div>
-              <div className="sg-label mb-1">{gauge.leftLabel}</div>
+              <div
+                className={`sg-label mb-1 ${
+                  gauge.kind === 'xiangqi'
+                    ? gauge.leftTone === 'pink'
+                      ? 'text-pink-txt'
+                      : 'text-acc'
+                    : ''
+                }`}
+              >
+                {gauge.leftLabel}
+              </div>
               <div
                 className={`font-mono text-[32px] leading-none font-bold [text-shadow:var(--glow-text)] ${
                   gauge.leftTone === 'pink' ? 'text-pink-txt' : 'text-acc'
@@ -150,13 +160,23 @@ export default function SidePanel(props: SidePanelProps) {
           </div>
           <div className="relative flex h-2 overflow-hidden rounded-sm border border-[color:var(--line)] bg-[color:var(--track)]">
             <span
-              className="h-full [background:var(--bar-black)] [box-shadow:var(--bar-black-glow)]"
+              className={`h-full ${
+                gauge.kind === 'xiangqi' && gauge.leftTone === 'pink'
+                  ? '[background:var(--bar-white)]'
+                  : '[background:var(--bar-black)] [box-shadow:var(--bar-black-glow)]'
+              }`}
               style={{ width: `${Math.round(gauge.barRatio * 100)}%` }}
             />
             {gauge.kind === 'xiangqi' && (
               <span className="absolute left-1/2 h-2 w-px bg-[color:var(--line)]" />
             )}
-            <span className="h-full flex-1 [background:var(--bar-white)]" />
+            <span
+              className={`h-full flex-1 ${
+                gauge.kind === 'xiangqi' && gauge.leftTone === 'pink'
+                  ? '[background:var(--bar-black)]'
+                  : '[background:var(--bar-white)]'
+              }`}
+            />
           </div>
         </div>
 

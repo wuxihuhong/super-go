@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type { GameKind, GameSetup, Player, RuleSet } from '@super-go/core';
 import type { AppSettings } from '@shared/ipc';
 import type { MessageKey, TFunction } from '../i18n';
@@ -45,8 +46,10 @@ export interface BoardDockProps {
 }
 
 export default function BoardDock(props: BoardDockProps): React.JSX.Element {
+  const pendingNewGameRef = useRef<{ side: Player; goSetup?: GameSetup } | null>(null);
   const close = (): void => {
     blurActiveInput();
+    pendingNewGameRef.current = null;
     props.onPopoverChange('none');
   };
   const icon = (
@@ -148,7 +151,13 @@ export default function BoardDock(props: BoardDockProps): React.JSX.Element {
           <Tooltip label={props.t('toolbar.newGame')} hint={props.t('toolbar.newGame.hint')} shortcut="N" side="up">
             <button
               type="button"
-              onClick={() => props.onPopoverChange(props.popover === 'setup' ? 'none' : 'setup')}
+              onClick={() => {
+                if (props.popover === 'setup' || props.popover === 'newGameConfirm') {
+                  close();
+                  return;
+                }
+                props.onPopoverChange('setup');
+              }}
               className="sg-btn-solid flex h-9 items-center gap-[7px] rounded-[11px] pr-3.5 pl-[11px] text-[12.5px] font-bold"
             >
               <IconPlus className="h-4 w-4" />
@@ -166,11 +175,49 @@ export default function BoardDock(props: BoardDockProps): React.JSX.Element {
               kind={props.kind}
               mode="new"
               onStart={(side, goSetup) => {
+                if (props.playing) {
+                  pendingNewGameRef.current = { side, goSetup };
+                  props.onPopoverChange('newGameConfirm');
+                  return;
+                }
                 close();
                 props.onNewGame(side, goSetup);
               }}
               onCancel={close}
             />
+          </PopoverLayer>
+          <PopoverLayer
+            open={props.popover === 'newGameConfirm'}
+            onClose={close}
+            placement="above"
+            align="left"
+          >
+            <div className="sg-popover w-72 rounded-xl p-3">
+              <h2 className="mb-1 px-1 text-xs font-semibold">{props.t('toolbar.newGame.confirm')}</h2>
+              <p className="mb-3 px-1 text-xs leading-relaxed text-dim">
+                {props.t('toolbar.newGame.confirm.body')}
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={close}
+                  className="rounded-lg px-3 py-1.5 text-xs text-dim hover:bg-[color:var(--acc-bg)]"
+                >
+                  {props.t('setup.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pending = pendingNewGameRef.current;
+                    close();
+                    if (pending !== null) props.onNewGame(pending.side, pending.goSetup);
+                  }}
+                  className="sg-btn-solid rounded-lg px-3.5 py-1.5 text-xs font-medium"
+                >
+                  {props.t('toolbar.newGame.confirm.ok')}
+                </button>
+              </div>
+            </div>
           </PopoverLayer>
         </div>
         {icon('toolbar.undo', <IconUndo className="h-[17px] w-[17px]" />, props.onUndo, {

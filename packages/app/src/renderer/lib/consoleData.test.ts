@@ -44,24 +44,25 @@ describe('buildGauge', () => {
     expect(g.barRatio).toBeCloseTo(0.614);
   });
 
-  it('象棋红在下：红方优势与深度', () => {
+  it('象棋红在下：红优、洋红字、红条在左', () => {
     const g = buildGauge(t, xiangqiSnap, null, false);
     expect(g.kind).toBe('xiangqi');
     expect(g.leftLabel).toBe('panel.gauge.redAdvantage');
     expect(g.leftValue).toBe('+124');
-    expect(g.leftTone).toBe('acc');
+    expect(g.leftTone).toBe('pink');
+    expect(g.barRatio).toBeGreaterThan(0.5);
     expect(g.rightValue).toBe('28');
   });
 
-  it('执黑时按黑方口径：红优显示为负分，标题仍是黑方优势', () => {
-    const g = buildGauge(t, { ...xiangqiSnap, redCp: 335 }, null, true);
-    expect(g.leftLabel).toBe('panel.gauge.blackAdvantage');
-    expect(g.leftValue).toBe('−335');
-    expect(g.leftTone).toBe('pink');
+  it('黑在下且红优：黑劣、青色字、黑条在左且不到一半', () => {
+    const g = buildGauge(t, { ...xiangqiSnap, redCp: 400 }, null, true);
+    expect(g.leftLabel).toBe('panel.gauge.blackDisadvantage');
+    expect(g.leftValue).toBe('−400');
+    expect(g.leftTone).toBe('acc');
     expect(g.barRatio).toBeLessThan(0.5);
   });
 
-  it('执黑且黑优：正分', () => {
+  it('黑在下且黑优：黑优正分、青色', () => {
     const g = buildGauge(t, { ...xiangqiSnap, redCp: -1239 }, null, true);
     expect(g.leftLabel).toBe('panel.gauge.blackAdvantage');
     expect(g.leftValue).toBe('+1239');
@@ -71,36 +72,61 @@ describe('buildGauge', () => {
 });
 
 describe('xiangqiGaugeHead', () => {
-  it('红在下：标题固定红方优势，负分表示红落后', () => {
-    expect(xiangqiGaugeHead(t, 0).leftLabel).toBe('panel.gauge.even');
-    expect(xiangqiGaugeHead(t, -1239).leftLabel).toBe('panel.gauge.redAdvantage');
-    expect(xiangqiGaugeHead(t, -1239).leftValue).toBe('−1239');
-    expect(xiangqiGaugeHead(t, -1239).leftTone).toBe('pink');
+  it('红在下：颜色始终洋红，标题跟优/劣走', () => {
+    expect(xiangqiGaugeHead(t, 0)).toMatchObject({
+      leftLabel: 'panel.gauge.even',
+      leftValue: '0',
+      leftTone: 'pink',
+    });
+    expect(xiangqiGaugeHead(t, 39)).toMatchObject({
+      leftLabel: 'panel.gauge.redAdvantage',
+      leftValue: '+39',
+      leftTone: 'pink',
+    });
+    expect(xiangqiGaugeHead(t, -1239)).toMatchObject({
+      leftLabel: 'panel.gauge.redDisadvantage',
+      leftValue: '−1239',
+      leftTone: 'pink',
+    });
     expect(xiangqiGaugeHead(t, undefined, 3)).toMatchObject({
       leftLabel: 'panel.gauge.redAdvantage',
       leftValue: 'eval.mateN',
-      leftTone: 'acc',
-    });
-    expect(xiangqiGaugeHead(t, undefined, -4, false).leftTone).toBe('pink');
-  });
-
-  it('黑在下：标题固定黑方优势', () => {
-    expect(xiangqiGaugeHead(t, 335, undefined, true)).toMatchObject({
-      leftLabel: 'panel.gauge.blackAdvantage',
-      leftValue: '−335',
       leftTone: 'pink',
     });
-    expect(xiangqiGaugeHead(t, undefined, 3, true).leftLabel).toBe('panel.gauge.blackAdvantage');
-    expect(xiangqiGaugeHead(t, undefined, 3, true).leftTone).toBe('pink');
+    expect(xiangqiGaugeHead(t, undefined, -4, false)).toMatchObject({
+      leftLabel: 'panel.gauge.redDisadvantage',
+      leftTone: 'pink',
+    });
+  });
+
+  it('黑在下：颜色始终青色，红优写成黑劣', () => {
+    expect(xiangqiGaugeHead(t, 335, undefined, true)).toMatchObject({
+      leftLabel: 'panel.gauge.blackDisadvantage',
+      leftValue: '−335',
+      leftTone: 'acc',
+    });
+    expect(xiangqiGaugeHead(t, 4, undefined, true)).toMatchObject({
+      leftLabel: 'panel.gauge.blackDisadvantage',
+      leftValue: '−4',
+      leftTone: 'acc',
+    });
+    expect(xiangqiGaugeHead(t, -4, undefined, true)).toMatchObject({
+      leftLabel: 'panel.gauge.blackAdvantage',
+      leftValue: '+4',
+      leftTone: 'acc',
+    });
+    expect(xiangqiGaugeHead(t, undefined, 3, true)).toMatchObject({
+      leftLabel: 'panel.gauge.blackDisadvantage',
+      leftTone: 'acc',
+    });
   });
 });
 
 describe('buildTelemetry', () => {
-  it('五项现有数据、评估行带条', () => {
+  it('象棋不重复展示优势行', () => {
     const rows = buildTelemetry(t, xiangqiSnap, { status: 'ready', name: 'Pikafish' }, null);
-    expect(rows.map((r) => r.id)).toEqual(['engine', 'status', 'strength', 'depth', 'eval']);
+    expect(rows.map((r) => r.id)).toEqual(['engine', 'status', 'strength', 'depth']);
     expect(rows[0]?.value).toBe('Pikafish');
-    expect(rows[4]?.bar).toBe('acc');
   });
 
   it('围棋拆黑白目数，不显示目差', () => {

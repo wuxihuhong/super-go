@@ -23,7 +23,7 @@ describe('anchorFlipFor（开局锚定：弹窗选的执方 = 视角）', () => 
 });
 
 describe('nextBoardFlip（朝向状态转移）', () => {
-  it('开局按所选执方锚定，与之前的朝向无关', () => {
+  it('开局按所选执方锚定，与之前的朝向无关（对局中再开同样立刻换朝向）', () => {
     expect(nextBoardFlip(false, { type: 'newGame', humanSide: 'second' })).toBe(true);
     expect(nextBoardFlip(true, { type: 'newGame', humanSide: 'first' })).toBe(false);
   });
